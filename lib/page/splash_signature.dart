@@ -213,10 +213,12 @@ class SplashSignature {
 }
 
 // 把签名按比例放进给定大小、居中，线宽随签名缩放。墨色沿书写方向（从左到右）从 ink.$1 渐变到 ink.$2。
+// weight 是线宽倍数：画得小时（侧栏顶上高 34）按比例缩下来笔画只剩一像素多，要相对加粗才不发虚（同字体的光学尺寸）；开屏是 1。
 class SplashSignaturePainter extends CustomPainter {
-  const SplashSignaturePainter({required this.progress, required this.ink});
+  const SplashSignaturePainter({required this.progress, required this.ink, this.weight = 1});
   final double progress;
   final (Color, Color) ink;
+  final double weight;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -235,12 +237,12 @@ class SplashSignaturePainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..strokeWidth = _weight
+        ..strokeWidth = _weight * weight
         ..shader = LinearGradient(colors: [ink.$1, ink.$2]).createShader(bounds),
     );
     canvas.restore();
   }
 
   @override
-  bool shouldRepaint(SplashSignaturePainter oldDelegate) => oldDelegate.progress != progress || oldDelegate.ink != ink;
+  bool shouldRepaint(SplashSignaturePainter oldDelegate) => oldDelegate.progress != progress || oldDelegate.ink != ink || oldDelegate.weight != weight;
 }

@@ -31,7 +31,10 @@ class _AnimatedBranchesState extends State<AnimatedBranches> with SingleTickerPr
     _previous = oldWidget.index;
     _direction = widget.index > oldWidget.index ? 1 : -1;
     // [人工决策-2026-10-27 00:45:04] iOS 上点底栏直接切过去、不滑动（用户选定「同系统：直接切」，取代 10-04 底栏切换弹簧曲线在 iOS 上的做法，安卓照旧）。
-    if (MediaQuery.disableAnimationsOf(context) || campusIos) { _controller.value = 1; _previous = null; }
+    // 底栏壳被推入的页面盖着时（课表页「去同步」回今天、分享弹层去消息页：上面那页退场的同时换分支）也直接换：底下看不见，
+    // 再滑一次就是上面那页往右退、底下同时左右平移，两个方向的动作叠在一起（11-23 全应用切换走查）。
+    final covered = !(ModalRoute.of(context)?.secondaryAnimation?.isDismissed ?? true);
+    if (MediaQuery.disableAnimationsOf(context) || campusIos || covered) { _controller.value = 1; _previous = null; }
     else { _controller.forward(from: 0); }
   }
   @override

@@ -275,7 +275,7 @@ void main() {
       final gateway = _Gateway();
       await tester.pumpWidget(_app(Scaffold(body: TodayPage(gateway: gateway))));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('同步'));
+      await tester.tap(find.byTooltip('同步'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('作息'));
       await tester.tap(find.text('成绩'));
@@ -296,7 +296,7 @@ void main() {
       final gateway = _Gateway();
       await tester.pumpWidget(_app(Scaffold(body: TodayPage(gateway: gateway))));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('同步'));
+      await tester.tap(find.byTooltip('同步'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('作息'));
       await tester.tap(find.text('成绩'));

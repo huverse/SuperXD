@@ -39,6 +39,7 @@
 - app_health.dart：分批更新的健康回报与新版本反馈 AppHealth（设备级，人工决策见 domain/app_health.dart）：markActive 记今天打开过与版本（换版本从那天起算反馈窗口），markFatal 把出错那天记成有致命错误（组合根接上错误出口与上次退出原因），markLaunch 记一次启动用时（组合根在首帧上屏时交来）、countFrames 在内存里累加帧数与慢帧数（组合根的帧耗时回调交来）、flushFrames 切到后台与跨过日界时写进那天，reportDue 发过完且没发过的几天（同一时刻只发一轮，连不上留着、拒收记成发过），feedbackOpen 与 sendFeedback 给关于页；没配中转时什么都不发、不给入口。
 - leisure.dart：游乐场与积分的删除数据 Leisure（设备级，人工决策见 domain/leisure.dart）：deleteData 登录着应用账号且联网时先删服务器上的（组合根注入 deleteRemote，失败原样抛出、本机不动），再清本机（注入 clearLocal：游乐场记录与记着的等级），返回服务器上的有没有一起删。11-16 起开关并进联网偏好。不认识游乐场、挑战与灰度。
 - network_preference.dart：联网偏好 NetworkPreference（设备级，人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条）：本身就是联网策略（组合根交给 AppHooks），mode、online、setMode（变了才写、通知一次）；组合根跟着它让私信停下或接着用、解锁重新判定，节日、灰度、解锁与诊断包认领读它的 online。
+- quick_nav.dart：今天页侧栏的常用与最近 QuickNav（设备级，规则见 domain/quick_nav.dart）：visit 记最近（已在最前不写；热路径上不等写盘，写不成只记日志），pin 存编辑页排好的常用（先通知再等写盘）；组合根在进了入口目录里的页面时调 visit。
 - app_moments.dart：打扰时机 AppMoments（设备级）：一次只出现一件，先后是节日动画、没揭晓的奖品、自动同步留下的课表冲突、新信；决定节日动画、新信这类不是用户要的内容什么时候出现。业务条件在这里：每次回到前台最多一件、从快捷入口进来的那次前台不出现、上下课安静期里不出现（安静期结束时提醒组合根再看一眼）、有强制更新还没装时不弹信、信在用户关掉时（closed）才记成弹过；界面条件在组合根 app_shell.dart 的 _promptMoment。next 只看不记，真的弹出来了再 begin。人工决策在类上方。
 
 # 关键规则

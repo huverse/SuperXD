@@ -171,13 +171,15 @@ class NativeTabItem {
 // 本组件放在底栏壳的底部、高度同系统底栏：不画东西，只给读屏一排同样的按钮（系统底栏对读屏隐藏，免得读两遍）。
 // 选中由 Dart 决定（点了先回 onSelected，切分支后 selected 跟着变）；onHeight 报系统排好的底栏总高（含底部安全区）。
 class NativeTabBar extends StatefulWidget {
-  const NativeTabBar({super.key, required this.items, required this.selected, required this.onSelected, required this.onHeight, this.tint, this.revealed});
+  const NativeTabBar({super.key, required this.items, required this.selected, required this.onSelected, required this.onHeight, this.tint, this.revealed, this.shift});
   final List<NativeTabItem> items;
   final int selected;
   final ValueChanged<int> onSelected;
   final ValueChanged<double> onHeight;
   final Color? tint;
   final ValueListenable<bool>? revealed;
+  // 壳页被侧栏往右推了多少（theme 的 CampusSideDrawer.shift）：底栏跟着走，推开时不接点按。
+  final ValueListenable<double>? shift;
 
   // 推入页面时新页面与旧页面的曲线，同 Flutter 的 CupertinoPageTransition（campus_transitions.dart 的 iOS 转场也用这两个）。
   static CurvedAnimation enterCurve(Animation<double> parent) => CurvedAnimation(parent: parent, curve: Curves.fastEaseInToSlowEaseOut, reverseCurve: Curves.fastEaseInToSlowEaseOut.flipped);
@@ -209,6 +211,7 @@ class _NativeTabBarState extends State<NativeTabBar> {
       if (call.method == 'height') widget.onHeight((call.arguments as num).toDouble());
     });
     widget.revealed?.addListener(_sync);
+    widget.shift?.addListener(_sync);
   }
 
   @override
@@ -241,6 +244,10 @@ class _NativeTabBarState extends State<NativeTabBar> {
       oldWidget.revealed?.removeListener(_sync);
       widget.revealed?.addListener(_sync);
     }
+    if (oldWidget.shift != widget.shift) {
+      oldWidget.shift?.removeListener(_sync);
+      widget.shift?.addListener(_sync);
+    }
     _show();
     _sync();
   }
@@ -258,6 +265,7 @@ class _NativeTabBarState extends State<NativeTabBar> {
   void dispose() {
     _unbind();
     widget.revealed?.removeListener(_sync);
+    widget.shift?.removeListener(_sync);
     if (_owner == this) {
       _owner = null;
       _channel.setMethodCallHandler(null);
@@ -296,7 +304,8 @@ class _NativeTabBarState extends State<NativeTabBar> {
     final enter = !pushed ? 0.0 : following ? secondary.value : _enter!.value;
     final leave = !pushed ? 0.0 : following ? secondary.value : _leave!.value;
     final visible = (widget.revealed?.value ?? true) && (_current || pushed);
-    final geometry = <String, Object>{'shift': -_width * leave / 3, 'cover': _width * (1 - enter), 'visible': visible, 'interactive': !pushed && _current};
+    final drawer = widget.shift?.value ?? 0;
+    final geometry = <String, Object>{'shift': drawer - _width * leave / 3, 'cover': _width * (1 - enter), 'visible': visible, 'interactive': !pushed && _current && drawer == 0};
     if (mapEquals(geometry, _sentGeometry)) return;
     _sentGeometry = geometry;
     _invoke('geometry', geometry);

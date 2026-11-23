@@ -88,7 +88,7 @@ void main() {
     expect(shortcuts.pending.value, '/toolbox/life/demo/scan');
   });
 
-  testWidgets('入口要去的页面：会话恢复好之前（启动页）不动；不在首页先回首页，到了首页再推入，返回回到首页', (tester) async {
+  testWidgets('入口要去的页面：会话恢复好之前（启动页）不动；不在首页时回首页与推入同一帧做完、只走一次转场，返回回到首页', (tester) async {
     Widget page(String text) => Scaffold(body: Text(text));
     final router = GoRouter(initialLocation: '/boot', routes: [
       GoRoute(path: '/boot', builder: (context, state) => page('启动页')),
@@ -110,13 +110,13 @@ void main() {
     router.go('/other');
     await tester.pumpAndSettle();
     openShortcut(router, pending, home: '/today');
-    await tester.pumpAndSettle();
-    expect(find.text('今天'), findsOneWidget, reason: '先回首页');
-    expect(pending.value, '/toolbox/demo/quick');
-
-    openShortcut(router, pending, home: '/today');
+    expect(pending.value, isNull, reason: '回首页与推入在同一帧里做完');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.text('入口页'), findsOneWidget, reason: '第一段转场就是推入，不先退回首页、退完再推（11-23 全应用切换走查）');
     await tester.pumpAndSettle();
     expect(find.text('入口页'), findsOneWidget);
+    expect(find.text('别的页'), findsNothing);
     expect(pending.value, isNull);
     router.pop();
     await tester.pumpAndSettle();

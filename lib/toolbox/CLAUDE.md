@@ -1,6 +1,6 @@
 # toolbox 百宝箱
 
-定位：设备级工具集，不需要教务登录，只依赖 domain 与 theme，不依赖教务相关的任何层，不读取教务凭据或 cookie；切换账号时下载任务不销毁。当前注册了五个工具：视频解析与下载、学习通签到、快递（拼多多身份码与快递查询）、电影院（灰度测试，功能开关开着才出现）、生活（灰度，校园生活服务的子模块列表，现在有住理生活）。工具可以带子模块（规则见 toolbox_module.dart 的人工决策）。学习通的文件与规则在 chaoxing/CLAUDE.md，快递在 express/CLAUDE.md，电影院在 cinema/CLAUDE.md，住理生活在 life/zhuli/CLAUDE.md（生活下面的子模块同层互不依赖，test/project_structure_test.dart 守护），download 与 short_video 两个子目录登记在本文件。
+定位：设备级工具集，不需要教务登录，只依赖 domain 与 theme，不依赖教务相关的任何层，不读取教务凭据或 cookie；切换账号时下载任务不销毁。当前注册了五个工具：视频解析与下载、学习通签到、快递（拼多多身份码与快递查询）、电影院（功能开关开着才出现，11-23 起灰度配置全量）、生活（校园生活服务的子模块列表，现在有住理生活，开关同电影院）。工具可以带子模块（规则见 toolbox_module.dart 的人工决策）。学习通的文件与规则在 chaoxing/CLAUDE.md，快递在 express/CLAUDE.md，电影院在 cinema/CLAUDE.md，住理生活在 life/zhuli/CLAUDE.md（生活下面的子模块同层互不依赖，test/project_structure_test.dart 守护），download 与 short_video 两个子目录登记在本文件。
 
 # 文件职责
 

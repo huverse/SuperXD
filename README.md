@@ -4,7 +4,7 @@
 
 课表、成绩一屏看清，和同学互看课表找共同空闲。
 
-非官方的开源校园应用，对接山东现代学院的 Kingo 教务系统；另带不用登录教务的百宝箱：驿站取件、学习通签到、视频解析。
+非官方的开源校园应用，对接山东现代学院的 Kingo 教务系统；另带不用登录教务的百宝箱：驿站取件、学习通签到、视频解析、电影院与宿舍洗浴。
 
 [![Release](https://img.shields.io/github/v/release/huverse/SuperXD?include_prereleases&style=flat-square&color=2563eb&label=Release)](https://github.com/huverse/SuperXD/releases)
 [![Android 11+](https://img.shields.io/badge/Android-11%2B-34a853?style=flat-square&logo=android&logoColor=white)](https://github.com/huverse/SuperXD/releases)
@@ -47,11 +47,12 @@
 ## 亮点
 
 - **此刻在上哪节课**：打开就是今天，顶部写着正在上的课、教室和几点下课，到点自动切到下一节；课上完了预告下一节在哪天几点。
+- **一滑直达常用功能**：在今天页往右一滑（或点左上角）拉出侧栏，常用的页面与功能自己挑、自己排，最近用过的自动记住；往下一拉就能搜索全部功能。
 - **课表自己能改，改错能恢复**：天、学期、学年三种视图；增删改课程，每次改动都留历史版本；导出到系统日历、课前提醒，桌面小组件不打开应用也能看。
 - **成绩一屏看全**：按学年或学期看成绩、学分与绩点，搜索加筛选。
 - **和同学互看课表**：扫码加好友，分享课表后直接列出两人的共同空闲，也能分享短视频；内容端到端加密，不做文字聊天。面对面时也可以只走蓝牙互发，不经服务器、不用登录。
 - **游乐场**：17 个益智小游戏，不用登录就能玩；登录应用账号后可以参加每周轮换的挑战、攒积分。
-- **百宝箱**：不用登录教务。拼多多驿站待取件与取件身份码、学习通签到、视频解析与下载，详见 [百宝箱说明](docs/toolbox.md)。
+- **百宝箱**：不用登录教务。拼多多驿站待取件与取件身份码、学习通签到、视频解析与下载、电影院（在线搜片与播放）、住理生活（宿舍洗浴开关水、充值与买券），详见 [百宝箱说明](docs/toolbox.md)。
 - **好看也好调**：四套配色、浅色与深色、两种字体、按屏宽标出推荐范围的字号条、液态玻璃和自定义背景。
 - **教务默认只在你点的时候同步**：平时只读本机数据；也可以自己开启自动同步并设定间隔（默认关闭）。同步失败时保留本机数据，不会误清空。
 
@@ -148,7 +149,7 @@ SuperXD 以 [GNU GPL v3.0](LICENSE) 开源，版权所有 (C) 2026 Galaxyous。�
 以下部分不随本项目以 GPL 授权：
 
 - `lib/theme/curve_geometry.dart` 中的曲线加载动画改编自 [Paidax01/math-curve-loaders](https://github.com/Paidax01/math-curve-loaders)，上游未附开源许可，本项目已获作者授权使用。再分发本项目或其修改版时，请自行取得授权，或移除、替换这部分代码。
-- 字体 Maple Mono NF CN（随安装包）与 Noto Serif SC（选用时从中转下载）按 SIL Open Font License 1.1 分发，都已裁剪到常用汉字与界面符号（tool/font_subset.py，见 assets/third_party_notices.txt）。
+- 字体 Maple Mono NF CN（随安装包）与 Noto Serif SC（选用时从中转下载）按 SIL Open Font License 1.1 分发，都已裁剪到常用汉字与界面符号；侧栏左上角的 Newsreader 斜体同为 OFL，只留「SuperXD」七个字母（tool/font_subset.py，见 assets/third_party_notices.txt）。
 - 测试期临时图标（android/app/src/main/res 下的 ic_launcher 与 ic_launcher_background，以及“关于”页用的 assets/app_icon.webp）使用动画《Charlotte》角色画面，版权归原权利人所有（©VisualArt's/Key/Charlotte Project），仅供测试期间临时使用，正式版前替换为原创图标。
 - 开屏画作（assets/paintings 下的图片）由本项目作者用 AI 生成（仿莫奈、梵高风格），版权所有 (C) 2026 Galaxyous，保留所有权利，仅随本应用分发，可在应用里存作个人壁纸；再分发本项目或其修改版时，请移除或替换这些画作。画中如出现第三方作品的角色形象，其权利归原权利人所有，权利人要求时立即移除。
 - 其他第三方组件按各自许可使用，清单见 [assets/third_party_notices.txt](assets/third_party_notices.txt)，或应用内「我的 › 关于 › 开源许可」。

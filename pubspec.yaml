@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0-alpha.39+39
+version: 1.0.0-alpha.40+40
 
 environment:
   sdk: ^3.13.2
@@ -122,6 +122,12 @@ flutter:
           weight: 500
         - asset: assets/fonts/maple_mono_nf_cn_semibold.ttf
           weight: 600
+    # 侧栏左上角的字样（只有「SuperXD」七个字母，tool/font_subset.py wordmark 生成）。
+    - family: Newsreader
+      fonts:
+        - asset: assets/fonts/newsreader_wordmark.ttf
+          weight: 400
+          style: italic
 
   shaders:
     - shaders/reward_aurora.frag
@@ -130,6 +136,7 @@ flutter:
     - LICENSE
     - assets/fonts/LICENSE.txt
     - assets/fonts/noto_serif_sc_license.txt
+    - assets/fonts/newsreader_license.txt
     - assets/third_party_notices.txt
     - assets/app_icon.webp
     - assets/font_previews/

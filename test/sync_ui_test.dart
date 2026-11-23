@@ -26,7 +26,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: Scaffold(body: TodayPage(gateway: gateway))));
     await tester.pumpAndSettle();
     expect(find.textContaining('08:00–08:45'), findsNothing);
-    await tester.longPress(find.text('同步'));
+    await tester.tap(find.byTooltip('同步'));
     await tester.pumpAndSettle();
     expect(find.text('同步内容'), findsOneWidget);
     expect(find.text('同步范围'), findsOneWidget);
@@ -57,7 +57,7 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), builder: (context, child) => MediaQuery(data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(1.7)), child: child!), home: Scaffold(body: TodayPage(gateway: _Gateway()))));
     await tester.pumpAndSettle();
-    // 这么窄、这么大的字，顶栏放不下日期时「同步」只留图标（同课表顶栏的圆钮）。
+    // 今天页顶栏的「同步」11-23 起一直是圆钮（两侧圆钮、日期居中，人工决策见 today_page.dart），不写字。
     expect(find.text('同步'), findsNothing);
     await tester.tap(find.byTooltip('同步'));
     await tester.pumpAndSettle();
@@ -73,7 +73,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(411, 860));
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: Scaffold(body: TodayPage(gateway: _Gateway()))));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('同步'));
+    await tester.tap(find.byTooltip('同步'));
     await tester.pumpAndSettle();
     final wide = tester.getRect(find.text('选择学年')), right = tester.getRect(find.widgetWithText(TextButton, '刷新学年'));
     expect(right.center.dy, closeTo(wide.center.dy, 2));
@@ -116,7 +116,7 @@ void main() {
       child: Scaffold(body: TodayPage(gateway: gateway)),
     )));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('同步'));
+    await tester.tap(find.byTooltip('同步'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, '开始同步'));
     await tester.pump();

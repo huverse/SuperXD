@@ -8,5 +8,6 @@ void registerCampusLicenses() {
     yield LicenseEntryWithLineBreaks(['SuperXD 第三方组件与改编来源'], await rootBundle.loadString('assets/third_party_notices.txt'));
     yield LicenseEntryWithLineBreaks(['Maple Mono NF CN'], await rootBundle.loadString('assets/fonts/LICENSE.txt'));
     yield LicenseEntryWithLineBreaks(['Noto Serif SC'], await rootBundle.loadString('assets/fonts/noto_serif_sc_license.txt'));
+    yield LicenseEntryWithLineBreaks(['Newsreader'], await rootBundle.loadString('assets/fonts/newsreader_license.txt'));
   });
 }

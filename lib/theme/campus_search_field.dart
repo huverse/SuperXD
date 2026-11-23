@@ -8,8 +8,10 @@ import 'package:superxd/theme/campus_surface.dart';
 // 用占位文字不用浮动标签（标签凸出会顶破胶囊上沿），有字时右侧出「清空搜索」：紧凑图标按钮约 40dp，
 // 与搜索图标同占一样的高度，出现时高度不跳。
 class CampusSearchField extends StatelessWidget {
-  const CampusSearchField({super.key, required this.controller, required this.hint, this.onSubmitted, this.enabled = true});
+  const CampusSearchField({super.key, required this.controller, required this.hint, this.onSubmitted, this.enabled = true, this.focusNode});
   final TextEditingController controller;
+  // 要由调用方拿焦点（侧栏进入搜索时弹键盘）时给它。
+  final FocusNode? focusNode;
   final String hint;
   // 按键盘的「搜索」才搜的页面（电影院找片）给它；边打边筛的页面不给。
   final ValueChanged<String>? onSubmitted;
@@ -23,6 +25,7 @@ class CampusSearchField extends StatelessWidget {
       listenable: controller,
       builder: (context, _) => TextField(
         controller: controller,
+        focusNode: focusNode,
         enabled: enabled,
         textInputAction: TextInputAction.search,
         onSubmitted: onSubmitted,

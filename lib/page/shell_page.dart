@@ -14,10 +14,11 @@ import 'package:superxd/theme/campus_glass_tier.dart';
 import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/theme/native_glass.dart';
+import 'package:superxd/theme/campus_side_drawer.dart';
 import 'package:superxd/theme/status_bar_scroll.dart';
 
 class ShellPage extends StatelessWidget {
-  const ShellPage({super.key, required this.navigationShell, this.social, this.notes, this.revealed});
+  const ShellPage({super.key, required this.navigationShell, this.social, this.notes, this.revealed, this.drawer});
   final StatefulNavigationShell navigationShell;
   // 私信未读数显示在“消息”上；为空时不显示。
   final SocialService? social;
@@ -25,6 +26,8 @@ class ShellPage extends StatelessWidget {
   final DeveloperNotes? notes;
   // 开屏是否走完（iOS 的系统底栏在 Flutter 之上，开屏没走完时不出现）；为空当作没有开屏。
   final ValueListenable<bool>? revealed;
+  // 今天页的侧栏（人工决策见 side_drawer.dart）：只在今天这一栏能拉出，整个壳（含底栏）跟着往右推；为空没有侧栏。
+  final Widget? drawer;
   // iOS 26 起用系统底栏，更早的 iOS 与安卓用自绘的悬浮玻璃底栏（[人工决策] 见 theme/native_glass.dart 的 campusSystemTabBar）。
   @override
   Widget build(BuildContext context) => campusSystemTabBar
@@ -49,7 +52,7 @@ class ShellPage extends StatelessWidget {
         if (!didPop) navigationShell.goBranch(0);
       },
       // 底栏是提示条的锚点（theme 的 CampusToastAnchor）：提示条停在底栏上方，不挡住它。
-      child: Scaffold(
+      child: _drawer(Scaffold(
         backgroundColor: Colors.transparent,
         body: Stack(
           children: [
@@ -88,6 +91,7 @@ class ShellPage extends StatelessWidget {
                     onSelected: (index) => index != navigationShell.currentIndex ? navigationShell.goBranch(index) : _reselect(index),
                     onHeight: (height) => _nativeBarHeight.value = height,
                     revealed: revealed,
+                    shift: CampusSideDrawer.maybeOf(context)?.shift,
                   ),
                 )),
               ),
@@ -119,9 +123,14 @@ class ShellPage extends StatelessWidget {
               ),
           ],
         ),
-      ),
+      )),
     );
   }
+
+  Widget _drawer(Widget shell) => switch (drawer) {
+    final drawer? => CampusSideDrawer(enabled: navigationShell.currentIndex == 0, drawer: drawer, child: shell),
+    null => shell,
+  };
 }
 
 // iOS 系统底栏的总高（含底部安全区），由原生按系统排好的样子量好报上来；量到之前按 49 加底部安全区留位置。

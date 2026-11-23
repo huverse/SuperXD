@@ -3,23 +3,22 @@ import 'package:flutter/material.dart';
 import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/page/course_cards.dart';
 import 'package:superxd/page/schedule_page.dart';
-import 'package:superxd/page/today_page.dart';
 
 // 字号条的推荐范围（人工决策见 local/display_settings.dart 的 textSizeMin）：同样的字号，屏越窄、字体越宽越早挤，所以不写死，
 // 按这台手机的屏宽与当前字体（含系统粗体文本），用页面自己判断改排的那几条规则来量：主要页面都保持原排法
-// （学期视图带左侧栏、课程卡带时刻列、今天页与课表顶栏的按钮带字）的最大字号就是推荐上限，下限是标准 100%。
+// （学期视图带左侧栏、课程卡带时刻列、课表顶栏的按钮带字）的最大字号就是推荐上限，下限是标准 100%。
 // [人工决策-2026-10-31 21:04:58] 推荐上限算进学期视图的左侧栏（用户要推荐范围落在左侧栏那种排法里，选「推荐=左侧栏上限」，
 // 未选「放宽左侧栏到 4 个字」「放宽到 5 个字」，左侧栏的标准不动）：左侧栏比其余几条先撑不住，推荐上限就是它还放得下的最大字号。
 // 10-31 用真字体扫过：Maple 360dp 只到 100%、393dp 110%、411dp 120%、430dp 130%；宋体 360dp 115%、411dp 140%、430dp 150%；
 // 粗体文本不影响这两种字体；320dp 标准字号已是顶部栏（推荐仍至少标 100%）。10-27 不算左侧栏时 Maple 360dp 到 145%、411dp 到 175%。
 
-// 在 size 下会改排的地方，按影响大小排，超出推荐时照这个提醒（今天页与课表的顶栏合成一句）。
+// 在 size 下会改排的地方，按影响大小排，超出推荐时照这个提醒（今天页顶栏 11-23 起两侧都是圆钮、不再改排）。
 List<String> textSizeAdaptations(BuildContext context, double screenWidth, double size) {
   final scaler = TextScaler.linear(size);
   return [
     if (!semesterRailFits(context, screenWidth, textScaler: scaler)) '学期视图的月份栏移到顶部',
     if (!courseCardColumnsFit(context, screenWidth - 32, textScaler: scaler)) '课程卡时刻挪到首行',
-    if (!todayHeaderFits(context, screenWidth - 32, textScaler: scaler) || !scheduleTitleFits(context, screenWidth, textScaler: scaler)) '顶栏按钮只留图标',
+    if (!scheduleTitleFits(context, screenWidth, textScaler: scaler)) '顶栏按钮只留图标',
   ];
 }
 

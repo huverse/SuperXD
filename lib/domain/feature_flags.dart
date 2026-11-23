@@ -13,7 +13,10 @@ abstract interface class FeatureGate {
   Stream<void> get changes;
 }
 
-// 百宝箱的电影院（灰度测试，人工决策见 lib/toolbox/cinema/cinema_service.dart 文件头）：开着才显示入口、才能进路由。
+// [人工决策-2026-11-23 22:09:09] 电影院、生活与住理生活全量（用户要求「解禁所有灰度测试功能」，选「配置放到 100%」，没选「代码里删掉开关」）：
+// 灰度配置里这三个开关写 100%，代码与 fallback 不动，开关留作远程急停（住理碰真钱与私有接口，出事改配置一小时内关掉）；
+// 稳定一两个版本后照上面的规矩删掉这三项、代码里的判断与配置里的同名开关。电影院的解析不在内（用户选「继续关着」，见 cinemaParseFlag）。
+// 百宝箱的电影院（人工决策见 lib/toolbox/cinema/cinema_service.dart 文件头）：开着才显示入口、才能进路由。
 const cinemaFlag = FeatureFlag('toolbox.cinema', fallback: false);
 
 // [人工决策-2026-11-20 22:39:37] 电影院的「解析」（播放页地址交给云解析）先不向用户开放、优化完再说：用户选「开关加规则包」：

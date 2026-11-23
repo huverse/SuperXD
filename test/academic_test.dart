@@ -20,6 +20,7 @@ import 'package:superxd/page/campus_sync_dialogs.dart';
 import 'package:superxd/page/schedule_page.dart';
 import 'package:superxd/page/shell_page.dart';
 import 'package:superxd/page/sync_records_page.dart';
+import 'package:superxd/page/today_page.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 import 'fixture_campus_gateway.dart';
@@ -82,6 +83,26 @@ void main() {
   });
 
   // 11-18 用户截图：没同步完的概括很长，放在行尾时把「同步记录」挤成一字一行、压到图标上。
+  // 11-23 全应用切换走查：课表页「去同步」这类从推入的页面回到今天页（go），上面那页退场时底下的分支直接换好，不再同时左右平移。
+  testWidgets('从推入的页面回到今天页：底栏壳被盖着时分支直接换，只有上面那页退场', (tester) async {
+    final (_, session) = await _app(tester);
+    final router = GoRouter.of(tester.element(find.byType(ShellPage)));
+    router.go('/service');
+    await tester.pumpAndSettle();
+    unawaited(router.push('/academic'));
+    await tester.pumpAndSettle();
+    router.go('/today');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
+    final today = tester.widget<FractionalTranslation>(find.ancestor(of: find.byType(TodayPage, skipOffstage: false), matching: find.byType(FractionalTranslation, skipOffstage: false)).first);
+    expect(today.translation, Offset.zero, reason: '今天这一栏已经在原位');
+    expect(find.byType(AcademicPage), findsOneWidget, reason: '学业页还在退场');
+    await tester.pumpAndSettle();
+    expect(find.byType(AcademicPage), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    session.dispose();
+  });
+
   testWidgets('没同步完的长概括写在「同步记录」下面、最多两行，标题照常一行', (tester) async {
     tester.view.physicalSize = const Size(1080, 2400);
     tester.view.devicePixelRatio = 1080 / 391;

@@ -7,6 +7,7 @@
 # 运行（在仓库根目录，一条命令；第一次会在 build/font_subset 建 venv、装固定版本的 fontTools，并下载原始字体）：
 #   python3 tool/font_subset.py            裁剪，写 assets/fonts 的 Maple 三个字重与 font_packs 的衬线三个字重
 #   python3 tool/font_subset.py charset    按 Unihan 与 lib 里的文字重新生成 tool/font_charset.txt（改了字符集要重跑上一条并换文件）
+#   python3 tool/font_subset.py wordmark   只生成侧栏左上角的 Newsreader 斜体字样 assets/fonts/newsreader_wordmark.ttf（不碰 Maple 与衬线包）
 #   --sources <目录>                        原始文件放在别处时指定（默认 build/font_subset/sources，缺的才下载）
 # 产物逐字节可复现：原始文件、字符集与 fontTools 版本都核对 SHA-256 或版本号，保存时不改时间戳、不重算外框；
 # 同一份输入重跑后 git status 不应有变化。衬线包的文件名带内容哈希前 12 位，换了内容就是新文件名，lib/domain/font_pack.dart 的登记要一起改。
@@ -43,6 +44,14 @@ NOTO = {
     'medium': (500, 3873870585, '7e2e4943ef89ed89ddd97558f76aff7ef72a1f39d85014ece03df28125d6c02a'),
     'semibold': (600, 3873870600, '738b5fab642d8cf91769e57c06323cde6dc268a153cd5cf2e370ae10c37ee91e'),
 }
+# 侧栏左上角的字样（人工决策见 lib/page/side_drawer.dart 的 SideDrawerPanel）：Newsreader 斜体可变字体（google/fonts 提交 991ce1de6075188e6b8977a5aa9fcd3610a4e946，
+# 版权声明里没有保留字体名），导出 opsz 72（大字号的展示用字形）、wght 420 的静态斜体，只留「SuperXD」七个字母（排版特性照留）。
+NEWSREADER_ITALIC = ('Newsreader-Italic[opsz,wght].ttf', 'https://raw.githubusercontent.com/google/fonts/991ce1de6075188e6b8977a5aa9fcd3610a4e946/ofl/newsreader/Newsreader-Italic%5Bopsz%2Cwght%5D.ttf',
+                     '796668611f80b64d5adf182fde3b6f29ed83b4e7cbec7b96937e84ac01364792')
+WORDMARK_TEXT = 'SuperXD'
+WORDMARK_AXES = {'opsz': 72, 'wght': 420}
+# 导出时写进 head 的修改时间（固定值，产物才逐字节可复现）：2026-11-23 00:00 UTC 距 1904-01-01 的秒数。
+WORDMARK_MODIFIED = 3846873600
 # 《通用规范汉字表》取自 Unihan 的 kTGH 字段（值为「2013:序号」，共 8105 字）。
 UNIHAN = ('Unihan.zip', 'https://www.unicode.org/Public/17.0.0/ucd/Unihan.zip', 'f7a48b2b545acfaa77b2d607ae28747404ce02baefee16396c5d2d7a8ef34b5e')
 # 字符集文件（连同说明行）的 SHA-256：重新生成字符集后改这里。
@@ -93,7 +102,7 @@ SYMBOL_RANGES = [
 # 缺了其中的繁体字，算出的基准线会变，汉字灰度边缘差一两个像素（裁剪前后的预览图对比查出），所以一并收下。
 AUTOHINT_CHARS = '他们你來們到和地对對就席我时時會来為能舰說说这這齊军同已愿既星是景民照现現理用置要軍那配里開雷露面顾个为人以個大有主些因它想意生當看着者自著裡过还进進過道還她将將年得情最样樣通即吗吧听呢品响嗎师師收断斷明眼間间际陈限除陳随際隨事前學或政斯新沒没然特球第經谁起例別别制动動增指朝期构物确种調调費费都田囗'
 # 生成字符集时一并扫描的界面文字：lib 下的源码（含注释，比只取字符串多收不多几个字）与界面里直接显示的文本文件。
-SCANNED = ['lib', 'assets/third_party_notices.txt', 'assets/fonts/LICENSE.txt', 'assets/fonts/noto_serif_sc_license.txt', 'LICENSE']
+SCANNED = ['lib', 'assets/third_party_notices.txt', 'assets/fonts/LICENSE.txt', 'assets/fonts/noto_serif_sc_license.txt', 'assets/fonts/newsreader_license.txt', 'LICENSE']
 
 
 def log(message):
@@ -193,6 +202,20 @@ def noto_static(variable_bytes, weight, modified):
     return out.getvalue()
 
 
+def wordmark(sources):
+    from fontTools.ttLib import TTFont
+    from fontTools.varLib import instancer
+    font = instancer.instantiateVariableFont(TTFont(io.BytesIO(source(sources, NEWSREADER_ITALIC))), dict(WORDMARK_AXES))
+    font['head'].modified = WORDMARK_MODIFIED
+    font.recalcTimestamp = False
+    static = io.BytesIO()
+    font.save(static)
+    data = subset(static.getvalue(), {ord(char) for char in WORDMARK_TEXT})
+    target = ROOT / 'assets' / 'fonts' / 'newsreader_wordmark.ttf'
+    target.write_bytes(data)
+    log(f'action=write file={target.relative_to(ROOT)} after={len(data)} sha256={sha256(data)}')
+
+
 def build(sources):
     unicodes = read_charset()
     log(f'action=charset codepoints={len(unicodes)}')
@@ -217,6 +240,7 @@ def build(sources):
         target.write_bytes(data)
         log(f'action=write file={target.relative_to(ROOT)} before={before} after={len(data)} sha256={sha256(data)}')
     stale = sorted(path.name for path in packs.glob('*.ttf') if path not in [target for target, _, _ in outputs])
+    wordmark(sources)
     if stale:
         log(f'action=stale files={",".join(stale)}（旧版本：还在支持的旧客户端可能要下载，按 lib/domain/font_pack.dart 的说明决定何时删）')
 
@@ -269,6 +293,10 @@ def main():
         del args[index:index + 2]
     if args == ['charset']:
         generate_charset(sources)
+        return
+    if args == ['wordmark']:
+        ensure_fonttools()
+        wordmark(sources)
         return
     if args:
         sys.exit('用法见文件头')
