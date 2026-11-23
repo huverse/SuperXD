@@ -79,11 +79,19 @@ class ZhuliBath {
     return plan();
   });
 
-  // 开水，返回下的单（预扣后的余额在 balance）。
-  Future<ZhuliOrderStart> start(ZhuliDevice device) async {
+  // 预先连上蓝牙设备（洗浴页打开时、点关水弹确认时就连，点下去只剩命令帧的来回；11-23 真机开水 5.1 秒里扫描连接发现服务占 2.4 秒）。
+  // 连好的交给 start 或 end；用不上由调用方 disconnect。ask 为假时不弹权限框（页面打开时预先连）。
+  Future<ZhuliBleLink> link(ZhuliDevice device, {bool ask = true}) async {
+    final link = _link();
+    await link.connect(bleName: device.bleName, bleMac: device.bleMac, ask: ask);
+    return link;
+  }
+
+  // 开水，返回下的单（预扣后的余额在 balance）。warm 是预先连的（见 link）。
+  Future<ZhuliOrderStart> start(ZhuliDevice device, {Future<ZhuliBleLink>? warm}) async {
     campusLog('[Zhuli] action=bath_start channel=${device.channel}');
     if (!device.bluetooth) return _run((session) => _client.startCloud(session, device));
-    return _withLink(device, (link, handshake) async {
+    return _withLink(device, warm: warm, (link, handshake) async {
       if (handshake.occupied) {
         // 设备被占用：是自己这台上没结束的单就接回去，别人的就换一台（同原 App）。
         final last = await _run(_client.lastRecord);
@@ -106,17 +114,17 @@ class ZhuliBath {
     });
   }
 
-  // 关水，返回结算后的订单（等到 finished，最多约 15 秒；还没结算完返回当时的样子）。
-  Future<ZhuliBill> end(ZhuliDevice device, String orderId) async {
+  // 关水，返回结算后的订单（等到 finished，最多约 15 秒；还没结算完返回当时的样子）。warm 是预先连的（见 link）。
+  Future<ZhuliBill> end(ZhuliDevice device, String orderId, {Future<ZhuliBleLink>? warm}) async {
     campusLog('[Zhuli] action=bath_end channel=${device.channel}');
     if (!device.bluetooth) {
       await _run((session) => _client.endCloud(session, orderId: orderId, deviceId: device.id));
       return _settled(orderId);
     }
-    await _withLink(device, (link, handshake) async {
-      // 握手时补传了历史单：在设备上已经关了水的，这一单已结算，不用再写结束帧。
-      if ((await _run((session) => _client.bill(session, orderId))).status == 'finished') return;
-      final frame = await _run((session) => _client.bleEndFrame(session, device.id, handshake.isn));
+    await _withLink(device, warm: warm, (link, handshake) async {
+      // 握手时补传了历史单：在设备上已经关了水的，这一单已结算，不用再写结束帧。查这一单与取结束帧一起发（结束帧只是取来，结算了就不写）。
+      final (bill, frame) = await (_run((session) => _client.bill(session, orderId)), _run((session) => _client.bleEndFrame(session, device.id, handshake.isn))).wait;
+      if (bill.status == 'finished') return;
       final reply = await link.exchange(frame, zhuliEndReply);
       await _run((session) => _client.bleEnded(session, device.id, reply));
     });
@@ -148,14 +156,31 @@ class ZhuliBath {
   }
 
   // 连上设备并握手，做完 work 断开；连着时设备发来的结束回执都交服务端结算。
-  Future<T> _withLink<T>(ZhuliDevice device, Future<T> Function(ZhuliBleLink link, ZhuliHandshake handshake) work) async {
-    final link = _link();
-    await link.connect(bleName: device.bleName, bleMac: device.bleMac);
+  // 预先连好、还连着的直接用，没连上或已经断了就当场再连；握手帧只要设备号，和连接同时去取（省一次来回），连不上时这个请求的结果不要了。
+  Future<T> _withLink<T>(ZhuliDevice device, Future<T> Function(ZhuliBleLink link, ZhuliHandshake handshake) work, {Future<ZhuliBleLink>? warm}) async {
+    final helloing = _run((session) => _client.bleHandshakeFrame(session, device.id));
+    // 先接住它的错：连接还没好时它就失败也不算没人接的错误，后面 await 时照样抛出来。
+    unawaited(helloing.then<void>((_) {}, onError: (Object _) {}));
+    ZhuliBleLink? ready;
+    if (warm != null) {
+      try {
+        final warmed = await warm;
+        if (warmed.connected) {
+          ready = warmed;
+        } else {
+          await warmed.disconnect();
+        }
+      } catch (error) {
+        campusLog('[Zhuli] action=ble_warm_unused reason=${error.runtimeType}');
+      }
+    }
+    campusLog('[Zhuli] action=ble_link warm=${ready != null}');
+    final link = ready ?? await this.link(device);
     final receipts = link.receipts.listen((reply) => unawaited(_run((session) => _client.bleEnded(session, device.id, reply)).catchError((Object error, StackTrace stack) {
       campusLog('[Zhuli] action=ble_receipt errorType=${error.runtimeType}\n$stack');
     })));
     try {
-      final hello = await _run((session) => _client.bleHandshakeFrame(session, device.id));
+      final hello = await helloing;
       final greeting = await link.exchange(hello, zhuliHandshakeReply);
       final handshake = await _run((session) => _client.bleHandshake(session, device.id, greeting));
       if (handshake.rateCommand case final rate?) await link.exchange(rate, zhuliRateReply);

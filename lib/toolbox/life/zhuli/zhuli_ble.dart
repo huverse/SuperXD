@@ -26,13 +26,17 @@ int? zhuliFrameCommand(String frame) => frame.length >= zhuliFrameLength * 2 ? i
 // 帧由服务端生成，这里只搬运（见 zhuli_bath.dart）。
 abstract interface class ZhuliBleLink {
   // 找到 bleName 这台并连上、打开通知；蓝牙没开、没给权限、找不到或连不上抛 ZhuliException（message 给人看）。
-  Future<void> connect({required String bleName, required String bleMac});
+  // ask 为假是预先连（没有用户操作）：没给过权限就不弹系统授权框、直接失败，等用户点开水时再问。
+  Future<void> connect({required String bleName, required String bleMac, bool ask = true});
 
   // 写一帧，等设备回一帧命令类型在 expect 里的；同原 App：每次最多等 4 秒，没等到再写一次，CRC 错立即失败。没等到抛 ZhuliException。
   Future<String> exchange(String frame, Set<int> expect);
 
   // 设备自己发来的结束回执（在设备上关了水），收到要交给服务端结算。
   Stream<String> get receipts;
+
+  // 还连着（预先连好的设备可能已经自己断开，用之前看一眼）。
+  bool get connected;
 
   Future<void> disconnect();
 }
@@ -44,6 +48,8 @@ const _scanTimeout = Duration(seconds: 5);
 const _connectTimeout = Duration(seconds: 6);
 const _connectAttempts = 3;
 const _connectPause = Duration(milliseconds: 1500);
+// 第一次连接前只等扫描停稳（原 App 第一次也等 1.5 秒，11-23 真机开关水各白等这一下，见 _connect）。
+const _firstConnectPause = Duration(milliseconds: 200);
 // 取消没连上的连接：插件对没连上的设备收不到断开的回调（模拟器上要等满超时），只等一会儿。
 const _cancelTimeout = Duration(seconds: 2);
 const _gattTimeout = Duration(seconds: 10);
@@ -62,6 +68,8 @@ class PluginZhuliBleLink implements ZhuliBleLink {
   Peripheral? _device;
   GATTCharacteristic? _write;
   StreamSubscription<GATTCharacteristicNotifiedEventArgs>? _notified;
+  StreamSubscription<PeripheralConnectionStateChangedEventArgs>? _states;
+  var _connected = false;
   final _receipts = StreamController<String>.broadcast();
   Completer<String>? _waiting;
   Set<int> _expect = const {};
@@ -70,7 +78,14 @@ class PluginZhuliBleLink implements ZhuliBleLink {
   Stream<String> get receipts => _receipts.stream;
 
   @override
-  Future<void> connect({required String bleName, required String bleMac}) async {
+  bool get connected => _connected;
+
+  // 这个进程里连上过一次（iOS 上不弹框查不了授权，连上过才说明给过）。
+  static var _granted = false;
+
+  @override
+  Future<void> connect({required String bleName, required String bleMac, bool ask = true}) async {
+    if (!ask && !await _quietlyGranted()) throw _ble('还没给蓝牙权限');
     await _authorize();
     final central = _central ??= CentralManager();
     await _poweredOn(central);
@@ -88,6 +103,11 @@ class PluginZhuliBleLink implements ZhuliBleLink {
         if (event.peripheral.uuid == device.uuid && event.characteristic.uuid == _notifyUuid) _onFrame(_hex(event.value));
       });
       await central.setCharacteristicNotifyState(device, notify, state: true).timeout(_gattTimeout);
+      _states = central.connectionStateChanged.listen((event) {
+        if (event.peripheral.uuid == device.uuid && event.state == ConnectionState.disconnected) _connected = false;
+      });
+      _connected = true;
+      _granted = true;
       campusLog('[Zhuli] action=ble_connected');
     } on ZhuliException {
       await disconnect();
@@ -97,6 +117,14 @@ class PluginZhuliBleLink implements ZhuliBleLink {
       await disconnect();
       throw _ble('设备通讯失败，再试一次');
     }
+  }
+
+  // 不弹框地看权限给了没有：安卓查状态，iOS 看这个进程里连上过没有。
+  Future<bool> _quietlyGranted() async {
+    if (!Platform.isAndroid) return _granted;
+    final sdk = (await DeviceInfoPlugin().androidInfo).version.sdkInt;
+    if (sdk >= 31) return await Permission.bluetoothScan.isGranted && await Permission.bluetoothConnect.isGranted;
+    return await Permission.locationWhenInUse.isGranted;
   }
 
   Future<void> _authorize() async {
@@ -170,10 +198,11 @@ class PluginZhuliBleLink implements ZhuliBleLink {
     }
   }
 
-  // 连接同原 App（关水页的 ua）：最多 3 次，每次先等 1.5 秒、最多等 6 秒；没连上先取消这次挂着的连接再试，免得几次请求叠在系统里（11-22 真机扫到了、一次 6 秒没连上）。
+  // 连接：最多 3 次、每次最多等 6 秒，没连上先取消这次挂着的连接再试，免得几次请求叠在系统里（11-22 真机扫到了、一次 6 秒没连上）；
+  // 重试之间同原 App 等 1.5 秒，第一次只等 0.2 秒让扫描停稳（原 App 第一次也等 1.5 秒，11-23 诊断包里开水 5.1 秒、关水 6.5 秒，这一下各占 1.5 秒）。
   Future<void> _connect(CentralManager central, Peripheral device, {required int attempts}) async {
     for (var attempt = 1; attempt <= attempts; attempt++) {
-      await Future<void>.delayed(_connectPause);
+      await Future<void>.delayed(attempt == 1 ? _firstConnectPause : _connectPause);
       try {
         await central.connect(device).timeout(_connectTimeout);
         campusLog('[Zhuli] action=ble_connect result=ok attempt=$attempt');
@@ -230,8 +259,11 @@ class PluginZhuliBleLink implements ZhuliBleLink {
 
   @override
   Future<void> disconnect() async {
+    _connected = false;
     await _notified?.cancel();
     _notified = null;
+    await _states?.cancel();
+    _states = null;
     final central = _central, device = _device;
     _device = null;
     _write = null;

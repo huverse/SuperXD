@@ -79,6 +79,9 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
   var _favorite = false;
   Timer? _ticker;
   Timer? _poll;
+  // 预先连好的蓝牙（见 _warmUp）与到点放开它的计时。
+  Future<ZhuliBleLink>? _warm;
+  Timer? _warmExpiry;
 
   DateTime _now() => (widget.clock ?? DateTime.now)();
 
@@ -92,8 +95,34 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
   void dispose() {
     _ticker?.cancel();
     _poll?.cancel();
+    _dropWarm();
     super.dispose();
   }
+
+  // 走蓝牙、能开水时先在后台连上设备（同共享单车、充电宝的做法：点下去只剩命令帧的来回）；没给过蓝牙权限不弹框、不连。
+  // 20 秒没用就断开（不一直占着设备，共用浴室里别人还能连）；点开水时没连上或已经断了照常当场连。
+  void _warmUp() {
+    final plan = _plan, device = _device;
+    if (plan == null || device == null || !device.bluetooth || plan.blocked != null || _stage != _Stage.ready || _warm != null) return;
+    final warm = _bath.link(device, ask: false);
+    unawaited(warm.then<void>((_) => campusLog('[Zhuli] action=ble_warm result=ok'), onError: (Object error) => campusLog('[Zhuli] action=ble_warm result=failed reason=${error.runtimeType}')));
+    _warm = warm;
+    _warmExpiry = Timer(const Duration(seconds: 20), _dropWarm);
+  }
+
+  // 交出预先连的（开水时用），不再由页面断开。
+  Future<ZhuliBleLink>? _takeWarm() {
+    final warm = _warm;
+    _warm = null;
+    _warmExpiry?.cancel();
+    return warm;
+  }
+
+  void _dropWarm() {
+    if (_takeWarm() case final warm?) _release(warm);
+  }
+
+  void _release(Future<ZhuliBleLink> warm) => unawaited(warm.then((link) => link.disconnect(), onError: (Object _) {}));
 
   Future<void> _check() async {
     setState(() {
@@ -111,7 +140,11 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
         _favorite = lists.favorites.any((entry) => entry.id == plan.device.id);
         _stage = _Stage.ready;
       });
-      if (plan.running case final running?) _running(running.orderId, DateTime.tryParse(zhuliMoment(running.createAt) ?? '')?.toLocal() ?? _now());
+      if (plan.running case final running?) {
+        _running(running.orderId, DateTime.tryParse(zhuliMoment(running.createAt) ?? '')?.toLocal() ?? _now());
+      } else {
+        _warmUp();
+      }
     } on ZhuliException catch (error) {
       if (mounted) setState(() => _loadError = error.message);
     } catch (error, stack) {
@@ -165,11 +198,13 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
   // 11-22 真机上同一台两用设备强制走蓝牙三轮都通，用户要能用蓝牙；没选「默认蓝牙连不上自动改云端」与「只照学校设定不给选」。选了记进本机设备列表，下次默认用它。
   void _choose(int channel) {
     final plan = _plan!;
+    _dropWarm();
     setState(() {
       _device = plan.device.using(channel);
       _error = null;
       _mates = const [];
     });
+    _warmUp();
     unawaited(widget.service.devices.prefer(widget.phone, plan.device.id, channel).catchError((Object error, StackTrace stack) {
       campusLog('[Zhuli] action=prefer_channel errorType=${error.runtimeType}\n$stack');
       return (recent: <ZhuliDeviceEntry>[], favorites: <ZhuliDeviceEntry>[]);
@@ -182,13 +217,14 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
       final agreed = await showCampusConfirm(context, title: '开水', message: question, action: '仍要开');
       if (!agreed || !mounted) return;
     }
+    final warm = _takeWarm();
     setState(() {
       _stage = _Stage.starting;
       _error = null;
       _mates = const [];
     });
     try {
-      final order = await _bath.start(device);
+      final order = await _bath.start(device, warm: warm);
       if (!mounted) return;
       _balanceAfter = order.balance;
       _running(order.orderId, _now());
@@ -222,15 +258,21 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
 
   Future<void> _end() async {
     final device = _device!, orderId = _orderId!;
+    // 蓝牙的弹确认时就在后台连设备，点「关水」时多半已经连好；取消就断开。
+    final warm = device.bluetooth ? _bath.link(device) : null;
+    if (warm != null) unawaited(warm.then<void>((_) {}, onError: (Object _) {}));
     final agreed = await showCampusConfirm(context, title: '关水', message: device.bluetooth ? '手机放在设备旁，现在关水并结算？' : '现在关水并结算？', action: '关水');
-    if (!agreed || !mounted) return;
+    if (!agreed || !mounted) {
+      if (warm != null) _release(warm);
+      return;
+    }
     _poll?.cancel();
     setState(() {
       _stage = _Stage.ending;
       _error = null;
     });
     try {
-      final bill = await _bath.end(device, orderId);
+      final bill = await _bath.end(device, orderId, warm: warm);
       if (mounted) _finished(bill);
     } on ZhuliException catch (error) {
       if (!mounted) return;

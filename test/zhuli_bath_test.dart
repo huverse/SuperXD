@@ -159,26 +159,39 @@ class _FakeBath {
   });
 }
 
-// 假蓝牙：记下连了哪台、写了哪些帧；回帧是同一命令类型、第 4 个字节为 1。
+// 假蓝牙：记下连了哪台（与是不是允许弹权限框）、写了哪些帧；回帧是同一命令类型、第 4 个字节为 1。
 class _FakeLink implements ZhuliBleLink {
   final written = <String>[];
-  final connected = <String>[];
+  final connects = <String>[];
+  final asks = <bool>[];
   var disconnects = 0;
+  var _connected = false;
   // 写这一命令类型时设备不回。
   int? silentOn;
   // 连接时就失败（附近找不到、连不上）。
   ZhuliException? connectError;
   // 握手时设备顺带发来一张结束回执（之前在设备上关过水）。
   String? receiptOnHandshake;
+  // 连接挂着、等测试放行（看连接期间已经发了哪些请求）。
+  Completer<void>? holdConnect;
   final _receipts = StreamController<String>.broadcast();
 
   @override
   Stream<String> get receipts => _receipts.stream;
 
   @override
-  Future<void> connect({required String bleName, required String bleMac}) async {
+  bool get connected => _connected;
+
+  // 设备自己断开（预先连好后空闲太久）。
+  void drop() => _connected = false;
+
+  @override
+  Future<void> connect({required String bleName, required String bleMac, bool ask = true}) async {
+    asks.add(ask);
     if (connectError case final error?) throw error;
-    connected.add(bleName);
+    await holdConnect?.future;
+    connects.add(bleName);
+    _connected = true;
   }
 
   @override
@@ -191,7 +204,10 @@ class _FakeLink implements ZhuliBleLink {
   }
 
   @override
-  Future<void> disconnect() async => disconnects++;
+  Future<void> disconnect() async {
+    disconnects++;
+    _connected = false;
+  }
 }
 
 ZhuliService _service(_FakeBath fake) => ZhuliService(vault: MemoryZhuliVault(), devices: ZhuliDeviceStore.memory(), client: ZhuliClient(http: ZhuliHttp(client: fake.client)));
@@ -383,7 +399,7 @@ void main() {
       expect(fake.count('/webapi/v1/device/collect_gprs_device_status'), 1);
       final query = fake.lastQuery('/webapi/v1/consume/create_order');
       expect((query['net_type'], query['port_name'], query['staff_id'], query['send_to_device'], query['act'], query.containsKey('money')), ('6', '0', 'U1', '1', 'consume', false));
-      expect(link.connected, isEmpty);
+      expect(link.connects, isEmpty);
       final bill = await bath.end(await device(101), 'O1');
       expect(fake.lastQuery('/webapi/v1/consume/remote_end_order'), containsPair('order_id', 'O1'));
       expect((bill.status, bill.money, bill.refund, bill.fromCoupon), ('finished', 14, 486, 14));
@@ -392,7 +408,7 @@ void main() {
     test('蓝牙开水按原 App 搬运帧：握手 → 设费率 → 补传历史单 → 带 isn 下单 → 写开始帧 → 回帧交服务端；做完断开', () async {
       final order = await bath.start(await device(102));
       expect(order.orderId, 'O1');
-      expect(link.connected, ['XN-102']);
+      expect(link.connects, ['XN-102']);
       expect(link.written, [_frame(1), _frame(16), _frame(2), _frame(3, 0xAB)]);
       expect(fake.lastQuery('/webapi/v1/device/ble/heart_shark_response')['hex'], _frame(1, 1));
       expect(fake.lastQuery('/webapi/v1/device/ble/create_history_order_cmd')['isn'], 'ISN1');
@@ -401,6 +417,19 @@ void main() {
       expect(fake.lastQuery('/webapi/v1/consume/ble/start_consume_response'), allOf(containsPair('hex', _frame(3, 1)), containsPair('order_id', 'O1')));
       expect(fake.count('/webapi/v1/device/collect_gprs_device_status'), 0, reason: '蓝牙不唤醒');
       expect(link.disconnects, 1);
+    });
+
+    test('握手帧只要设备号，和连接同时去取：连接还挂着时请求已经发出去', () async {
+      final hold = Completer<void>();
+      link.holdConnect = hold;
+      final target = await device(102);
+      final starting = bath.start(target);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(link.connects, isEmpty);
+      expect(fake.count('/webapi/v1/device/ble/create_hand_shake_cmd'), 1);
+      hold.complete();
+      await starting;
+      expect(fake.count('/webapi/v1/device/ble/create_hand_shake_cmd'), 1, reason: '不再取第二次');
     });
 
     test('蓝牙握手说设备被占用：是自己这台上的单就接回去，别人的就换一台；都断开', () async {
@@ -531,7 +560,8 @@ void main() {
       expect(find.text('手机靠近设备、打开蓝牙'), findsOneWidget);
       await tester.tap(find.text('开水'));
       await _settle(tester);
-      expect(link.connected, ['XN-101']);
+      expect(link.connects, ['XN-101'], reason: '页面打开时预先连上，点开水不再连第二次');
+      expect(link.asks, [false], reason: '预先连不弹权限框');
       expect(fake.count('/webapi/v1/device/collect_gprs_device_status'), 0, reason: '没走云端');
       expect(fake.lastQuery('/webapi/v1/consume/create_order')['net_type'], '4');
       expect((await tester.runAsync(() => service.devices.load(_phone)))!.recent.single.channel, 4);
@@ -545,6 +575,29 @@ void main() {
       await tester.pumpWidget(page());
       await _settle(tester);
       expect(tester.widget<CampusSegmented<int>>(find.byType(CampusSegmented<int>)).selected, 4, reason: '学校设定蓝牙优先');
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('预先连：只有蓝牙的设备打开页面就连上，点开水直接用；预先连的已经断了就当场再连；关水弹确认时就连，取消就断开', (tester) async {
+      await signIn(tester);
+      final link = _FakeLink();
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ZhuliBathPage(service: service, phone: _phone, deviceId: 102, link: () => link, clock: () => _beijing(21, 0))));
+      await _settle(tester);
+      expect(link.connects, ['XN-102'], reason: '打开页面就在后台连');
+      link.drop();
+      await tester.tap(find.text('开水'));
+      await _settle(tester);
+      expect(link.connects, ['XN-102', 'XN-102'], reason: '预先连的断了，当场再连');
+      expect(link.asks.last, isTrue, reason: '用户点了开水才可以问权限');
+      expect(find.text('关水'), findsOneWidget);
+      final before = link.disconnects;
+      await tester.tap(find.text('关水'));
+      await _settle(tester);
+      expect(link.connects.length, 3, reason: '弹确认时就开始连');
+      await tester.tap(find.text('取消'));
+      await _settle(tester);
+      expect(link.disconnects, greaterThan(before), reason: '取消就断开');
+      expect(find.text('关水'), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
     });
 

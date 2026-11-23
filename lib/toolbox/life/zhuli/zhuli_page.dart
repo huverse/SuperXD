@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_animated_list.dart';
+import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
@@ -411,11 +412,19 @@ class _ZhuliPageState extends State<ZhuliPage> {
             Row(
               children: [
                 Expanded(child: Text('最近使用', style: secondary)),
+                // 展开是标题行右端的文字链接（同 iOS「显示全部」、支付宝「更多 ›」），不画胶囊，触区仍 48（11-23 用户嫌胶囊别扭）。
                 if (_recent.length > 2)
-                  TextButton.icon(
+                  TextButton(
+                    style: campusLink,
                     onPressed: () => setState(() => _recentOpen = !_recentOpen),
-                    icon: CampusIcon(_recentOpen ? CampusIcons.collapse : CampusIcons.expand),
-                    label: Text(_recentOpen ? '收起' : '全部 ${_recent.length} 台'),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(_recentOpen ? '收起' : '全部 ${_recent.length} 台'),
+                        const SizedBox(width: CampusGap.tight),
+                        CampusIcon(_recentOpen ? CampusIcons.collapse : CampusIcons.expand, size: 18),
+                      ],
+                    ),
                   ),
               ],
             ),
