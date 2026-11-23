@@ -64,6 +64,19 @@ class _VisibleClip extends CustomClipper<Rect> {
   bool shouldReclip(_VisibleClip oldClipper) => oldClipper.hidden != hidden;
 }
 
+// 页面滚动区的内边距：底边再加上系统手势条（导航栏）的高度。滚动区不包 SafeArea 的底边，内容一直画到屏幕最底下、
+// 滚到底时最后一项完整停在手势条上方（安卓 15 起强制全面屏的通行做法）；包了 SafeArea 的底边，滚动区会在手势条上方硬切，
+// 再叠上下缘渐隐就像页面被截断（11-23 用户截图指出很多页都这样）。code_conventions_test.dart 守护 CampusScrollFade 里的 SafeArea 不留底边。
+EdgeInsets campusScrollPadding(BuildContext context, EdgeInsets padding) => padding + EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom);
+
+// CustomScrollView 的同一件事：放在 slivers 最后，留出手势条的高度。
+class CampusScrollTail extends StatelessWidget {
+  const CampusScrollTail({super.key});
+
+  @override
+  Widget build(BuildContext context) => SliverToBoxAdapter(child: SizedBox(height: MediaQuery.paddingOf(context).bottom));
+}
+
 // 页面滚动区的柔和边缘（鸿蒙标题栏渐变、iOS 滚动边缘的轻量做法）：透明顶栏下，内容滚过上缘时自身渐隐（最多24dp），
 // 露出真实背景而不是被一条硬线截断；下缘有浮动底栏时按覆盖高度渐隐，没有时下面还有内容就同样自身渐隐（最多24dp，滚到底不淡），
 // 不在滚动区下缘留一条硬切的线（10-27 课表学期视图底部被截成一条直线后加）。听子树里的纵向滚动（含横向翻页里的每页列表）。子树里同样不能放玻璃。

@@ -228,8 +228,9 @@ class ZhuliLoginPage extends StatelessWidget {
     ),
     body: CampusScrollFade(
       child: SafeArea(
+        bottom: false,
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: campusScrollPadding(context, const EdgeInsets.all(16)),
           children: [
             CampusSurface(
               padding: EdgeInsets.fromLTRB(16, campusFieldGap(context), 16, 16),
@@ -339,8 +340,9 @@ class _ZhuliResetPageState extends State<ZhuliResetPage> {
       ),
       body: CampusScrollFade(
         child: SafeArea(
+          bottom: false,
           child: ListView(
-            padding: const EdgeInsets.all(16),
+            padding: campusScrollPadding(context, const EdgeInsets.all(16)),
             children: [
               CampusSurface(
                 padding: EdgeInsets.fromLTRB(16, campusFieldGap(context), 16, 16),

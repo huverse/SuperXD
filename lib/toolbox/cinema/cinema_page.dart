@@ -138,6 +138,7 @@ class _CinemaPageState extends State<CinemaPage> {
     ),
     body: CampusScrollFade(
       child: SafeArea(
+        bottom: false,
         child: FutureBuilder<void>(
           future: _ready,
           builder: (context, snapshot) {
@@ -179,6 +180,7 @@ class _CinemaPageState extends State<CinemaPage> {
                         ),
                       ),
                       const SliverToBoxAdapter(child: SizedBox(height: CampusGap.section)),
+                      const CampusScrollTail(),
                     ],
                   ),
                 ),
@@ -195,7 +197,7 @@ class _CinemaPageState extends State<CinemaPage> {
     final text = Theme.of(context).textTheme;
     final palette = CampusPalette.of(context);
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: campusScrollPadding(context, const EdgeInsets.all(16)),
       children: [
         CampusSurface(
           child: Column(

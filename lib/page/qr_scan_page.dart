@@ -13,6 +13,7 @@ import 'package:flutter_zxing/flutter_zxing.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/page/appearance_page.dart';
 import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/theme/campus_transitions.dart';
 
 // 通用扫码页：相机取景与相册识别都用 zxing-cpp（flutter_zxing）在本机解码，画面与内容不上传、不联网。
 // 只把内容交给调用方的 accept 判断，认下的原样返回，不跳转、不打开链接；不认的原地提示后继续扫。
@@ -25,14 +26,17 @@ import 'package:superxd/theme/campus_icons.dart';
 typedef QrAccept = String? Function(String raw);
 
 class QrScanPage extends StatefulWidget {
-  const QrScanPage({super.key, this.hint, required this.accept, this.onCode, this.until, this.status});
+  const QrScanPage({super.key, this.hint, required this.accept, this.onCode, this.until, this.status, this.then});
   final String? hint;
 
   // 返回提示文案表示不认这个内容；返回 null 表示认下，页面随即关掉并把原文交给调用方。
   final QrAccept accept;
+  // 认下后要去的页面：给了就把扫码页直接换成它（只走一次转场，返回回到扫码前的那一页），不再先关扫码页、再由调用方推新页
+  // （中间会露出原来那一页，11-23 用户视频里的闪）。
   final void Function(String raw)? onCode;
   final Future<void>? until;
   final ValueListenable<String?>? status;
+  final Widget Function(String raw)? then;
   @override
   State<QrScanPage> createState() => _QrScanPageState();
 }
@@ -87,6 +91,10 @@ class _QrScanPageState extends State<QrScanPage> {
       return;
     }
     _done = true;
+    if (widget.then case final then?) {
+      unawaited(Navigator.of(context).pushReplacement(CampusPageRoute<void>(builder: (_) => then(raw))));
+      return;
+    }
     Navigator.pop(context, raw);
   }
 

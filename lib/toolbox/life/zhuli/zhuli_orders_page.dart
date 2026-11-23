@@ -107,8 +107,9 @@ class _ZhuliOrdersPageState extends State<ZhuliOrdersPage> {
       ),
       body: CampusScrollFade(
         child: SafeArea(
+          bottom: false,
           child: ListView(
-            padding: const EdgeInsets.all(16),
+            padding: campusScrollPadding(context, const EdgeInsets.all(16)),
             children: [
               CampusSegmented<_OrderTab>(
                 values: _OrderTab.values,
@@ -131,7 +132,7 @@ class _ZhuliOrdersPageState extends State<ZhuliOrdersPage> {
                 )
               else ...[
                 if (_tab == _OrderTab.consume)
-                  for (final record in _consume) _row(context, key: record.orderId, title: [zhuliConsumeType(record.consumeType), if (record.deviceName.isNotEmpty) record.deviceName].join(' · '), time: record.createAt, status: zhuliConsumeStatus(record.status), money: record.money, sheet: () => _BillSheet(service: widget.service, phone: widget.phone, orderId: record.orderId))
+                  for (final record in _consume) _row(context, key: record.orderId, title: [zhuliConsumeType(record.consumeType), if (zhuliOrderDevice(record.orderId) case final device?) '设备号 $device' else if (record.deviceName.isNotEmpty) record.deviceName].join(' · '), time: record.createAt, status: zhuliConsumeStatus(record.status), money: record.money, sheet: () => _BillSheet(service: widget.service, phone: widget.phone, orderId: record.orderId))
                 else
                   for (final order in _recharge) _row(context, key: order.outTradeNo, title: '充值', time: order.createAt, status: zhuliRechargeStatus(order.status), money: order.value, sheet: () => _RechargeSheet(service: widget.service, phone: widget.phone, outTradeNo: order.outTradeNo)),
                 if (more)
@@ -235,7 +236,7 @@ class _BillSheet extends StatelessWidget {
     read: () => service.run(phone, (session) => service.client.bill(session, orderId)),
     rows: (bill) => [
       ('类型', zhuliConsumeType(bill.consumeType)),
-      ('设备', bill.deviceName),
+      ('设备', [if (bill.deviceName.isNotEmpty) bill.deviceName, if ((bill.deviceId > 0 ? bill.deviceId : zhuliOrderDevice(bill.orderId)) case final device?) '设备号 $device'].join(' · ')),
       ('位置', bill.place),
       ('开始', zhuliShownTime(bill.createAt)),
       if (bill.consumeType == 'bath') ('用水', '${bill.liters.toStringAsFixed(2)} 升 · ${bill.seconds} 秒'),

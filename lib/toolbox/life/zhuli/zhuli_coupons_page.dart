@@ -88,8 +88,9 @@ class _ZhuliCouponsPageState extends State<ZhuliCouponsPage> {
       ),
       body: CampusScrollFade(
         child: SafeArea(
+          bottom: false,
           child: ListView(
-            padding: const EdgeInsets.all(16),
+            padding: campusScrollPadding(context, const EdgeInsets.all(16)),
             children: [
               CampusSegmented<ZhuliCouponTab>(
                 values: ZhuliCouponTab.values,

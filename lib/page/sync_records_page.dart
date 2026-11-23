@@ -54,11 +54,11 @@ class _SyncRecordsPageState extends State<SyncRecordsPage> {
         leading: IconButton(tooltip: '返回', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.back)),
         title: const Text('同步记录'),
       ),
-      body: CampusScrollFade(child: SafeArea(child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: switch (records) {
+      body: CampusScrollFade(child: SafeArea(bottom: false, child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: switch (records) {
         null => const CampusLoading(label: '正在读取'),
         GatewayResult(ok: false, :final error) => CampusLoadError(message: error?.message ?? '读取失败', onRetry: _load),
         GatewayResult(:final data) when data == null || data.isEmpty => Center(child: Text('还没有同步记录', style: secondary)),
-        GatewayResult(:final data) => ListView(padding: const EdgeInsets.all(16), children: [
+        GatewayResult(:final data) => ListView(padding: campusScrollPadding(context, const EdgeInsets.all(16)), children: [
           for (final record in data!)
             CampusSurface(
               margin: const EdgeInsets.only(bottom: 12),
@@ -116,7 +116,7 @@ class SyncRecordPage extends StatelessWidget {
         leading: IconButton(tooltip: '返回', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.back)),
         title: Text('${record.trigger == SyncTrigger.auto ? '自动' : '手动'}同步'),
       ),
-      body: CampusScrollFade(child: SafeArea(child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: ListView(padding: const EdgeInsets.all(16), children: [
+      body: CampusScrollFade(child: SafeArea(bottom: false, child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: ListView(padding: campusScrollPadding(context, const EdgeInsets.all(16)), children: [
         Text(formatCampusRelative(record.at.toIso8601String()), style: secondary),
         const SizedBox(height: 12),
         if (record.changes.isEmpty && record.failures.isEmpty && record.same.isEmpty) Text(syncRecordHeadline(record), style: TextStyle(fontSize: CampusFontSize.body, color: palette.onSurface)),

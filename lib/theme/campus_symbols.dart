@@ -33,6 +33,8 @@ final Map<IconData, String> _symbols = {
   CampusIcons.manageSchedule: 'calendar.badge.clock',
   CampusIcons.history: 'clock.arrow.circlepath',
   CampusIcons.add: 'plus',
+  CampusIcons.deviceNumber: 'keyboard',
+  CampusIcons.building: 'building.2',
   CampusIcons.lock: 'lock',
   CampusIcons.switchAccount: 'person.2',
   CampusIcons.download: 'arrow.down.circle',

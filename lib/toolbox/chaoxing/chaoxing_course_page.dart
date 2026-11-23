@@ -145,7 +145,7 @@ class _ChaoxingCoursePageState extends State<ChaoxingCoursePage> {
           ];
           return CampusScrollFade(
             child: ListView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+              padding: campusScrollPadding(context, const EdgeInsets.fromLTRB(16, 8, 16, 32)),
               itemCount: rows.length,
               itemBuilder: (context, index) => rows[index](),
             ),

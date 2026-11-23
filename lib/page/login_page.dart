@@ -180,8 +180,9 @@ class _LoginPageState extends State<LoginPage> {
         backgroundColor: Colors.transparent,
         appBar: widget.switching ? AppBar(leading: IconButton(tooltip: '返回', onPressed: () => context.pop(), icon: const CampusIcon(CampusIcons.back)), title: const Text('切换账号'), backgroundColor: Colors.transparent) : null,
         body: CampusScrollFade(child: SafeArea(
+          bottom: false,
           child: LayoutBuilder(builder: (context, constraints) => SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
+            padding: campusScrollPadding(context, const EdgeInsets.all(16)),
             child: ConstrainedBox(
               constraints: BoxConstraints(minHeight: (constraints.maxHeight - 32).clamp(0, double.infinity)),
               child: Column(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [

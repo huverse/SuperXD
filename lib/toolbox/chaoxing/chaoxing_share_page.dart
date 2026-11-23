@@ -135,8 +135,9 @@ class _ChaoxingTicketPageState extends State<ChaoxingTicketPage> {
       ),
       body: CampusScrollFade(
         child: SafeArea(
+          bottom: false,
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+            padding: campusScrollPadding(context, const EdgeInsets.fromLTRB(16, 20, 16, 20)),
             children: [
               CampusSurface(
                 padding: const EdgeInsets.all(20),

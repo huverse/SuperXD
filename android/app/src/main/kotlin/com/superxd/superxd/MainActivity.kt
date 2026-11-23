@@ -46,6 +46,9 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler(chaoxingDevice)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "superxd/location_settings")
             .setMethodCallHandler(LocationSettingsChannel(this))
+        // 住理生活蓝牙连上设备后调高连接优先级（见 ZhuliBleBoost.kt）。
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "superxd/zhuli_ble")
+            .setMethodCallHandler(ZhuliBleBoost(flutterEngine))
         sensitiveClipboard = SensitiveClipboard(this)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "superxd/sensitive_clipboard")
             .setMethodCallHandler(sensitiveClipboard)

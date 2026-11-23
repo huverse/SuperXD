@@ -29,7 +29,8 @@ typedef ToolboxTimetable = Future<CampusTimetable> Function();
 
 // 扫码：相机页面在 page 层，百宝箱不依赖它，由组合根注入。
 // hint 是取景页的提示语，accept 返回非空表示不认这个内容（原地提示），认下就把原文交回来；取消返回空。
-typedef ToolboxQrScan = Future<String?> Function(BuildContext context, String hint, String? Function(String raw) accept);
+// 给了 then 时认下的码不交回（返回空），扫码页直接换成 then 的页面（只走一次转场，返回回到扫码前那一页；扫码洗浴用）。
+typedef ToolboxQrScan = Future<String?> Function(BuildContext context, String hint, String? Function(String raw) accept, {Widget Function(String raw)? then});
 
 // 取一张图（相册或相机）：取图与缓存副本清理在 page 层，百宝箱不依赖它，由组合根注入。
 // 返回压缩后的副本路径与 discard（删掉这次取图留在缓存里的副本），用完必须调用 discard；取消返回空。

@@ -580,12 +580,13 @@ class LegalPage extends StatelessWidget {
             ),
             Expanded(
               child: SafeArea(
+                bottom: false,
                 top: false,
                 child: Center(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 800),
                     child: CampusScrollFade(child: ListView.builder(
-                      padding: const EdgeInsets.all(20),
+                      padding: campusScrollPadding(context, const EdgeInsets.all(20)),
                       itemCount: sections.length + 1,
                       itemBuilder: (context, index) => index == 0 ? Padding(
                         padding: const EdgeInsets.only(bottom: 24),

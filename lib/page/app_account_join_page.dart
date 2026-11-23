@@ -163,7 +163,7 @@ class _AppAccountJoinPageState extends State<AppAccountJoinPage> {
         leading: IconButton(tooltip: '返回', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.back)),
         title: const Text('扫码登录'),
       ),
-      body: CampusScrollFade(child: SafeArea(child: ListView(padding: const EdgeInsets.all(20), children: [
+      body: CampusScrollFade(child: SafeArea(bottom: false, child: ListView(padding: campusScrollPadding(context, const EdgeInsets.all(20)), children: [
         CampusSurface(padding: const EdgeInsets.all(20), child: Column(children: [
           AspectRatio(aspectRatio: 1, child: Container(
             decoration: BoxDecoration(color: light.surface, borderRadius: BorderRadius.circular(20), border: Border.all(color: colors.outlineSubtle)),

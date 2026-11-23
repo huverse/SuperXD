@@ -26,6 +26,7 @@ class _ThirdPartyPageState extends State<ThirdPartyPage> {
       title: const Text('开源许可'),
     ),
     body: CampusScrollFade(child: SafeArea(
+      bottom: false,
       child: FutureBuilder<String>(
         future: _text,
         builder: (context, snapshot) {
@@ -34,7 +35,7 @@ class _ThirdPartyPageState extends State<ThirdPartyPage> {
             return const Center(child: CampusLoading(label: '正在读取开源许可'));
           }
           return ListView(
-            padding: const EdgeInsets.all(16),
+            padding: campusScrollPadding(context, const EdgeInsets.all(16)),
             children: [
               Align(alignment: AlignmentDirectional.centerStart, child: OutlinedButton.icon(
                 onPressed: () => Navigator.push(context, CampusPageRoute<void>(builder: (context) => const CampusLicensesPage())),

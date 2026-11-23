@@ -178,7 +178,7 @@ class _FriendAddPageState extends State<FriendAddPage> {
         leading: IconButton(tooltip: '返回', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.back)),
         title: Text(widget.nearby ? '添加面对面好友' : '添加好友'),
       ),
-      body: CampusScrollFade(child: SafeArea(child: ListView(padding: const EdgeInsets.all(20), children: [
+      body: CampusScrollFade(child: SafeArea(bottom: false, child: ListView(padding: campusScrollPadding(context, const EdgeInsets.all(20)), children: [
         CampusSurface(padding: const EdgeInsets.all(20), child: Column(children: [
           Text(_social.profile?.nickname ?? '', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 16),

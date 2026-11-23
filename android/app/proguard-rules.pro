@@ -4,3 +4,7 @@
 
 # 2026-11-19 电影院的播放器 media_kit（libmpv）：插件的 Java 类有 JNI 原生方法与按类名回调（mediakitandroidhelper），整包保留，免得 release 包里一播就崩。
 -keep class com.alexmercerind.** { *; }
+
+# 2026-11-23 住理生活蓝牙调高连接优先级经反射读蓝牙插件的两个私有字段（ZhuliBleBoost.kt），release 包里保留这两个字段名（test/zhuli_bath_test.dart 守护）。
+-keepclassmembers class dev.zeekr.bluetooth_low_energy_android.BluetoothLowEnergyAndroidPlugin { private ** mCentralManager; }
+-keepclassmembers class dev.zeekr.bluetooth_low_energy_android.CentralManagerImpl { private ** mGATTs; }

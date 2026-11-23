@@ -127,6 +127,7 @@ class _ToolboxPageState extends State<ToolboxPage> {
       title: Text(widget.parent?.name ?? '百宝箱'),
     ),
     body: CampusScrollFade(child: SafeArea(
+      bottom: false,
       child: FutureBuilder<void>(
         future: _ready,
         builder: (context, snapshot) {
@@ -144,7 +145,7 @@ class _ToolboxPageState extends State<ToolboxPage> {
           return ListenableBuilder(
             listenable: widget.runtime.downloads,
             builder: (context, _) => SlidableAutoCloseBehavior(child: ListView(
-              padding: const EdgeInsets.all(16),
+              padding: campusScrollPadding(context, const EdgeInsets.all(16)),
               children: [
                 if (_error != null)
                   Padding(

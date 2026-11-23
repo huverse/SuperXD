@@ -183,6 +183,7 @@ class ZhuliConfig {
     this.rechargeShown = true,
     this.rechargeClosed,
     this.alipay = true,
+    this.networkSelection = 0,
   });
   // 消费订单能查最近几天（consume_order_display_cut_enable 开着时），为空表示不限。
   final int? consumeOrderDays;
@@ -199,6 +200,8 @@ class ZhuliConfig {
   final String? rechargeClosed;
   // 支付宝付款开着（alipay_enable；本应用只接支付宝）。
   final bool alipay;
+  // 两用设备走哪一路的学校设定（network_selection，同原 App：3 蓝牙优先、2 有 NBIOT 时走 7，其余照设备）。
+  final int networkSelection;
 }
 
 ZhuliConfig decodeZhuliConfig(Object? data) {
@@ -216,6 +219,7 @@ ZhuliConfig decodeZhuliConfig(Object? data) {
       final reason => reason,
     },
     alipay: _int(json, 'alipay_enable', fallback: 0) == 1,
+    networkSelection: _int(json, 'network_selection', fallback: 0),
   );
 }
 
@@ -241,28 +245,21 @@ class ZhuliGoods {
     required this.name,
     required this.price,
     required this.money,
-    required this.useLimit,
     required this.couponFirst,
     required this.stock,
     required this.limit,
     required this.bought,
-    required this.expireAt,
-    required this.validDays,
   });
   final String id;
   final String name;
   final int price;
   final int money;
-  final List<String> useLimit;
   final bool couponFirst;
   // 剩余张数（total_count）。
   final int stock;
   // 限购张数（0 不限）与已买的张数（没付的不算）。
   final int limit;
   final int bought;
-  final String expireAt;
-  // 买后几天有效（validated_days，0 是按到期时刻）。
-  final int validDays;
 
   // 买不了的原因（同原 App：限购买满、售罄），能买为空。
   String? get unavailable => limit != 0 && bought >= limit ? '限购 $limit 张，已买满' : stock <= 0 ? '已售罄' : null;
@@ -275,13 +272,10 @@ List<ZhuliGoods> decodeZhuliGoods(Object? data) => [
       name: _text(row, 'name', optional: true),
       price: _cents(row, 'price'),
       money: _cents(row, 'money', optional: true),
-      useLimit: [for (final part in _text(row, 'use_limit', optional: true).split(',')) if (part.trim().isNotEmpty) part.trim()],
       couponFirst: _int(row, 'use_order', fallback: 0) == 0,
       stock: _int(row, 'total_count', fallback: 0),
       limit: _int(row, 'limit_count', fallback: 0),
       bought: _int(row, 'gained_count', fallback: 0),
-      expireAt: _text(row, 'expire_at', optional: true),
-      validDays: _int(row, 'validated_days', fallback: 0),
     ),
 ];
 
@@ -402,7 +396,14 @@ ZhuliRechargeOrder decodeZhuliRechargeOrder(Object? data) {
   );
 }
 
-// 消费订单列表的一行（list_record_by_staffid 是精简投影，设备号、用量要查详情）。
+// 消费订单号里的设备号：资料 3.3 写明订单号是「时间 14 位 + 设备 10 位 + 序号 8 位」（形如 时间 20261121165104、设备 0001234567、序号 00002063，11-23 对过真实订单与设备），
+// 只认 32 位数字的；认不出为空（列表是精简投影、没有设备号字段，同房间新旧设备同名时靠它分清）。
+int? zhuliOrderDevice(String orderId) => RegExp(r'^\d{32}$').hasMatch(orderId) ? switch (int.parse(orderId.substring(14, 24))) {
+  0 => null,
+  final id => id,
+} : null;
+
+// 消费订单列表的一行（list_record_by_staffid 是精简投影，设备号要从订单号里取、用量要查详情）。
 class ZhuliConsumeRecord {
   const ZhuliConsumeRecord({required this.orderId, required this.consumeType, required this.status, required this.createAt, required this.money, required this.deviceName});
   final String orderId;
@@ -431,6 +432,7 @@ class ZhuliBill {
     required this.liters,
     required this.seconds,
     required this.deviceName,
+    this.deviceId = 0,
     required this.place,
     required this.payChannel,
     required this.fromCoupon,
@@ -451,6 +453,8 @@ class ZhuliBill {
   // 有效用水时长（秒）。
   final int seconds;
   final String deviceName;
+  // 设备号（详情里有才写，0 是没给）：同房间新旧设备同名时据此分清。
+  final int deviceId;
   // 楼栋/楼层/房间。
   final String place;
   final int? payChannel;
@@ -474,6 +478,7 @@ ZhuliBill decodeZhuliBill(Object? data) {
     liters: liters is num ? liters.toDouble() : 0,
     seconds: _int(row, 'consume_timing', fallback: 0),
     deviceName: _text(row, 'device_name', optional: true),
+    deviceId: _int(row, 'device_id', fallback: 0),
     place: [building, if (floor.isNotEmpty) '$floor层', room].where((part) => part.isNotEmpty).join(' '),
     payChannel: row['pay_channel'] == null ? null : _int(row, 'pay_channel'),
     fromCoupon: _cents(row, 'deduct_from_coupon', optional: true),
@@ -506,6 +511,7 @@ class ZhuliDevice {
     required this.room,
     required this.bleName,
     required this.bleMac,
+    this.via,
   });
   final int id;
   final String name;
@@ -536,17 +542,64 @@ class ZhuliDevice {
   // 楼栋/楼层/房间：1号楼 2层 201。
   String get place => [building, if (floor.isNotEmpty) '$floor层', room].where((part) => part.isNotEmpty).join(' ');
 
-  // 开水走哪一路，同原 App 的 En()（network_selection 为 0 时）：指定了优先通道用它；change_network 改走蓝牙；
-  // 有蓝牙时用第一个不是蓝牙的通道（「4,6」走 6 云端），只有蓝牙就走蓝牙；有 NBIOT 时走 1；都没有用 net_type。
-  int get channel {
-    if (primaryNet case final net? when net != 0) return net;
+  // 这一次走哪一路（洗浴页按学校设定或用户选的定下来，见 using）；为空按 network_selection 为 0 算。
+  final int? via;
+
+  // 开水默认走哪一路，照原 App 选通道的 oi()（11-23 对着前端代码重写，以前漏了 network_selection、change_network 与优先通道的先后也反了）：
+  // change_network 改走蓝牙；指定了优先通道用它；不止一个通道时：有 NBIOT 走 1（学校设定 2 时走 7），有蓝牙再看另一个通道，学校设定 3 走蓝牙、否则走那个通道；只有一个通道用 net_type。
+  int channelWith(int selection) {
     if (forceBluetooth) return 4;
-    if (modules.contains(4)) return modules.firstWhere((module) => module != 4, orElse: () => 4);
-    if (modules.contains(7)) return 1;
-    return netType;
+    if (primaryNet case final net? when net != 0) return net;
+    var channel = netType;
+    if (modules.length > 1) {
+      if (modules.contains(7)) channel = selection == 2 ? 7 : 1;
+      if (modules.contains(4)) {
+        if (modules.where((module) => module != 4).firstOrNull case final other?) channel = selection == 3 ? 4 : other;
+      }
+    }
+    return channel;
   }
 
+  int get channel => via ?? channelWith(0);
+
   bool get bluetooth => channel == 4;
+
+  // 设备有哪几路：能不能蓝牙、能不能云端（4G、NBIOT 等不是蓝牙的通道）；两路都有的洗浴页可以选（[人工决策] 见 zhuli_bath_page.dart 的 _choose）。
+  bool get hasBluetooth => modules.contains(4) || netType == 4;
+  bool get hasCloud => modules.any((module) => module != 4);
+  bool get dual => hasBluetooth && hasCloud;
+
+  // 两用设备选云端时走哪一路（学校设定蓝牙优先时照设定 0 算；优先通道指定成蓝牙时取第一个不是蓝牙的通道）。
+  int cloudChannel(int selection) {
+    final channel = channelWith(selection == 3 ? 0 : selection);
+    return channel != 4 ? channel : modules.firstWhere((module) => module != 4, orElse: () => netType);
+  }
+
+  // 给人看的通道：云端、蓝牙或两种都能（列表、洗浴页与换设备都这样写，免得同名设备分不清）。
+  String get modeLabel => dual ? '云端/蓝牙' : hasBluetooth ? '蓝牙' : '云端';
+
+  // 设备名与房间名不同才写名字（这个学校的设备名就是房间号，写了和位置重复）。
+  String? get distinctName => name.isEmpty || name == room ? null : name;
+
+  ZhuliDevice using(int channel) => ZhuliDevice(
+    id: id,
+    name: name,
+    type: type,
+    netType: netType,
+    modules: modules,
+    status: status,
+    idle: idle,
+    groupId: groupId,
+    primaryNet: primaryNet,
+    forceBluetooth: forceBluetooth,
+    supply: supply,
+    building: building,
+    floor: floor,
+    room: room,
+    bleName: bleName,
+    bleMac: bleMac,
+    via: channel,
+  );
 }
 
 // 供水时段（JSON 串里的数组）：外部输入，认不出的段跳过。

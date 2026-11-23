@@ -159,9 +159,9 @@ class _AppAccountPageState extends State<AppAccountPage> {
       leading: IconButton(tooltip: '返回', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.back)),
       title: const Text('应用账号'),
     ),
-    body: CampusScrollFade(child: SafeArea(child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: ListenableBuilder(
+    body: CampusScrollFade(child: SafeArea(bottom: false, child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: ListenableBuilder(
       listenable: Listenable.merge([_accounts, ?widget.network, ?widget.notes, ?widget.festivals]),
-      builder: (context, _) => ListView(padding: const EdgeInsets.all(16), children: [
+      builder: (context, _) => ListView(padding: campusScrollPadding(context, const EdgeInsets.all(16)), children: [
         ..._inbox(context),
         if (widget.network case final network?) ..._preference(context, network),
         if (widget.network?.online == false)

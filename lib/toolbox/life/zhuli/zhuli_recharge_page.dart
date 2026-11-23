@@ -14,7 +14,6 @@ import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
-import 'package:superxd/toolbox/life/zhuli/zhuli_coupons_page.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_models.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_pay.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_service.dart';
@@ -80,6 +79,7 @@ class _ZhuliRechargePageState extends State<ZhuliRechargePage> {
     ),
     body: CampusScrollFade(
       child: SafeArea(
+        bottom: false,
         child: FutureBuilder(
           future: _ready,
           builder: (context, snapshot) {
@@ -91,7 +91,7 @@ class _ZhuliRechargePageState extends State<ZhuliRechargePage> {
             }
             if (snapshot.connectionState != ConnectionState.done) return const Center(child: CampusLoading(label: '正在读取', network: true, remote: '住理生活'));
             final data = snapshot.data!;
-            return ListView(padding: const EdgeInsets.all(16), children: [_balanceCard(context, _balance ?? data.balance), const SizedBox(height: CampusGap.large), _amountCard(context, data.config, data.quotas)]);
+            return ListView(padding: campusScrollPadding(context, const EdgeInsets.all(16)), children: [_balanceCard(context, _balance ?? data.balance), const SizedBox(height: CampusGap.large), _amountCard(context, data.config, data.quotas)]);
           },
         ),
       ),
@@ -173,7 +173,7 @@ class _ZhuliRechargePageState extends State<ZhuliRechargePage> {
   }
 }
 
-// 买券：住理在卖的券（售价、面额、适用范围、先用券还是先用余额、有效期、限购与剩余）；点「购买」在弹层里看使用规则、用支付宝付。
+// 买券：住理在卖的券（售价，面额、先用券还是先用余额与限购）；点「购买」在弹层里用支付宝付。
 class ZhuliShopPage extends StatefulWidget {
   const ZhuliShopPage({super.key, required this.service, required this.phone});
   final ZhuliService service;
@@ -207,6 +207,7 @@ class _ZhuliShopPageState extends State<ZhuliShopPage> {
     ),
     body: CampusScrollFade(
       child: SafeArea(
+        bottom: false,
         child: FutureBuilder(
           future: _ready,
           builder: (context, snapshot) {
@@ -217,12 +218,13 @@ class _ZhuliShopPageState extends State<ZhuliShopPage> {
                 _ready = _read();
               }));
             }
-            if (snapshot.connectionState != ConnectionState.done) return const Center(child: CampusLoading(label: '正在读取', network: true, remote: '住理生活'));
-            final data = snapshot.data!;
+            // 买完回来重读时照旧显示上一份（FutureBuilder 换了 future 仍留着上一份数据），不清空再出现（11-23 用户：页面闪）；只有第一次读才出加载。
+            final data = snapshot.data;
+            if (data == null) return const Center(child: CampusLoading(label: '正在读取', network: true, remote: '住理生活'));
             if (!data.config.alipay) return Center(child: Text('这个学校没开支付宝付款', style: TextStyle(color: palette.onSurfaceVariant)));
             if (data.goods.isEmpty) return Center(child: Text('现在没有在卖的券', style: TextStyle(color: palette.onSurfaceVariant)));
             return ListView(
-              padding: const EdgeInsets.all(16),
+              padding: campusScrollPadding(context, const EdgeInsets.all(16)),
               children: [for (final goods in data.goods) Padding(key: ValueKey(goods.id), padding: const EdgeInsets.only(bottom: CampusGap.medium), child: _card(context, goods))],
             );
           },
@@ -255,14 +257,11 @@ class _ZhuliShopPageState extends State<ZhuliShopPage> {
   }
 }
 
-// 券商品的说明行：面额、适用范围、先用谁、有效期、限购与剩余。
+// [人工决策-2026-11-23 12:47:51] 券的说明只留面额、先用谁与限购（用户：买券页与购买弹层都只要这三项，适用范围、有效期、剩余张数与使用规则这些冗余描述不要）。
 List<String> zhuliGoodsDetail(ZhuliGoods goods) => [
   '面额 ¥${zhuliYuan(goods.money)}',
-  if (goods.useLimit.isNotEmpty) '适用${goods.useLimit.map(zhuliConsumeType).join('、')}',
   goods.couponFirst ? '优先用券' : '优先用余额',
-  if (goods.validDays > 0) '买后 ${goods.validDays} 天有效' else if (goods.expireAt.isNotEmpty && goods.expireAt.compareTo('2099') < 0) '${zhuliShownTime(goods.expireAt)} 到期',
   if (goods.limit > 0) '限购 ${goods.limit} 张',
-  '剩 ${goods.stock} 张',
 ];
 
 class _BuySheet extends StatelessWidget {
@@ -284,16 +283,11 @@ class _BuySheet extends StatelessWidget {
             Text('买 ${goods.name.isEmpty ? '优惠券' : goods.name}', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: CampusGap.small),
             DotSeparatedText(zhuliGoodsDetail(goods).join(' · '), style: secondary),
-            const SizedBox(height: CampusGap.medium),
-            Text('使用规则', style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: CampusGap.tight),
-            // 长文案：买券前要看的使用规则（同原 App 的使用须知），付款即同意。
-            Text('消费时住理自动抵扣，先用券还是先用余额看券的设定；一次没用完的留在券里下次用，不够的部分扣余额；有效期内使用，过期作废。付款即同意以上规则。', style: secondary),
             const SizedBox(height: CampusGap.large),
             ZhuliCheckout(
               service: service,
               phone: phone,
-              label: '同意并用支付宝付 ¥${zhuliYuan(goods.price)}',
+              label: '用支付宝付 ¥${zhuliYuan(goods.price)}',
               order: (session) => service.client.buyCoupon(session, goods.id),
               paid: (session, orderId) => service.client.couponPaid(session, orderId),
               pendingHint: '付款结果还在确认，稍后在「优惠券」里看',

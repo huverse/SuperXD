@@ -127,8 +127,8 @@ class _AboutPageState extends State<AboutPage> {
         leading: IconButton(tooltip: '返回', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.back)),
         title: const Text('关于'),
       ),
-      body: CampusScrollFade(child: SafeArea(child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: ListView(
-        padding: const EdgeInsets.all(16),
+      body: CampusScrollFade(child: SafeArea(bottom: false, child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: ListView(
+        padding: campusScrollPadding(context, const EdgeInsets.all(16)),
         children: [
           Padding(padding: const EdgeInsets.symmetric(vertical: 24), child: FutureBuilder<PackageInfo>(
             future: _info,

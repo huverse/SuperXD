@@ -184,13 +184,22 @@ class CampusLoading extends StatefulWidget {
   State<CampusLoading> createState() => _CampusLoadingState();
 }
 
+// 加载提示先等这么久再淡入：这段时间里有了结果就不出（转场后一闪而过的加载提示看着像闪烁，11-23 用户视频；常见做法是延迟 0.2–0.5 秒再显示）。
+// 等的时候照样占着位置，出来时不挤动周围。
+const campusLoadingDelay = Duration(milliseconds: 300);
+
 class _CampusLoadingState extends State<CampusLoading> {
   Timer? _wait;
   bool _longWait = false;
+  Timer? _appear;
+  var _shown = false;
   @override
   void initState() {
     super.initState();
     _start();
+    _appear = Timer(campusLoadingDelay, () {
+      if (mounted) setState(() => _shown = true);
+    });
   }
 
   void _start() {
@@ -215,6 +224,7 @@ class _CampusLoadingState extends State<CampusLoading> {
   @override
   void dispose() {
     _wait?.cancel();
+    _appear?.cancel();
     super.dispose();
   }
 
@@ -263,7 +273,13 @@ class _CampusLoadingState extends State<CampusLoading> {
         ),
       ),
     );
-    return widget.inline ? content : Center(child: content);
+    final appearing = AnimatedOpacity(
+      opacity: _shown ? 1 : 0,
+      // 淡入放慢些：刚过 0.3 秒结果就到的，加载提示还很淡就换成内容，不像闪了一下。
+      duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 250),
+      child: content,
+    );
+    return widget.inline ? appearing : Center(child: appearing);
   }
 }
 

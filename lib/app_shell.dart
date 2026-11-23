@@ -95,8 +95,8 @@ class _SuperXdAppState extends State<SuperXdApp> {
       null => null,
     },
     // 课堂签到二维码、代签二维码与好友二维码共用扫码页，认不认由调用方给的 accept 决定。
-    scanQrCode: (context, hint, accept) => Navigator.of(context).push<String>(
-      CampusPageRoute(builder: (_) => QrScanPage(hint: hint, accept: accept)),
+    scanQrCode: (context, hint, accept, {then}) => Navigator.of(context).push<String>(
+      CampusPageRoute(builder: (_) => QrScanPage(hint: hint, accept: accept, then: then)),
     ),
     // 多人连签的二维码签到：取景页一直开着，签完所有人自动关。
     watchQrCode: (context, {required hint, required accept, required onCode, required until, required status}) =>

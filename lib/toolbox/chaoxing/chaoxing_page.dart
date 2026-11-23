@@ -444,7 +444,7 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
           // 下拉刷新签到列表（同私信页的曲线动效指示器）。
           CampusRefreshControl(onRefresh: () => _pull(controller)),
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+            padding: campusScrollPadding(context, const EdgeInsets.fromLTRB(16, 8, 16, 32)),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
           CampusSurface(

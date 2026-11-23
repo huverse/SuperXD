@@ -111,10 +111,10 @@ class _PaintingsPageState extends State<PaintingsPage> {
           ),
         ],
       ),
-      body: CampusScrollFade(child: SafeArea(child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: ListenableBuilder(
+      body: CampusScrollFade(child: SafeArea(bottom: false, child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: ListenableBuilder(
         listenable: _state,
         builder: (context, _) => ListView(
-          padding: const EdgeInsets.all(16),
+          padding: campusScrollPadding(context, const EdgeInsets.all(16)),
           children: [
             for (final painting in widget.gallery.arranged)
               CampusSurface(
@@ -205,9 +205,9 @@ class _PaintingOrderPageState extends State<PaintingOrderPage> {
         leading: IconButton(tooltip: '返回', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.back)),
         title: const Text('播放顺序'),
       ),
-      body: CampusScrollFade(child: SafeArea(child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: ReorderableListView.builder(
+      body: CampusScrollFade(child: SafeArea(bottom: false, child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: ReorderableListView.builder(
         buildDefaultDragHandles: false,
-        padding: const EdgeInsets.all(16),
+        padding: campusScrollPadding(context, const EdgeInsets.all(16)),
         // 拖起的卡片保持圆角，投影只画在卡片本身（让出下边距），同学习通账号排序。
         proxyDecorator: (child, index, animation) => Stack(children: [
           Positioned.fill(bottom: 8, child: FadeTransition(

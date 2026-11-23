@@ -669,6 +669,7 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
     child: Scaffold(
       backgroundColor: Colors.transparent,
       body: SafeArea(
+        bottom: false,
         top: false,
         child: Column(
           children: [
@@ -755,6 +756,7 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                       sliver: SliverToBoxAdapter(child: _gradeList()),
                     )),
+                  const CampusScrollTail(),
                 ],
               )),
             ),

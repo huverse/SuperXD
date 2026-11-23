@@ -247,20 +247,21 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('买券：列出售价、面额、适用与有效期，限购买满与售罄不给买；弹层里看使用规则、付款后按订单号查券到账', (tester) async {
+    testWidgets('买券：只写售价、面额、先用谁与限购，限购买满与售罄不给买；弹层里同样三项、没有使用规则，付款后按订单号查券到账', (tester) async {
       final payer = _FakePayer('9000');
       final service = await signIn(tester, payer);
       await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ZhuliShopPage(service: service, phone: _phone)));
       await _settle(tester);
       expect(find.text('¥100.00'), findsOneWidget);
-      expect(find.byWidgetPredicate((widget) => widget is DotSeparatedText && widget.text.startsWith('面额 ¥130.00 · 适用洗浴 · 优先用券 · ')), findsOneWidget);
-      expect(find.byWidgetPredicate((widget) => widget is DotSeparatedText && widget.text.contains('买后 30 天有效')), findsOneWidget);
+      expect(find.byWidgetPredicate((widget) => widget is DotSeparatedText && widget.text == '面额 ¥130.00 · 优先用券 · 限购 1 张'), findsOneWidget);
+      expect(find.byWidgetPredicate((widget) => widget is DotSeparatedText && widget.text == '面额 ¥60.00 · 优先用余额 · 限购 1 张'), findsOneWidget);
+      expect(find.byWidgetPredicate((widget) => widget is DotSeparatedText && widget.text == '面额 ¥12.00 · 优先用券'), findsOneWidget, reason: '不限购不写');
       expect(tester.widget<FilledButton>(find.ancestor(of: find.text('限购 1 张，已买满'), matching: find.byWidgetPredicate((widget) => widget is FilledButton))).onPressed, isNull);
       expect(tester.widget<FilledButton>(find.ancestor(of: find.text('已售罄'), matching: find.byWidgetPredicate((widget) => widget is FilledButton))).onPressed, isNull);
       await tester.tap(find.text('购买'));
       await _settle(tester);
-      expect(find.text('使用规则'), findsOneWidget);
-      await tester.tap(find.text('同意并用支付宝付 ¥100.00'));
+      expect(find.text('使用规则'), findsNothing);
+      await tester.tap(find.text('用支付宝付 ¥100.00'));
       await _settle(tester, rounds: 30);
       expect(fake.lastQuery('/webapi/v1/cash_coupon/buy_cash_coupon')['cash_coupon_id'], 'C1');
       expect(fake.lastQuery('/webapi/v1/cash_coupon/list_staff_cash_coupon_app')['id'], '261122_9');
