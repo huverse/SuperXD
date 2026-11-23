@@ -92,6 +92,7 @@ class PluginZhuliBleLink implements ZhuliBleLink {
     final (device, seen) = await _find(central, bleName, bleMac);
     await _connect(central, device, attempts: seen ? _connectAttempts : 1);
     _device = device;
+    if (Platform.isAndroid) await _boost();
     try {
       final services = await central.discoverGATT(device).timeout(_gattTimeout);
       final service = services.where((service) => service.uuid == _serviceUuid).firstOrNull;
@@ -116,6 +117,17 @@ class PluginZhuliBleLink implements ZhuliBleLink {
       campusLog('[Zhuli] action=ble_gatt errorType=${error.runtimeType}\n$stack');
       await disconnect();
       throw _ble('设备通讯失败，再试一次');
+    }
+  }
+
+  // 安卓连上后、发现服务前调高连接优先级（[人工决策] 在 android/app/src/main/kotlin/com/superxd/superxd/ZhuliBleBoost.kt）：发现服务与每次命令帧来回都快些；
+  // 插件里拿不到连接（升级改了字段名）时原生回 -1，只记日志、照常开关水。iOS 的连接间隔由系统定，不调。
+  Future<void> _boost() async {
+    try {
+      final boosted = await const MethodChannel('superxd/zhuli_ble').invokeMethod<int>('boost');
+      campusLog('[Zhuli] action=ble_boost count=$boosted');
+    } catch (error) {
+      campusLog('[Zhuli] action=ble_boost reason=${error.runtimeType}');
     }
   }
 

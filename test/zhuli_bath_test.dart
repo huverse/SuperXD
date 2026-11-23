@@ -723,6 +723,22 @@ void main() {
     });
   });
 
+  // 安卓调高连接优先级经反射读蓝牙插件的私有字段（[人工决策] 在 ZhuliBleBoost.kt）：插件升级改了名字、混淆规则或通道丢了，这里先报出来。
+  test('蓝牙插件里调连接优先级要用的两个私有字段还在，release 包保留它们的名字，通道登记了', () {
+    final config = jsonDecode(File('.dart_tool/package_config.json').readAsStringSync()) as Map<String, Object?>;
+    final plugin = (config['packages']! as List).cast<Map<String, Object?>>().singleWhere((package) => package['name'] == 'bluetooth_low_energy_android');
+    final root = Uri.parse(plugin['rootUri']! as String).isAbsolute
+        ? Directory.fromUri(Uri.parse(plugin['rootUri']! as String))
+        : Directory.fromUri(File('.dart_tool/package_config.json').absolute.uri.resolve(plugin['rootUri']! as String));
+    final source = '${root.path}/android/src/main/kotlin/dev/zeekr/bluetooth_low_energy_android';
+    expect(File('$source/BluetoothLowEnergyAndroidPlugin.kt').readAsStringSync(), contains('private var mCentralManager: CentralManagerImpl?'));
+    expect(File('$source/CentralManagerImpl.kt').readAsStringSync(), contains('private val mGATTs: MutableMap<String, BluetoothGatt>'));
+    final rules = File('android/app/proguard-rules.pro').readAsStringSync();
+    expect(rules, contains('-keepclassmembers class dev.zeekr.bluetooth_low_energy_android.BluetoothLowEnergyAndroidPlugin { private ** mCentralManager; }'));
+    expect(rules, contains('-keepclassmembers class dev.zeekr.bluetooth_low_energy_android.CentralManagerImpl { private ** mGATTs; }'));
+    expect(File('android/app/src/main/kotlin/com/superxd/superxd/MainActivity.kt').readAsStringSync(), contains('"superxd/zhuli_ble"'));
+  });
+
   test('注册表：住理生活登记了「扫码洗浴」快捷入口（id 发出后不改），清除数据写明含设备列表', () async {
     final fixture = ToolboxFixture();
     await fixture.initialize();
