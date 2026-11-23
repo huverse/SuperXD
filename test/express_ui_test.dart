@@ -508,7 +508,7 @@ void main() {
       requests: requests,
       stationGate: gate.future,
       station: const {'count': 0, 'station_name': '合成驿站'},
-      scan: (context, hint, check) async => _stationUrl,
+      scan: (context, hint, check, {then}) async => _stationUrl,
     ))));
     await tester.pumpAndSettle();
     int stationQueries() => requests.where((request) => request.url.path.endsWith('express_trackbox/station/package')).length;
@@ -686,7 +686,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime(
       requests: requests,
       station: const {'count': 0, 'station_name': '合成驿站'},
-      scan: (context, hint, check) async {
+      scan: (context, hint, check, {then}) async {
         accept = check;
         return _stationUrl;
       },
@@ -728,7 +728,7 @@ void main() {
     await vault.saveStationLinked(true);
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime(
       station: const {'count': 0, 'station_name': '合成驿站', 'only_wx_scan': true},
-      scan: (context, hint, check) async => _stationUrl,
+      scan: (context, hint, check, {then}) async => _stationUrl,
       publisher: publisher,
       launch: (uri) async {
         launched.add(uri);

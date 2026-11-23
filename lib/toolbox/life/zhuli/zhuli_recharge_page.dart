@@ -218,8 +218,9 @@ class _ZhuliShopPageState extends State<ZhuliShopPage> {
                 _ready = _read();
               }));
             }
-            if (snapshot.connectionState != ConnectionState.done) return const Center(child: CampusLoading(label: '正在读取', network: true, remote: '住理生活'));
-            final data = snapshot.data!;
+            // 买完回来重读时照旧显示上一份（FutureBuilder 换了 future 仍留着上一份数据），不清空再出现（11-23 用户：页面闪）；只有第一次读才出加载。
+            final data = snapshot.data;
+            if (data == null) return const Center(child: CampusLoading(label: '正在读取', network: true, remote: '住理生活'));
             if (!data.config.alipay) return Center(child: Text('这个学校没开支付宝付款', style: TextStyle(color: palette.onSurfaceVariant)));
             if (data.goods.isEmpty) return Center(child: Text('现在没有在卖的券', style: TextStyle(color: palette.onSurfaceVariant)));
             return ListView(

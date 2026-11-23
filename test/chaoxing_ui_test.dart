@@ -387,7 +387,7 @@ void main() {
     fake.activities = [
       {'id': 501, 'type': 2, 'otherId': '2', 'nameOne': '签到', 'nameFour': '高等数学', 'startTime': 1760000000000, 'status': 1, 'userStatus': 0, 'ext': {'a': 1}},
     ];
-    runtime = buildRuntime(scanQrCode: (context, hint, accept) async => 'SIGNIN:id=501&enc=ENCV-1.2.3');
+    runtime = buildRuntime(scanQrCode: (context, hint, accept, {then}) async => 'SIGNIN:id=501&enc=ENCV-1.2.3');
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
     await login(tester);
 
@@ -473,7 +473,7 @@ void main() {
     fake.activeInfos = {
       777: {'otherId': '5', 'nameOne': '扫码打开的签到', 'clazzid': 88, 'courseId': 0, 'numberCount': 4, 'signOutPublishTimeStamp': 4999},
     };
-    runtime = buildRuntime(scanQrCode: (context, hint, accept) async => 'SIGNIN:aid=777&source=15&Code=777&enc=ENC777');
+    runtime = buildRuntime(scanQrCode: (context, hint, accept, {then}) async => 'SIGNIN:aid=777&source=15&Code=777&enc=ENC777');
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
     await login(tester);
 
@@ -1051,7 +1051,7 @@ void main() {
       importChaoxingTicket(
         tester.element(find.text('宿主')),
         controller: controller,
-        scan: (context, hint, accept) async => ticket,
+        scan: (context, hint, accept, {then}) async => ticket,
       ),
     );
     await waitUntil(tester, () => find.text('导入代签账号').evaluate().isNotEmpty);

@@ -53,12 +53,31 @@ String zhuliDeviceState(ZhuliDevice device) => [device.status != 0 ? '维护中'
 // 设备行的标题：设备号，设备名和房间不同才带上名字（这个学校的设备名就是房间号，同房间新旧设备同名）。
 String zhuliDeviceTitle(ZhuliDevice device) => [?device.distinctName, '设备号 ${device.id}'].join(' · ');
 
-// 按楼栋、楼层、房间一级级选到设备（同原 App 的选择设备页）：每一级是一个推入的页面（同全应用的页面转场与跟手返回，11-23 用户指出原来同页硬切），
-// 选中设备一路交回设备号；返回回上一级。只列有设备的房间（台数按 total_room_device_count）。
+// 按楼栋、楼层、房间一级级选设备（同原 App 的选择设备页）：每一级是一个推入的页面（同全应用的页面转场与跟手返回，11-23 用户指出原来同页硬切），返回回上一级。
+// 选中后：给了 open 就把这几级选择页一起换成 open 的页面（首页进洗浴页），没给就几级一起收掉（常用设备的添加），返回设备号；中途退出为空。
+// 中间几级不动画直接拿掉，只有最上面这一页走一次转场（11-23 用户视频：原来几级各自退回、几页叠着闪过去）。
+Future<int?> zhuliPickDevice(BuildContext context, {required ZhuliService service, required String phone, Widget Function(int deviceId)? open}) {
+  final flow = _PickFlow(open);
+  unawaited(Navigator.of(context).push<void>(CampusPageRoute(builder: (_) => ZhuliPickPage._(flow, service: service, phone: phone))).then((_) {
+    if (!flow.picked) flow.done.complete(null);
+  }));
+  return flow.done.future;
+}
+
+// 一次选择：各级的页面（选中时拿掉）与结果。
+class _PickFlow {
+  _PickFlow(this.open);
+  final Widget Function(int deviceId)? open;
+  final routes = <Route<Object?>>[];
+  final done = Completer<int?>();
+  var picked = false;
+}
+
 class ZhuliPickPage extends StatefulWidget {
-  const ZhuliPickPage({super.key, required this.service, required this.phone, this.path = const []});
+  const ZhuliPickPage._(this._flow, {required this.service, required this.phone, this.path = const []});
   final ZhuliService service;
   final String phone;
+  final _PickFlow _flow;
   // 已经选到的楼栋、楼层、房间。
   final List<ZhuliPlace> path;
   @override
@@ -67,6 +86,7 @@ class ZhuliPickPage extends StatefulWidget {
 
 class _ZhuliPickPageState extends State<ZhuliPickPage> {
   late Future<List<Object>> _items = _read();
+  Route<Object?>? _route;
   // 房间里的设备分页（从 1 起）：已读到的与还有没有下一页。
   final _devices = <ZhuliDevice>[];
   var _devicePage = 0;
@@ -74,6 +94,20 @@ class _ZhuliPickPageState extends State<ZhuliPickPage> {
   var _loadingMore = false;
 
   List<ZhuliPlace> get _path => widget.path;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_route != null) return;
+    final route = ModalRoute.of(context);
+    if (route != null) widget._flow.routes.add(_route = route);
+  }
+
+  @override
+  void dispose() {
+    widget._flow.routes.remove(_route);
+    super.dispose();
+  }
 
   ZhuliClient get _client => widget.service.client;
 
@@ -100,10 +134,25 @@ class _ZhuliPickPageState extends State<ZhuliPickPage> {
     _moreDevices = page.length >= ZhuliClient.roomDevicePage;
   }
 
-  // 进下一级；那一级选到了设备就接着交回去。
-  Future<void> _open(ZhuliPlace place) async {
-    final deviceId = await Navigator.of(context).push<int>(CampusPageRoute(builder: (_) => ZhuliPickPage(service: widget.service, phone: widget.phone, path: [..._path, place])));
-    if (deviceId != null && mounted) Navigator.pop(context, deviceId);
+  void _open(ZhuliPlace place) => unawaited(Navigator.of(context).push<void>(CampusPageRoute(builder: (_) => ZhuliPickPage._(widget._flow, service: widget.service, phone: widget.phone, path: [..._path, place]))));
+
+  // 选中一台：下面几级直接拿掉，这一页换成要去的页面或退回去，都只走一次转场。
+  Future<void> _picked(int deviceId) async {
+    final flow = widget._flow;
+    if (flow.picked) return;
+    flow.picked = true;
+    final navigator = Navigator.of(context);
+    for (final route in [...flow.routes]) {
+      if (route != _route && route.isActive) navigator.removeRoute(route);
+    }
+    final open = flow.open;
+    if (open == null) {
+      navigator.pop();
+      flow.done.complete(deviceId);
+      return;
+    }
+    await navigator.pushReplacement(CampusPageRoute<void>(builder: (_) => open(deviceId)));
+    flow.done.complete(deviceId);
   }
 
   Future<void> _loadMore() async {
@@ -150,9 +199,9 @@ class _ZhuliPickPageState extends State<ZhuliPickPage> {
                       context,
                       title: _path.length == 1 ? '$name层' : name,
                       detail: devices == null ? null : '$devices 台',
-                      onTap: () => unawaited(_open(item)),
+                      onTap: () => _open(item),
                     ),
-                    final ZhuliDevice device => _row(context, title: zhuliDeviceTitle(device), detail: zhuliDeviceState(device), onTap: () => Navigator.pop(context, device.id)),
+                    final ZhuliDevice device => _row(context, title: zhuliDeviceTitle(device), detail: zhuliDeviceState(device), onTap: () => unawaited(_picked(device.id))),
                     _ => const SizedBox.shrink(),
                   },
                 if (_path.length == 3 && _moreDevices)
@@ -240,7 +289,7 @@ class _ZhuliFavoritesPageState extends State<ZhuliFavoritesPage> {
     await _add(switch (picked) {
       'scan' => () => zhuliScanDevice(context, runtime: widget.runtime, service: widget.service, phone: widget.phone),
       'number' => () => zhuliAskDeviceId(context),
-      _ => () => Navigator.of(context).push<int>(CampusPageRoute(builder: (_) => ZhuliPickPage(service: widget.service, phone: widget.phone))),
+      _ => () => zhuliPickDevice(context, service: widget.service, phone: widget.phone),
     });
   }
 

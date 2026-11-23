@@ -682,9 +682,78 @@ void main() {
       expect(tester.getTopLeft(find.text('设备号 101')).dy, lessThan(tester.getTopLeft(find.text('设备号 102')).dy), reason: '能走云端的排前面，住理回的顺序是蓝牙在前');
       expect(find.byType(ZhuliPickPage, skipOffstage: false), findsNWidgets(4), reason: '每一级推一个页面（同全应用的转场与跟手返回）');
       await tester.tap(find.text('设备号 101'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.byType(ZhuliPickPage, skipOffstage: false), findsOneWidget, reason: '下面几级当场拿掉，只剩最上面这一页随洗浴页推入退场（11-23 视频里几页一起闪）');
+      expect(find.byType(ZhuliPage, skipOffstage: false), findsOneWidget);
       await _settle(tester);
-      expect(find.byType(ZhuliPickPage, skipOffstage: false), findsNothing, reason: '选中后几级一起交回');
+      expect(find.byType(ZhuliPickPage, skipOffstage: false), findsNothing, reason: '选择页换成了洗浴页');
       expect(find.byType(ZhuliBathPage), findsOneWidget);
+      final loads = fake.count('/webapi/v1/staff/get_user_detail_by_id');
+      await tester.tap(find.byTooltip('返回'));
+      await _settle(tester);
+      expect(find.byType(ZhuliBathPage), findsNothing);
+      expect(find.byType(ZhuliPickPage, skipOffstage: false), findsNothing, reason: '返回直接回首页');
+      expect(fake.count('/webapi/v1/staff/get_user_detail_by_id'), greaterThan(loads), reason: '洗浴页关掉后首页刷新');
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('扫码洗浴：扫码页直接换成洗浴页（不先回首页再推）；扫到蓝牙地址的码在洗浴页里换成设备号', (tester) async {
+      final fixture = ToolboxFixture();
+      await tester.runAsync(fixture.initialize);
+      addTearDown(fixture.close);
+      await tester.runAsync(() async {
+        await fixture.store.grantConsent(ZhuliService.serviceId, ZhuliService.consentVersion);
+        await service.signIn(_phone, _password);
+      });
+      String? rejected;
+      final runtime = ToolboxRuntime.testing(
+        catalog: toolboxCatalog,
+        store: fixture.store,
+        downloads: fixture.manager,
+        services: {ZhuliService.serviceId: service},
+        scanQrCode: (context, hint, accept, {then}) async {
+          rejected = accept('https://example.com');
+          expect(accept('40BD32000065'), isNull);
+          unawaited(Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => then!('40BD32000065'))));
+          return null;
+        },
+      );
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ZhuliPage(runtime: runtime)));
+      await _settle(tester);
+      await tester.tap(find.text('扫码'));
+      await _settle(tester);
+      expect(rejected, '不是住理生活的设备码');
+      expect(find.byType(ZhuliBathPage), findsOneWidget);
+      expect(fake.lastQuery('/webapi/v1/device/get_by_mac')['mac'], '40:BD:32:00:00:65');
+      expect(find.byWidgetPredicate((widget) => _dotted(widget, '设备号 101 · 空闲')), findsOneWidget, reason: '地址换成了设备号');
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('常用设备按楼栋选添加：选中后几级一起收掉、一次退回常用设备页', (tester) async {
+      final fixture = ToolboxFixture();
+      await tester.runAsync(fixture.initialize);
+      addTearDown(fixture.close);
+      await signIn(tester);
+      final runtime = ToolboxRuntime.testing(catalog: toolboxCatalog, store: fixture.store, downloads: fixture.manager, services: {ZhuliService.serviceId: service});
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ZhuliFavoritesPage(runtime: runtime, service: service, phone: _phone)));
+      await _settle(tester);
+      await tester.tap(find.bySemanticsLabel('添加常用设备'));
+      await _settle(tester);
+      await tester.tap(find.text('按楼栋选'));
+      await _settle(tester);
+      for (final level in ['1号楼', '2层', '201']) {
+        await tester.tap(find.text(level));
+        await _settle(tester);
+      }
+      await tester.tap(find.text('设备号 101'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.byType(ZhuliPickPage, skipOffstage: false), findsOneWidget, reason: '下面几级当场拿掉，只有最上面这一页退场');
+      await _settle(tester);
+      expect(find.byType(ZhuliPickPage, skipOffstage: false), findsNothing);
+      expect(find.byType(ZhuliFavoritesPage), findsOneWidget);
+      expect((await tester.runAsync(() => service.devices.load(_phone)))!.favorites.single.id, 101);
       await tester.pumpWidget(const SizedBox());
     });
 

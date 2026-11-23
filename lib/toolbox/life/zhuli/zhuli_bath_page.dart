@@ -27,15 +27,30 @@ import 'package:superxd/toolbox/toolbox_runtime.dart';
 // 输设备号（设备上印的编号）：只收数字，确认后交回。
 Future<int?> zhuliAskDeviceId(BuildContext context) => showCampusSheet<int>(context: context, builder: (_) => const _DeviceIdSheet());
 
+const _scanHint = '扫洗浴设备上的二维码';
+
+String? _rejectCode(String raw) => zhuliParseCode(raw) == null ? '不是住理生活的设备码' : null;
+
 // 扫设备上的码：认出设备号直接用，认出蓝牙地址先向住理换成设备号；扫到别的码原地提示。没有扫码能力（测试）或取消为空。
 Future<int?> zhuliScanDevice(BuildContext context, {required ToolboxRuntime runtime, required ZhuliService service, required String phone}) async {
   final scan = runtime.scanQrCode;
   if (scan == null) return null;
-  final raw = await scan(context, '扫洗浴设备上的二维码', (raw) => zhuliParseCode(raw) == null ? '不是住理生活的设备码' : null);
+  final raw = await scan(context, _scanHint, _rejectCode);
   if (raw == null) return null;
   final code = zhuliParseCode(raw)!;
   if (code.deviceId case final id?) return id;
   return (await service.run(phone, (session) => service.client.deviceByMac(session, code.mac!))).id;
+}
+
+// 扫码直接去洗浴页（首页与「扫码洗浴」快捷入口）：扫码页直接换成这台设备的洗浴页（一次转场，不先回首页再推，11-23 用户视频里的闪），
+// 蓝牙地址的码在洗浴页里换成设备号；洗浴页关掉时 onClose（首页刷新）。
+Future<void> zhuliScanToBath(BuildContext context, {required ToolboxRuntime runtime, required ZhuliService service, required String phone, VoidCallback? onClose}) async {
+  final scan = runtime.scanQrCode;
+  if (scan == null) return;
+  await scan(context, _scanHint, _rejectCode, then: (raw) {
+    final code = zhuliParseCode(raw)!;
+    return ZhuliBathPage(service: service, phone: phone, deviceId: code.deviceId, mac: code.mac, onClose: onClose);
+  });
 }
 
 String _clockText(int minutes) => '${(minutes ~/ 60).toString().padLeft(2, '0')}:${(minutes % 60).toString().padLeft(2, '0')}';
@@ -51,10 +66,14 @@ enum _Stage { checking, ready, starting, running, ending, done }
 // 两用设备可以选走云端还是蓝牙（默认照学校设定，选过的下次照旧）。水开着时计时（云端的另每 3 秒查一次用了多少），点「关水」结算后原地显示这一单的账。
 // 自己在这台上没结束的单，打开就接着显示「关水」。打开即记进最近使用；右上角星标收藏到常用设备。
 class ZhuliBathPage extends StatefulWidget {
-  const ZhuliBathPage({super.key, required this.service, required this.phone, required this.deviceId, this.link, this.clock});
+  const ZhuliBathPage({super.key, required this.service, required this.phone, this.deviceId, this.mac, this.link, this.clock, this.onClose}) : assert(deviceId != null || mac != null);
   final ZhuliService service;
   final String phone;
-  final int deviceId;
+  // 设备号；扫到的是蓝牙地址时给 mac，打开时先向住理换成设备号。
+  final int? deviceId;
+  final String? mac;
+  // 页面关掉时（换页进来的，来的那一页等不到返回值，靠它刷新）。
+  final VoidCallback? onClose;
   // 测试注入蓝牙与时钟。
   final ZhuliBleLink Function()? link;
   final DateTime Function()? clock;
@@ -96,6 +115,7 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
     _ticker?.cancel();
     _poll?.cancel();
     _dropWarm();
+    widget.onClose?.call();
     super.dispose();
   }
 
@@ -130,7 +150,8 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
       _loadError = null;
     });
     try {
-      final plan = await _bath.prepare(widget.deviceId);
+      final deviceId = widget.deviceId ?? (await widget.service.run(widget.phone, (session) => widget.service.client.deviceByMac(session, widget.mac!))).id;
+      final plan = await _bath.prepare(deviceId);
       final lists = await widget.service.devices.used(widget.phone, ZhuliDeviceEntry.of(plan.device));
       if (!mounted) return;
       final chosen = lists.recent.where((entry) => entry.id == plan.device.id).firstOrNull?.channel;
@@ -254,7 +275,7 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
     }
   }
 
-  void _switchTo(ZhuliDevice mate) => unawaited(Navigator.of(context).pushReplacement(CampusPageRoute<void>(builder: (_) => ZhuliBathPage(service: widget.service, phone: widget.phone, deviceId: mate.id, link: widget.link, clock: widget.clock))));
+  void _switchTo(ZhuliDevice mate) => unawaited(Navigator.of(context).pushReplacement(CampusPageRoute<void>(builder: (_) => ZhuliBathPage(service: widget.service, phone: widget.phone, deviceId: mate.id, link: widget.link, clock: widget.clock, onClose: widget.onClose))));
 
   Future<void> _end() async {
     final device = _device!, orderId = _orderId!;

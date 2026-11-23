@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:superxd/theme/campus_animated_list.dart';
+import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_prose.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
@@ -13,6 +14,20 @@ import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/status_bar_scroll.dart';
 
 void main() {
+  // 11-23 用户视频：转场后一闪而过的加载提示像闪烁。先占位不显示，等 campusLoadingDelay 还在加载才淡入；减少动画时到点直接出。
+  testWidgets('加载提示先占位不显示，过 0.3 秒还在加载才淡入', (tester) async {
+    double opacity() => tester.widget<AnimatedOpacity>(find.ancestor(of: find.text('正在读取'), matching: find.byType(AnimatedOpacity))).opacity;
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: const Scaffold(body: CampusLoading(label: '正在读取'))));
+    expect(opacity(), 0);
+    final size = tester.getSize(find.byType(CampusLoading));
+    await tester.pump(campusLoadingDelay - const Duration(milliseconds: 50));
+    expect(opacity(), 0);
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(opacity(), 1, reason: '到点开始淡入（目标不透明）');
+    expect(tester.getSize(find.byType(CampusLoading)), size, reason: '等的时候已经占着位置，出来不挤动周围');
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('长说明：编号与正文两列悬挂缩进，段内小标题与小节标题半粗', (tester) async {
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: const Scaffold(body: SizedBox(width: 200, child: CampusProse('本机：\n1. 课表、成绩主要存在本机，教务账号只发给学校教务系统。\n登录：账号、密码直接发给学校。\n点「同意」即表示同意。')))));
     // 编号单独一列，正文折行后仍从正文左缘起，不回到编号下面。

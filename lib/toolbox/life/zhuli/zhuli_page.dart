@@ -160,7 +160,14 @@ class _ZhuliPageState extends State<ZhuliPage> {
     }
   }
 
-  Future<void> _scan() => _pickThen(() => zhuliScanDevice(context, runtime: widget.runtime, service: _service, phone: _phone!));
+  // 洗浴页是换页进去的（扫码、按楼栋选），等不到它返回：关掉时下一帧再刷新（关页面的那一帧里不能改界面）。
+  void _reloadLater() => WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (mounted) unawaited(_load());
+  });
+
+  Future<void> _scan() => zhuliScanToBath(context, runtime: widget.runtime, service: _service, phone: _phone!, onClose: _reloadLater);
+
+  Future<void> _pickBuilding(String phone) => zhuliPickDevice(context, service: _service, phone: phone, open: (deviceId) => ZhuliBathPage(service: _service, phone: phone, deviceId: deviceId, onClose: _reloadLater));
 
   Future<void> _accountMenu(BuildContext anchor) async {
     final state = _state!, phone = _phone!;
@@ -390,7 +397,7 @@ class _ZhuliPageState extends State<ZhuliPage> {
               Expanded(
                 child: FilledButton.icon(
                   style: tall,
-                  onPressed: () => unawaited(_pickThen(() => Navigator.of(context).push<int>(CampusPageRoute(builder: (_) => ZhuliPickPage(service: _service, phone: phone))))),
+                  onPressed: () => unawaited(_pickBuilding(phone)),
                   icon: const CampusIcon(CampusIcons.building),
                   label: const Text('按楼栋选'),
                 ),
