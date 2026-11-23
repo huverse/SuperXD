@@ -55,7 +55,7 @@ class ChaoxingHistoryPage extends StatelessWidget {
           // 已结束的活动会越积越多，按需构建，只建屏幕上的那几张。
           return CampusScrollFade(
             child: ListView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+              padding: campusScrollPadding(context, const EdgeInsets.fromLTRB(16, 8, 16, 32)),
               itemCount: activities.length,
               itemBuilder: (context, index) => ChaoxingActivityCard(
                 key: ValueKey(activities[index].activeId),

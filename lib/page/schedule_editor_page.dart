@@ -360,10 +360,11 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
         ],
       ),
       body: CampusScrollFade(child: SafeArea(
+        bottom: false,
         child: _loading && _view == null
             ? const Center(child: CampusLoading(label: '正在读取课程'))
             : ListView(
-                padding: const EdgeInsets.all(16),
+                padding: campusScrollPadding(context, const EdgeInsets.all(16)),
                 children: [
                   if (_loading) const CampusLoading(label: '正在更新课程', inline: true),
                   DotSeparatedText(

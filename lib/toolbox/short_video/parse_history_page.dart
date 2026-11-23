@@ -119,6 +119,7 @@ class _ParseHistoryPageState extends State<ParseHistoryPage> {
       ],
     ),
     body: CampusScrollFade(child: SafeArea(
+      bottom: false,
       child: FutureBuilder<List<Map<String, Object?>>>(
         future: _rows,
         builder: (context, snapshot) {

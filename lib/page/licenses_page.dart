@@ -71,6 +71,7 @@ class _CampusLicensesPageState extends State<CampusLicensesPage> {
       title: const Text('全部依赖许可'),
     ),
     body: CampusScrollFade(child: SafeArea(
+      bottom: false,
       child: FutureBuilder<List<MapEntry<String, List<LicenseEntry>>>>(
         future: _licenses,
         builder: (context, snapshot) {
@@ -82,7 +83,7 @@ class _CampusLicensesPageState extends State<CampusLicensesPage> {
           }
           final packages = snapshot.data!;
           return ListView.builder(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+            padding: campusScrollPadding(context, const EdgeInsets.fromLTRB(20, 0, 20, 24)),
             itemCount: packages.length + 1,
             itemBuilder: (context, index) {
               if (index == 0) return const GalaxyousAttribution();
@@ -141,8 +142,9 @@ class _LicenseDetail extends StatelessWidget {
       title: Text(package),
     ),
     body: CampusScrollFade(child: SafeArea(
+      bottom: false,
       child: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: campusScrollPadding(context, const EdgeInsets.all(20)),
         children: [
           for (final entry in entries) ...[
             for (final paragraph in entry.paragraphs)

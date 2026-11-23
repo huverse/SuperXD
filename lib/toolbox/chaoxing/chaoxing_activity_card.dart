@@ -268,7 +268,7 @@ class _ChaoxingActivitiesPageState extends State<ChaoxingActivitiesPage> {
   // 签到会越积越多：按需构建，只建屏幕上的那几行。
   Widget _lazyList(List<Widget Function()> rows) => CampusScrollFade(
     child: ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+      padding: campusScrollPadding(context, const EdgeInsets.fromLTRB(16, 0, 16, 32)),
       itemCount: rows.length,
       itemBuilder: (context, index) => rows[index](),
     ),

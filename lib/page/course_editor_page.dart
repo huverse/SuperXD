@@ -260,8 +260,9 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
         title: Text(widget.group.isEmpty ? '新增课程' : '编辑课程'),
       ),
       body: CampusScrollFade(child: SafeArea(
+        bottom: false,
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: campusScrollPadding(context, const EdgeInsets.all(16)),
           children: [
             SizedBox(height: campusFieldGap(context)),
             TextField(

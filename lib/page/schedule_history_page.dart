@@ -145,8 +145,9 @@ class _ScheduleHistoryPageState extends State<ScheduleHistoryPage> {
         title: const Text('历史版本'),
       ),
       body: CampusScrollFade(child: SafeArea(
+        bottom: false,
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: campusScrollPadding(context, const EdgeInsets.all(16)),
           children: [
             CampusSegmented<_Filter>(
               values: _Filter.values,
@@ -346,10 +347,11 @@ class _RevisionPreviewState extends State<_RevisionPreview> {
       child: Scaffold(
         appBar: AppBar(leading: IconButton(tooltip: '返回', onPressed: _saving ? null : () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.back)), title: const Text('版本详情')),
         body: CampusScrollFade(child: SafeArea(
+          bottom: false,
           child: _loading
               ? const Center(child: CampusLoading(label: '正在读取历史版本'))
               : ListView(
-                  padding: const EdgeInsets.all(16),
+                  padding: campusScrollPadding(context, const EdgeInsets.all(16)),
                   children: [
                     Row(children: [
                       CampusIcon(_revisionIcon(revision), color: palette.onSurfaceVariant),

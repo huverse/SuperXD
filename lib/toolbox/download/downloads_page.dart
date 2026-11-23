@@ -89,6 +89,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
       ),
     ),
     body: CampusScrollFade(child: SafeArea(
+      bottom: false,
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 900),
@@ -158,7 +159,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
                             ),
                           )
                         : ListView.builder(
-                            padding: const EdgeInsets.all(16),
+                            padding: campusScrollPadding(context, const EdgeInsets.all(16)),
                             itemCount: jobs.length,
                             itemBuilder: (context, index) =>
                                 _job(jobs[index].key, jobs[index].value),

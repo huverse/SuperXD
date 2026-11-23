@@ -134,7 +134,7 @@ class _FriendSchedulePageState extends State<FriendSchedulePage> {
             ),
         ],
       ),
-      body: CampusScrollFade(child: SafeArea(child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
+      body: CampusScrollFade(child: SafeArea(bottom: false, child: ListView(padding: campusScrollPadding(context, const EdgeInsets.fromLTRB(16, 8, 16, 24)), children: [
         DotSeparatedText('${term.label.isEmpty ? term.key : term.label} · ${formatCampusRelative(widget.sharedAt)} 分享', style: secondary),
         const SizedBox(height: 12),
         if (!widget.outgoing) ...[

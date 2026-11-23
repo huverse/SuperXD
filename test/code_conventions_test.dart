@@ -44,6 +44,17 @@ void main() {
     expect(offenders, isEmpty);
   });
 
+  // 11-23 用户截图指出很多页底部像被截断：页面滚动区包了 SafeArea 的底边，滚动区在手势条上方硬切，再叠上下缘渐隐。
+  // 滚动区一律画到屏幕底，内边距用 campusScrollPadding（CustomScrollView 末尾放 CampusScrollTail），见 lib/theme/scroll_edge_fade.dart。
+  test('页面滚动区不包 SafeArea 的底边', () {
+    final wrapped = RegExp(r'CampusScrollFade\(\s*child:\s*SafeArea\((?![\s\S]{0,40}bottom: false)');
+    final offenders = [
+      for (final file in Directory('lib').listSync(recursive: true).whereType<File>().where((file) => file.path.endsWith('.dart')))
+        if (wrapped.hasMatch(file.readAsStringSync())) file.path,
+    ];
+    expect(offenders, isEmpty);
+  });
+
   // 顶栏右侧操作一律用玻璃圆钮 CampusGlassCircleButton（主题规则：圆形玻璃按钮只用于顶栏操作与悬浮按钮）；10-20 统一性审查发现学习通、快递用的是普通图标。
   // 例外：地图选点页同屏有地图（内嵌网页，也是原生视图），玻璃与原生地图同屏曾闪退（玻璃限档的由来），顶栏保持普通图标。
   test('顶栏右侧操作用玻璃圆钮', () {

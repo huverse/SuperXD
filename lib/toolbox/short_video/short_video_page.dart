@@ -315,6 +315,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
     ),
     // 内容滚到透明顶栏下时自身渐隐，同百宝箱其他页（theme 的 CampusScrollFade）。
     body: CampusScrollFade(child: SafeArea(
+      bottom: false,
       child: FutureBuilder<void>(
         future: _ready,
         builder: (context, snapshot) {
@@ -336,7 +337,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 800),
                 child: ListView(
-                  padding: const EdgeInsets.all(16),
+                  padding: campusScrollPadding(context, const EdgeInsets.all(16)),
                   children: [
                     CampusSurface(
                       padding: EdgeInsets.fromLTRB(16, campusFieldGap(context), 16, 16),

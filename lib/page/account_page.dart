@@ -130,8 +130,8 @@ class _AccountPageState extends State<AccountPage> {
         // 标题写「教务账号」（11-17 设计审查：有了应用账号后只写「账号」分不清是哪个）。
         title: const Text('教务账号'),
       ),
-      body: CampusScrollFade(child: SafeArea(child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: ListView(
-        padding: const EdgeInsets.all(16),
+      body: CampusScrollFade(child: SafeArea(bottom: false, child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: ListView(
+        padding: campusScrollPadding(context, const EdgeInsets.all(16)),
         children: [
           CampusSurface(padding: const EdgeInsets.all(20), child: Row(children: [
             CircleAvatar(radius: 28, backgroundColor: colors.surfaceSelected, child: CampusIcon(CampusIcons.account, color: colors.primary, size: 28)),

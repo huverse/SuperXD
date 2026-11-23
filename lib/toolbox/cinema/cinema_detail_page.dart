@@ -171,12 +171,13 @@ class _CinemaDetailPageState extends State<CinemaDetailPage> {
       ),
       body: CampusScrollFade(
         child: SafeArea(
+          bottom: false,
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 800),
               child: ListView(
                 controller: _scroll,
-                padding: const EdgeInsets.all(16),
+                padding: campusScrollPadding(context, const EdgeInsets.all(16)),
                 children: [
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,

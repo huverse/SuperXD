@@ -459,9 +459,10 @@ class _AppearancePageState extends State<AppearancePage> {
         title: const Text('界面'),
       ),
       body: CampusScrollFade(child: SafeArea(
+        bottom: false,
         child: ListView(
           controller: _scroll,
-          padding: const EdgeInsets.all(20),
+          padding: campusScrollPadding(context, const EdgeInsets.all(20)),
           children: [
             Text('外观模式', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 12),

@@ -174,7 +174,7 @@ class _NearbyPageState extends State<NearbyPage> {
 
   Widget _setup(BuildContext context) {
     final colors = CampusPalette.of(context);
-    return CampusScrollFade(child: SafeArea(child: ListView(padding: const EdgeInsets.all(CampusGap.large), children: [
+    return CampusScrollFade(child: SafeArea(bottom: false, child: ListView(padding: campusScrollPadding(context, const EdgeInsets.all(CampusGap.large)), children: [
       CampusSurface(padding: const EdgeInsets.all(20), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Text('面对面私信', style: Theme.of(context).textTheme.titleLarge),
         SizedBox(height: campusFieldGap(context)),

@@ -148,10 +148,10 @@ class _DeveloperPageState extends State<DeveloperPage> {
         leading: IconButton(tooltip: '返回', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.back)),
         title: const Text('开发者选项'),
       ),
-      body: CampusScrollFade(child: SafeArea(child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: ListenableBuilder(
+      body: CampusScrollFade(child: SafeArea(bottom: false, child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: ListenableBuilder(
         listenable: widget.developer,
         builder: (context, _) => ListView(
-          padding: const EdgeInsets.all(16),
+          padding: campusScrollPadding(context, const EdgeInsets.all(16)),
           children: [
             CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: CampusSwitchTile(
               title: const Text('开发者模式'),
@@ -317,7 +317,7 @@ class _DeveloperLogPageState extends State<DeveloperLogPage> {
           ),
         ],
       ),
-      body: SafeArea(child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: Column(children: [
+      body: SafeArea(bottom: false, child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: Column(children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
           child: CampusSegmented<bool>(
@@ -340,7 +340,7 @@ class _DeveloperLogPageState extends State<DeveloperLogPage> {
             final shown = query.isEmpty ? records : [for (final record in records) if (pattern.hasMatch(record.text)) record];
             if (shown.isEmpty) return Center(child: Text(records.isEmpty ? '还没有日志' : '没有匹配的日志', style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant)));
             return CampusScrollFade(child: ListView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              padding: campusScrollPadding(context, const EdgeInsets.fromLTRB(16, 8, 16, 16)),
               itemCount: shown.length,
               itemBuilder: (context, index) {
                 final record = shown[index];

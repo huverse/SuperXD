@@ -159,9 +159,9 @@ class _AcademicPageState extends State<AcademicPage> {
         leading: IconButton(tooltip: '返回', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.back)),
         title: const Text('学业'),
       ),
-      body: CampusScrollFade(child: SafeArea(child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: ListenableBuilder(
+      body: CampusScrollFade(child: SafeArea(bottom: false, child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: ListenableBuilder(
         listenable: Listenable.merge([?autoSync]),
-        builder: (context, _) => ListView(padding: const EdgeInsets.all(16), children: [
+        builder: (context, _) => ListView(padding: campusScrollPadding(context, const EdgeInsets.all(16)), children: [
           CampusSurface(padding: const EdgeInsets.all(20), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             // 学期名在「学年」后切开换行（DotSeparatedText），窄屏大字号不折出孤字「期」。
             DotSeparatedText(_term == null ? '还没有学期' : _term!.label.isEmpty ? _term!.key : _term!.label, style: TextStyle(fontSize: CampusFontSize.title, fontWeight: FontWeight.w600, color: palette.onSurface)),

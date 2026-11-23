@@ -371,6 +371,7 @@ class _ExpressPageState extends State<ExpressPage> {
     ),
     // 内容滚到透明顶栏下时自身渐隐，同百宝箱其他页（theme 的 CampusScrollFade）。
     body: CampusScrollFade(child: SafeArea(
+      bottom: false,
       child: FutureBuilder<void>(
         future: _ready,
         builder: (context, snapshot) {
@@ -418,7 +419,7 @@ class _ExpressPageState extends State<ExpressPage> {
     final palette = CampusPalette.of(context);
     final quiet = TextStyle(fontSize: 14, color: palette.onSurfaceVariant);
     return ListView(
-      padding: const EdgeInsets.all(24),
+      padding: campusScrollPadding(context, const EdgeInsets.all(24)),
       children: [
         const SizedBox(height: 32),
         Center(child: CampusIcon(CampusIcons.parcel, size: 56, color: palette.onSurfaceVariant)),
@@ -704,6 +705,7 @@ class _ExpressPageState extends State<ExpressPage> {
             ),
           ),
         ),
+        const CampusScrollTail(),
       ],
     );
   }

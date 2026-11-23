@@ -51,7 +51,7 @@
   - campus_typesetting.dart：排版口径（10-27 iPhone 系统字体下时刻被裁后加）：campusTextPainter、campusTextWidth 按 Text 实际排版的口径量文字（合并默认样式的字距、系统粗体文本时加粗、字号缩放、语言），凡按文字尺寸决定布局的都用它，不自己 new TextPainter；小图标对齐一段文字的第一行用 campusLineInset（按实际行高量，不写死行高倍数）；BalancedText 是短句均衡换行（同 CSS text-wrap: balance，行数不变取最窄宽度，只管四行以内，支持外层 IntrinsicHeight），课名、教室、短提示与弹窗正文用它避免末行剩一两个字；expandWhenWrapped 让折了行的仍占满给的宽度（Wrap 里的一项，不让下一项挤到它右边）。
   - scroll_anchor.dart：滚动锚定 CampusAnchoredScrollController：hold 之后，整页重新排版（字号过渡、换字体）时在滚动区排版的同一帧里校正滚动位置，锚点停在原来的屏幕位置；过了最短时长还要等到一次不用校正、内容尺寸不再变的排版才放开（慢设备上过渡的最后一帧会晚到），最晚 settleLimit；手指一按或代码滚动就放开，到顶或到底校正不了的部分照常移动。界面页的字号与字体选项在用。
   - status_bar_scroll.dart：iOS 点状态栏回顶 CampusStatusBarScroll（组合根套在 MaterialApp.builder 里）：系统经 WidgetsBindingObserver.handleStatusBarTap 交来点按，分支页的滚动区挂在各自路由上、壳层 Scaffold 收不到，所以记住最近拖过的竖向滚动区，把它滚回开头（倒序列表是视觉上的顶端）；它不在最上层路由或分支不可见时不动。scrollToTop 给 iOS 再点当前底栏项时用。
-  - scroll_edge_fade.dart：ScrollEdgeFade 在浮动玻璃栏下只渐隐内容本身（子树里不能再放玻璃）；CampusScrollFade 是页面滚动区的柔和边缘：有滚动区的页面都包（code_conventions_test.dart 守护；弹层、弹窗是玻璃面板不包），子树有玻璃开关或视频的页面不包；倒序列表（会话页最新在下）按视觉上缘那一端算，首次排版就按位置渐隐；没有浮动栏时下面还有内容就同样让下缘自身淡出（最多 24，滚到底不淡，ScrollEdgeFade 的 tail），滚动位置在排版当中被校正时等这一帧画完再改。
+  - scroll_edge_fade.dart：页面滚动区的底边 campusScrollPadding（内边距再加手势条高度）与 CustomScrollView 末尾的 CampusScrollTail：滚动区不包 SafeArea 的底边、画到屏幕底，滚到底时最后一项停在手势条上方（11-23 用户截图指出很多页底部像被截断，code_conventions_test.dart 守护）；ScrollEdgeFade 在浮动玻璃栏下只渐隐内容本身（子树里不能再放玻璃）；CampusScrollFade 是页面滚动区的柔和边缘：有滚动区的页面都包（code_conventions_test.dart 守护；弹层、弹窗是玻璃面板不包），子树有玻璃开关或视频的页面不包；倒序列表（会话页最新在下）按视觉上缘那一端算，首次排版就按位置渐隐；没有浮动栏时下面还有内容就同样让下缘自身淡出（最多 24，滚到底不淡，ScrollEdgeFade 的 tail），滚动位置在排版当中被校正时等这一帧画完再改。
   - third_party_licenses.dart：registerCampusLicenses 把本项目 GPL-3.0 全文、第三方声明和两套字体许可注册进 LicenseRegistry。
 
 # 关键规则
@@ -76,7 +76,7 @@
 - 动效与转场：campus_motion_test.dart、transition_sync_test.dart（含 iOS 推入与任意位置右滑返回）、account_lifecycle_test.dart（入场与转场中间帧）。
 - 提示条：campus_glass_test.dart（玻璃胶囊、锚点上方、点一下收起与留白点穿、下滑横划与快甩划走、按着暂停计时、投影不裁剪、被新弹层或页面盖住就收起、读屏不自动收起、弹层里浮最上层、hideCampusToast 收起）、shell_layout_test.dart（停在两端底栏上方）。
 - 通用组件：theme_components_test.dart（长说明排版、列表增删过渡（含按需建的列表只建看得见的行、首尾行裁成卡片圆角）、滚动锚定、底部弹层挂根导航器、点状态栏回顶、iOS 拖动收起键盘）；typesetting_test.dart（测量与 Text 同口径含粗体文本与字距、均衡换行、分段控件按字分宽、说明行的点不单独成行、说明行一项比一行长时均衡折行并占满这一行）。
-- 规范守护：code_conventions_test.dart（不直接用 MaterialPageRoute、lib/theme 以外不直接用 Material 的筹码、加载圆环与下拉刷新（短视频结果页的下载百分比圈暂留）、toImageSync 只用于云雾贴图、内嵌网页拖动归网页、setState 不返回 Future、只有图标的 IconButton 带 tooltip、⋯菜单破坏性项标警示色、有滚动区的页面包滚动边缘渐隐、顶栏右侧操作用玻璃圆钮〔地图选点页例外，见测试注释〕）。
+- 规范守护：code_conventions_test.dart（不直接用 MaterialPageRoute、lib/theme 以外不直接用 Material 的筹码、加载圆环与下拉刷新（短视频结果页的下载百分比圈暂留）、toImageSync 只用于云雾贴图、内嵌网页拖动归网页、setState 不返回 Future、只有图标的 IconButton 带 tooltip、⋯菜单破坏性项标警示色、有滚动区的页面包滚动边缘渐隐、页面滚动区不包 SafeArea 的底边、顶栏右侧操作用玻璃圆钮〔地图选点页例外，见测试注释〕）。
 
 # 人工决策检索
 

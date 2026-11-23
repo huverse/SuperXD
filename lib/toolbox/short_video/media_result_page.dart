@@ -365,6 +365,7 @@ class _MediaResultPageState extends State<MediaResultPage> {
         ],
       ),
       body: CampusScrollFade(child: SafeArea(
+        bottom: false,
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 900),
@@ -555,6 +556,7 @@ class _MediaResultPageState extends State<MediaResultPage> {
                           },
                         ),
                       ),
+                    const CampusScrollTail(),
                   ],
                 );
               },
