@@ -92,26 +92,14 @@ class ZhuliBath {
     campusLog('[Zhuli] action=bath_start channel=${device.channel}');
     if (!device.bluetooth) return _run((session) => _client.startCloud(session, device));
     final watch = Stopwatch()..start();
-    return _withLink(device, warm: warm, watch: watch, (link, handshake, history) async {
+    return _withLink(device, warm: warm, watch: watch, (link, handshake) async {
       if (handshake.occupied) {
         // 设备被占用：是自己这台上没结束的单就接回去，别人的就换一台（同原 App）。
         final last = await _run(_client.lastRecord);
         if (last != null && last.running && last.deviceId == device.id) return ZhuliOrderStart(orderId: last.orderId, status: last.status);
         throw const ZhuliException(ZhuliFailure.rejected, '设备正在被使用，换一台试试');
       }
-      // 下单和补传历史单都只要握手拿到的 isn，一起发（原 App 先补传再下单，省约 0.3 秒，11-23 对照原 App 前端确认没有依赖）；
-      // 写帧仍按历史帧在前、开始帧在后。补传了历史、下单又被拒（住理可能还当那一单在用水）时，补传完再下一次。
-      final ordering = _run((session) => _client.startBluetooth(session, device, handshake.isn));
-      unawaited(ordering.then<void>((_) {}, onError: (Object _) {}));
-      final uploaded = await history;
-      ZhuliOrderStart order;
-      try {
-        order = await ordering;
-      } on ZhuliException catch (error) {
-        if (!uploaded || error.failure != ZhuliFailure.rejected) rethrow;
-        campusLog('[Zhuli] action=ble_order_retry');
-        order = await _run((session) => _client.startBluetooth(session, device, handshake.isn));
-      }
+      final order = await _run((session) => _client.startBluetooth(session, device, handshake.isn));
       campusLog('[Zhuli] action=ble_step step=order ms=${watch.elapsedMilliseconds}');
       final frame = order.startFrame;
       if (frame == null) throw const ZhuliException(ZhuliFailure.invalidResponse, '住理生活的返回看不懂，稍后再试');
@@ -137,9 +125,8 @@ class ZhuliBath {
       return _settled(orderId);
     }
     final watch = Stopwatch()..start();
-    await _withLink(device, warm: warm, watch: watch, (link, handshake, history) async {
+    await _withLink(device, warm: warm, watch: watch, (link, handshake) async {
       // 握手时补传了历史单：在设备上已经关了水的，这一单已结算，不用再写结束帧。查这一单与取结束帧一起发（结束帧只是取来，结算了就不写）。
-      await history;
       final (bill, frame) = await (_run((session) => _client.bill(session, orderId)), _run((session) => _client.bleEndFrame(session, device.id, handshake.isn))).wait;
       if (bill.status == 'finished') return;
       final reply = await link.exchange(frame, zhuliEndReply);
@@ -175,9 +162,8 @@ class ZhuliBath {
 
   // 连上设备并握手，做完 work 断开；连着时设备发来的结束回执都交服务端结算。
   // 预先连好、还连着的直接用，没连上或已经断了就当场再连；握手帧只要设备号，和连接同时去取（省一次来回），连不上时这个请求的结果不要了。
-  // 补传历史单在握手后就开始，交给 work 的 history 是它（结果是补传了没有，设备被占用时不补传）；work 写自己的帧之前要先等它（帧的先后）。
   // 每一步从点下去算的毫秒数记进日志（ble_step），真机上看慢在哪。
-  Future<T> _withLink<T>(ZhuliDevice device, Future<T> Function(ZhuliBleLink link, ZhuliHandshake handshake, Future<bool> history) work, {Future<ZhuliBleLink>? warm, required Stopwatch watch}) async {
+  Future<T> _withLink<T>(ZhuliDevice device, Future<T> Function(ZhuliBleLink link, ZhuliHandshake handshake) work, {Future<ZhuliBleLink>? warm, required Stopwatch watch}) async {
     final helloing = _run((session) => _client.bleHandshakeFrame(session, device.id));
     // 先接住它的错：连接还没好时它就失败也不算没人接的错误，后面 await 时照样抛出来。
     unawaited(helloing.then<void>((_) {}, onError: (Object _) {}));
@@ -206,26 +192,25 @@ class ZhuliBath {
       final handshake = await _run((session) => _client.bleHandshake(session, device.id, greeting));
       if (handshake.rateCommand case final rate?) await link.exchange(rate, zhuliRateReply);
       campusLog('[Zhuli] action=ble_step step=handshake ms=${watch.elapsedMilliseconds}');
-      final history = handshake.occupied ? Future<bool>.value(false) : _history(link, device, handshake.isn);
-      unawaited(history.then<void>((_) {}, onError: (Object _) {}));
-      return await work(link, handshake, history);
+      // [人工决策-2026-11-23 17:45:58] 补传历史单传完才交给 work 下单或关水（同原 App，设备被占用时不补传）：11-23 真机 AQ5PSNDF 上下单与补传一起发，
+      // 补传撞在下单处理中被住理回 device_busy；补传是结算别人在设备上直接关水那一单、退回预扣的路，用户选了不靠住理没公开的并发规则，开水宁可慢约 0.25 秒。
+      if (!handshake.occupied) await _history(link, device, handshake.isn);
+      return await work(link, handshake);
     } finally {
       await receipts.cancel();
       await link.disconnect();
     }
   }
 
-  // 补传设备里还没交给服务端的单（同原 App：失败不影响开关水；没有历史单时住理不给帧）。返回补传了没有。
-  Future<bool> _history(ZhuliBleLink link, ZhuliDevice device, String isn) async {
+  // 补传设备里还没交给服务端的单（同原 App：失败不影响开关水；没有历史单时住理不给帧）。
+  Future<void> _history(ZhuliBleLink link, ZhuliDevice device, String isn) async {
     try {
       final frame = await _run((session) => _client.bleHistoryFrame(session, device.id, isn));
       final reply = await link.exchange(frame, zhuliHistoryReply);
       await _run((session) => _client.bleEnded(session, device.id, reply));
-      return true;
     } on ZhuliException catch (error) {
       if (error.failure == ZhuliFailure.notSignedIn || error.failure == ZhuliFailure.captchaRequired) rethrow;
       campusLog('[Zhuli] action=ble_history reason=${error.failure.name}');
-      return false;
     }
   }
 }

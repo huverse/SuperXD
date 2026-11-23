@@ -69,8 +69,6 @@ class _FakeBath {
   var occupied = false;
   // 握手后补传的历史单就把这一单结算了（在设备上关了水）。
   var historySettles = false;
-  // 下单先拒这么多次（住理还当上一单在用水）。
-  var rejectOrders = 0;
   // 这一路径下一次回 login_timeout（模拟洗着澡会话过期）。
   String? expireOn;
 
@@ -127,7 +125,6 @@ class _FakeBath {
         ]),
         '/webapi/v1/device/list_room_device_by_consume_type' => ok(devices.values.toList()),
         '/webapi/v1/device/collect_gprs_device_status' => ok(null),
-        '/webapi/v1/consume/create_order' when rejectOrders > 0 && rejectOrders-- > 0 => fail(null, '你有正在进行的订单'),
         '/webapi/v1/consume/create_order' => ok({'order_id': 'O1', 'status': 'created', 'balance': '12.4900', if (query['net_type'] == '4') 'app_bytes': _frame(3, 0xAB)}),
         '/webapi/v1/staff/get_bill_detail_by_id' => ok({
           'order_id': query['bill_id'],
@@ -422,15 +419,10 @@ void main() {
       expect(link.disconnects, 1);
     });
 
-    test('下单和补传历史单一起发：下单请求在补传上报之前就发出去，写帧仍是历史帧在前；补传过、下单被拒时补传完再下一次', () async {
+    test('补传历史单交给住理之后才下单（同原 App；11-23 真机一起发时补传被回 device_busy）', () async {
       await bath.start(await device(102));
       int at(String path) => fake.requests.indexWhere((uri) => uri.path == path);
-      expect(at('/webapi/v1/consume/create_order'), lessThan(at('/webapi/v1/consume/ble/end_consume_response')));
-      expect(link.written.indexOf(_frame(2)), lessThan(link.written.indexOf(_frame(3, 0xAB))));
-      fake.rejectOrders = 1;
-      final order = await bath.start(await device(102));
-      expect(order.orderId, 'O1');
-      expect(fake.count('/webapi/v1/consume/create_order'), 3, reason: '第二次开水下单被拒一次、补传完再下一次');
+      expect(at('/webapi/v1/consume/ble/end_consume_response'), lessThan(at('/webapi/v1/consume/create_order')));
     });
 
     test('握手帧只要设备号，和连接同时去取：连接还挂着时请求已经发出去', () async {
