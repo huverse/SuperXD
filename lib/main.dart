@@ -23,6 +23,7 @@ import 'package:superxd/application/campus_timetable.dart';
 import 'package:superxd/application/campus_widgets.dart';
 import 'package:superxd/application/leisure.dart';
 import 'package:superxd/application/network_preference.dart';
+import 'package:superxd/application/quick_nav.dart';
 import 'package:superxd/device/background_sync.dart';
 import 'package:superxd/device/ble_nearby_radio.dart';
 import 'package:superxd/device/backup_exclusion.dart';
@@ -47,6 +48,7 @@ import 'package:superxd/local/font_packs.dart';
 import 'package:superxd/local/network_mode_memory.dart';
 import 'package:superxd/local/legal_notice_memory.dart';
 import 'package:superxd/local/painting_library.dart';
+import 'package:superxd/local/quick_nav_memory.dart';
 import 'package:superxd/page/painting_splash.dart';
 import 'package:superxd/playground/playground_store.dart';
 import 'package:superxd/social/identity_vault.dart';
@@ -160,14 +162,17 @@ void main() async {
   final databasesPath = getDatabasesPath();
   final networkOpen = FileNetworkModeMemory.open(File(path.join(support.path, 'network_mode.json')), legacy: File(path.join(support.path, 'leisure.json')));
   final legalOpen = LegalNoticeMemory.open(File(path.join(support.path, 'legal_notice.json')));
+  // 今天页侧栏的常用与最近（人工决策见 page/side_drawer.dart）：设备级，只存本机。
+  final quickOpen = FileQuickNavMemory.open(File(path.join(support.path, 'quick_nav.json')));
   ensureCampusClock();
   configureCampusIcons();
   registerCampusLicenses();
-  await Future.wait<Object?>([splashOpen, developerOpen, edgeToEdge, portrait, storeOpen, displayOpen, glassLoad, databasesPath, networkOpen, legalOpen]);
+  await Future.wait<Object?>([splashOpen, developerOpen, edgeToEdge, portrait, storeOpen, displayOpen, glassLoad, databasesPath, networkOpen, legalOpen, quickOpen]);
   final (:launched, :painting, image: splashImage) = await splashOpen;
   final paintings = await paintingsOpen, developer = await developerOpen, store = await storeOpen, display = await displayOpen;
   final socialDirectory = await databasesPath, legal = await legalOpen;
   network = NetworkPreference(memory: await networkOpen);
+  final quickNav = QuickNav(memory: await quickOpen);
 
   watchDeveloperMode(developer, logs, environment: appEnvironment);
   unawaited(recordExitReasons(marker: File(path.join(support.path, 'last_exit_seen')), read: readExitReasons, onAbnormal: (at) => markFatal(at)));
@@ -248,7 +253,7 @@ void main() async {
   final splashed = painting != null && splashImage != null;
   final splashGone = ValueNotifier(!splashed);
   final restored = Completer<void>();
-  final services = AppServices(display: display, reminders: reminders, social: social, nearby: nearby, updates: updates, legal: legal, developer: developer, logs: logs, paintings: paintings, shortcuts: shortcuts, notes: notes, festivals: festivals, appAccounts: appAccounts, diagnostics: diagnostics, challenges: challenges, unlocks: unlocks, playground: playground, leisure: leisure, moments: moments, autoSync: autoSync, health: health, network: network, features: rollouts, passes: passes);
+  final services = AppServices(display: display, reminders: reminders, social: social, nearby: nearby, updates: updates, legal: legal, developer: developer, logs: logs, paintings: paintings, shortcuts: shortcuts, notes: notes, festivals: festivals, appAccounts: appAccounts, diagnostics: diagnostics, challenges: challenges, unlocks: unlocks, playground: playground, leisure: leisure, moments: moments, autoSync: autoSync, health: health, network: network, features: rollouts, passes: passes, quickNav: quickNav);
   final app = SuperXdApp(session: session, services: services, launch: launched, splashGone: splashGone);
   runApp(splashed ? PaintingSplash(painting: painting, image: splashImage, ready: restored.future, onGone: () => splashGone.value = true, child: app) : app);
   // 首帧上屏：健康回报的启动档按这段时长记（只记档位次数，人工决策见 domain/app_health.dart 的 11-17 那条）。

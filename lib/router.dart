@@ -18,6 +18,12 @@ import 'package:superxd/page/legal_page.dart';
 import 'package:superxd/page/message_page.dart';
 import 'package:superxd/page/section_pages.dart';
 import 'package:superxd/page/shell_page.dart';
+import 'package:superxd/page/about_page.dart';
+import 'package:superxd/page/account_page.dart';
+import 'package:superxd/page/appearance_page.dart';
+import 'package:superxd/page/quick_entry.dart';
+import 'package:superxd/page/side_drawer.dart';
+import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/page/today_page.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
@@ -37,7 +43,7 @@ void pushAppAccountPage(BuildContext context, AppServices services, {Future<bool
 
 // 路由表（组合根）：设备级服务都在 services 里（见 app_services.dart），百宝箱运行时与游乐场记录由外壳给好。
 GoRouter buildRouter({required AppSession session, required AppServices services, required ToolboxRuntime toolbox, required PlaygroundStore playground, ValueListenable<bool>? splashGone, Future<bool> Function(Uint8List png)? saveRewardPicture, List<NavigatorObserver>? observers}) {
-  final AppServices(:reminders, :social, :nearby, :updates, :developer, :logs, :paintings, :notes, :festivals, :appAccounts, :challenges, :unlocks, :autoSync, :health, :network, :features) = services;
+  final AppServices(:reminders, :social, :nearby, :updates, :developer, :logs, :paintings, :notes, :festivals, :appAccounts, :challenges, :unlocks, :autoSync, :health, :network, :features, :quickNav) = services;
   final void Function(BuildContext context)? openAccount = appAccounts == null ? null : (context) => pushAppAccountPage(context, services, saveRewardPicture: saveRewardPicture);
   final gateway = session.gateway;
   final tools = toolbox.modules;
@@ -66,7 +72,33 @@ GoRouter buildRouter({required AppSession session, required AppServices services
     reminders: reminders,
     social: social,
   );
-  return router = GoRouter(
+  // 今天页侧栏与搜索的入口目录（人工决策见 page/side_drawer.dart）：从学业、百宝箱（含子模块与快捷入口）、游乐场的登记与几个设置页汇总，
+  // 显隐同路由门禁（解锁、灰度）；不放底栏四个根页（底栏就有）。有路由的 id 就是路径，没有的写固定名字，发出后不改。
+  void push(BuildContext context, Widget page) => unawaited(Navigator.of(context, rootNavigator: true).push(CampusPageRoute<void>(builder: (context) => page)));
+  String sessionName() => switch (gateway.activeSession) {
+    null => '',
+    final account => account.name.isEmpty ? account.loginId : account.name,
+  };
+  List<QuickEntry> quickEntries() => [
+    QuickEntry(id: '/academic', title: '学业', icon: CampusIcons.academic, group: '学业', keywords: const ['同步', '教务'], open: (context) => context.push('/academic')),
+    for (final feature in academicFeatures) QuickEntry(id: feature.path, title: feature.title, icon: feature.icon, group: '学业', open: (context) => context.push(feature.path)),
+    QuickEntry(id: '/academic/records', title: '同步记录', icon: CampusIcons.history, group: '学业', open: (context) => context.push('/academic/records')),
+    QuickEntry(id: '/toolbox', title: '百宝箱', icon: CampusIcons.toolbox, group: '百宝箱', keywords: const ['工具'], open: (context) => context.push('/toolbox')),
+    for (final tool in pages)
+      if (toolboxRedirect(tools, toolboxPath(tool), unlocks: unlocks, features: features) == null) ...[
+        QuickEntry(id: toolboxPath(tool), title: tool.name, icon: tool.icon, group: '百宝箱', keywords: _quickAliases[tool.id] ?? const [], open: (context) => context.push(toolboxPath(tool))),
+        for (final shortcut in tool.shortcuts) QuickEntry(id: '${toolboxPath(tool)}/${shortcut.id}', title: shortcut.label, icon: shortcut.icon, group: '百宝箱', open: (context) => context.push('${toolboxPath(tool)}/${shortcut.id}')),
+      ],
+    QuickEntry(id: '/playground', title: '游乐场', icon: CampusIcons.playground, group: '游乐场', keywords: const ['游戏', '挑战', '积分'], open: (context) => context.push('/playground')),
+    for (final game in playgroundCatalog)
+      if (unlocks?.locked(playgroundUnlockId(game.id)) != true) QuickEntry(id: '/playground/${game.id}', title: game.name, icon: game.icon, group: '游乐场', open: (context) => context.push('/playground/${game.id}')),
+    QuickEntry(id: 'appearance', title: '界面', icon: CampusIcons.palette, group: '设置', keywords: const ['字号', '配色', '字体', '深色', '壁纸', '玻璃'], open: (context) => push(context, const AppearancePage())),
+    QuickEntry(id: 'account', title: '教务账号', icon: CampusIcons.account, group: '设置', keywords: const ['切换账号', '退出登录', '记住账号'], open: (context) => push(context, AccountPage(session: session, name: sessionName()))),
+    if (openAccount != null) QuickEntry(id: 'app-account', title: '应用账号', icon: CampusIcons.mainAccount, group: '设置', keywords: const ['开发者的话', '红包', '联网', '恢复码'], open: openAccount),
+    QuickEntry(id: 'about', title: '关于', icon: CampusIcons.info, group: '设置', keywords: const ['检查更新', '版本', '隐私政策', '用户协议', '开屏画作'], open: (context) => push(context, AboutPage(updates: updates, health: health, developer: developer, logs: logs, paintings: paintings))),
+  ];
+  final quick = QuickCatalog(entries: quickEntries, defaults: _quickDefaults, changes: [?unlocks?.changes, ?features?.changes]);
+  router = GoRouter(
     navigatorKey: rootKey,
     observers: observers,
     initialLocation: '/boot',
@@ -146,7 +178,10 @@ GoRouter buildRouter({required AppSession session, required AppServices services
       ),
       StatefulShellRoute(
         navigatorContainerBuilder: (context, shell, children) => AnimatedBranches(index: shell.currentIndex, children: children),
-        pageBuilder: (context, state, navigationShell) => campusPage(key: state.pageKey, child: LegacyImportGate(session: session, child: ShellPage(navigationShell: navigationShell, social: social, notes: notes, revealed: splashGone))),
+        pageBuilder: (context, state, navigationShell) => campusPage(key: state.pageKey, child: LegacyImportGate(session: session, child: ShellPage(
+          navigationShell: navigationShell, social: social, notes: notes, revealed: splashGone,
+          drawer: quickNav == null ? null : ListenableBuilder(listenable: session, builder: (context, _) => SideDrawerPanel(catalog: quick, nav: quickNav, name: sessionName(), onAccount: () => navigationShell.goBranch(3))),
+        ))),
         branches: [
           StatefulShellBranch(routes: [GoRoute(path: '/today', builder: (context, state) => TodayPage(gateway: gateway, onSessionExpired: () => session.expire(generation), isAccountCurrent: () => session.generation == generation && session.loggedIn, syncRequest: todaySync, autoSync: autoSync))]),
           StatefulShellBranch(routes: [GoRoute(path: '/service', builder: (context, state) => const ServicePage())]),
@@ -156,4 +191,25 @@ GoRouter buildRouter({required AppSession session, required AppServices services
       ),
     ],
   );
+  // 进了目录里登记的页面（从哪里进的都算，含侧栏、服务页与快捷入口）就记进侧栏的最近；没路由的设置页由侧栏打开时自己记。
+  if (quickNav != null) {
+    router.routerDelegate.addListener(() {
+      if (router.routerDelegate.currentConfiguration.isEmpty) return;
+      final location = router.state.matchedLocation;
+      if (quickEntries().any((entry) => entry.id == location)) quickNav.visit(location);
+    });
+  }
+  return router;
 }
+
+// 没编辑过常用时侧栏列这几个（看不见的跳过）。
+const _quickDefaults = ['/schedule', '/grades', '/toolbox/chaoxing', '/toolbox/life/zhuli', '/toolbox/express', '/toolbox/short_video', '/playground'];
+
+// 百宝箱各工具在搜索里的别名（按工具 id）。
+const _quickAliases = {
+  'short_video': ['去水印', '下载', '抖音', '短视频'],
+  'chaoxing': ['签到', '超星'],
+  'express': ['取件', '驿站', '拼多多'],
+  'cinema': ['电影', '看片', '影视'],
+  'life.zhuli': ['洗澡', '洗浴', '热水', '水控', '充值'],
+};

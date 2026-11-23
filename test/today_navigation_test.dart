@@ -581,7 +581,8 @@ void main() {
   });
 
   testWidgets('窄屏大字号下顶栏日期放不下一行时星期换到第二行，不截字', (tester) async {
-    await _mount(tester, _Gateway(), size: const Size(360, 740), scale: 1.6);
+    // 11-23 起顶栏去掉了「今天」大字、日期居中（两侧各一个圆钮），1.6 倍时一行放得下，换成 2.0 倍才放不下。
+    await _mount(tester, _Gateway(), size: const Size(360, 740), scale: 2.0);
     // 一行放不下「9月25日 周五」：日期一行、星期一行，两行都完整。
     expect(find.text('9月25日'), findsOneWidget);
     expect(find.text('周五'), findsOneWidget);
@@ -762,7 +763,7 @@ void main() {
 
   testWidgets('日期同栏且不再创建独立切日胶囊，预览不提交', (tester) async {
     await _mount(tester, _Gateway());
-    expect(tester.getCenter(_date('2026-09-25')).dy, closeTo(tester.getCenter(find.text('今天').first).dy, 1));
+    expect(tester.getCenter(_date('2026-09-25')).dy, closeTo(tester.getCenter(find.byTooltip('同步')).dy, 1), reason: '日期和顶栏的圆钮同一行');
     final gesture = await tester.startGesture(tester.getCenter(_date('2026-09-25')));
     await gesture.moveBy(const Offset(0, -24)); await tester.pump();
     await gesture.moveBy(const Offset(0, -40)); await tester.pump();

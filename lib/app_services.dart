@@ -7,6 +7,7 @@ import 'package:flutter/widgets.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path/path.dart' as path;
 
+import 'package:superxd/application/quick_nav.dart';
 import 'package:superxd/application/account_diagnostics.dart';
 import 'package:superxd/application/app_accounts.dart';
 import 'package:superxd/application/app_health.dart';
@@ -69,7 +70,7 @@ import 'package:superxd/relay/relay_pass_client.dart';
 // 组合根造好的设备级服务（[人工决策-2026-11-16 17:26:21] 组合根改应用模块，用户选定架构推荐方案）：打包成一份交给应用外壳、账号应用与路由，
 // 新功能只在这里加一个字段，不再在 SuperXdApp、账号应用与 buildRouter 三处各加一个参数。为空的表示这项没有（没配中转、测试没给），页面照各自的规则藏起入口。
 class AppServices {
-  const AppServices({this.display, this.toolbox, this.playground, this.reminders, this.social, this.nearby, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.notes, this.festivals, this.appAccounts, this.diagnostics, this.challenges, this.unlocks, this.leisure, this.moments, this.autoSync, this.health, this.network, this.features, this.passes});
+  const AppServices({this.display, this.toolbox, this.playground, this.reminders, this.social, this.nearby, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.notes, this.festivals, this.appAccounts, this.diagnostics, this.challenges, this.unlocks, this.leisure, this.moments, this.autoSync, this.health, this.network, this.features, this.passes, this.quickNav});
   // 显示设置；为空时用一份只在内存里的。
   final DisplaySettings? display;
   // 百宝箱运行时；为空时外壳按注册表自己建。
@@ -114,6 +115,8 @@ class AppServices {
   final FeatureGate? features;
   // 积分时长券（人工决策见 domain/pass.dart；预接好、不启用）；没配中转时为空，要换时长的服务都不拦。
   final PassAccess? passes;
+  // 今天页侧栏的常用与最近（人工决策见 page/side_drawer.dart）；为空时（测试）今天页没有侧栏。
+  final QuickNav? quickNav;
 }
 
 // 中转服务地址来自构建参数 SUPERXD_RELAY；未配置或格式不对时私信与应用更新都不可用，不猜默认地址。

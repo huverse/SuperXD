@@ -28,6 +28,8 @@ abstract final class CampusIcons {
   static const eye = LucideIcons.eye;
   static const eyeClosed = LucideIcons.eyeClosed;
   static const search = LucideIcons.search;
+  // 今天页左上角拉出侧栏（同 Claude 的长短横线）。
+  static const sidebar = LucideIcons.alignLeft;
   static const filter = LucideIcons.slidersHorizontal;
   static const sync = LucideIcons.refreshCw;
   static const edit = LucideIcons.pencil;

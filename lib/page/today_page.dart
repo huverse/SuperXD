@@ -19,6 +19,8 @@ import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/campus_rolling_text.dart';
+import 'package:superxd/theme/campus_side_drawer.dart';
+import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/application/auto_sync.dart';
 import 'package:superxd/application/campus_sync.dart';
 import 'package:superxd/domain/campus_gateway.dart';
@@ -55,11 +57,6 @@ class TodaySyncRequest extends ChangeNotifier {
     return (year: _year);
   }
 }
-
-// 今天页顶栏放得下「同步」胶囊的标准：减去大标题「今天」、间距与胶囊（图标 20、间距 8、左右内边距 28 再加文字）后，
-// 留给日期的宽度写得下「12月30日」；放不下时「同步」只留图标。界面页按它算推荐字号的上限（text_size_range.dart）。
-bool todayHeaderFits(BuildContext context, double width, {String label = '同步', TextScaler? textScaler}) =>
-    width - campusTextWidth(context, '今天', style: Theme.of(context).textTheme.headlineMedium, textScaler: textScaler) - 16 - (campusTextWidth(context, label, style: const TextStyle(fontSize: 16), textScaler: textScaler) + 56) >= campusTextWidth(context, '12月30日', style: const TextStyle(fontSize: 14), textScaler: textScaler);
 
 class TodayPage extends StatefulWidget {
   const TodayPage({
@@ -571,8 +568,9 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
         // 日期快照保留布局状态，但颜色订阅当前主题，不能把创建快照时的明暗色固化。
         // 窄屏、大字号下「10月19日 周一」一行放不下时（以前被截成「周」），星期换到第二行、和离今天多远写在一起（「周二 · 明天」），最多两行。
         child: ExcludeSemantics(child: Center(child: LayoutBuilder(builder: (context, constraints) {
-          final primary = TextStyle(fontSize: 14, color: CampusPalette.of(context).onSurface);
-          final secondary = TextStyle(fontSize: 14, height: 1.2, color: CampusPalette.of(context).onSurfaceVariant);
+          // 日期就是这页的标题（顶栏去掉了「今天」大字），一号标题字半粗；离今天多远写在下面一行。
+          final primary = TextStyle(fontSize: CampusFontSize.cardTitle, fontWeight: FontWeight.w600, color: CampusPalette.of(context).onSurface);
+          final secondary = TextStyle(fontSize: CampusFontSize.secondary, height: 1.2, color: CampusPalette.of(context).onSurfaceVariant);
           final full = '$year${date.month}月${date.day}日 $weekday';
           final fits = campusTextWidth(context, full, style: primary) <= constraints.maxWidth;
           final second = fits ? relative : [weekday, ?relative].join(' · ');
@@ -589,25 +587,16 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
     return Column(children: [
       CampusTopBar(child: SizedBox(
         height: 56 * scale,
-        child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4), child: LayoutBuilder(builder: (context, constraints) {
-          final label = _syncing ? '同步中' : '同步';
-          final title = Theme.of(context).textTheme.headlineMedium;
-          // 窄屏、大字号下日期连「10月27日」一行都放不下时，「同步」只留图标（同课表顶栏的圆钮），不把日期截掉一半。
-          final compact = !todayHeaderFits(context, constraints.maxWidth, label: label);
-          final onSync = _syncing || _choosing ? null : _chooseSync;
+        child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4), child: Builder(builder: (context) {
+          final drawer = CampusSideDrawer.maybeOf(context);
+          // [人工决策-2026-11-23 18:29:13] 顶栏两侧玻璃圆钮、日期居中（用户 11-23 选定，同 Claude、Google 日历）：左边拉出侧栏（见 side_drawer.dart），右边同步；
+          // 去掉「今天」大字（底栏已写着今天，看别的日子时日期下面写明天、几天前）。没选两行大标题、把按钮插在「今天」前面。没有侧栏时左边空出同宽，日期仍居中。
           return Row(children: [
-            Text('今天', style: title),
+            if (drawer != null) CampusGlassCircleButton(label: '侧栏', size: 44, onPressed: drawer.open, icon: const CampusIcon(CampusIcons.sidebar, size: 20)) else const SizedBox(width: 44),
             const SizedBox(width: 8),
             Expanded(child: date),
             const SizedBox(width: 8),
-            compact
-                ? CampusGlassCircleButton(label: label, size: 44, onPressed: onSync, icon: const CampusIcon(CampusIcons.sync, size: 20))
-                : FilledButton.icon(
-                    onPressed: onSync,
-                    onLongPress: onSync,
-                    icon: const CampusIcon(CampusIcons.sync, size: 20),
-                    label: Text(label, style: const TextStyle(fontSize: 16)),
-                  ),
+            CampusGlassCircleButton(label: _syncing ? '同步中' : '同步', size: 44, onPressed: _syncing || _choosing ? null : _chooseSync, icon: const CampusIcon(CampusIcons.sync, size: 20)),
           ]);
         })),
       )),
