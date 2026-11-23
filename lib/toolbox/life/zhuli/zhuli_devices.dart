@@ -35,14 +35,23 @@ String? zhuliMac(String text) {
 
 // 本机记着的一台设备：设备号、名字与位置（1号楼 2层 201），列表里给人认。
 class ZhuliDeviceEntry {
-  const ZhuliDeviceEntry({required this.id, required this.name, required this.place});
+  const ZhuliDeviceEntry({required this.id, required this.name, required this.place, this.mode, this.channel});
   final int id;
   final String name;
   final String place;
+  // 设备有哪几路（ZhuliDevice.modeLabel：云端、蓝牙或云端/蓝牙），列表里和设备号一起写，免得同房间同名的设备分不清；11-23 以前记的没有。
+  final String? mode;
+  // 两用设备上次选的通道（4 蓝牙，其余是云端的通道号），下次打开默认用它；没选过为空。
+  final int? channel;
 
-  factory ZhuliDeviceEntry.of(ZhuliDevice device) => ZhuliDeviceEntry(id: device.id, name: device.name, place: device.place);
+  factory ZhuliDeviceEntry.of(ZhuliDevice device) => ZhuliDeviceEntry(id: device.id, name: device.distinctName ?? '', place: device.place, mode: device.modeLabel);
 
-  Map<String, Object> toJson() => {'id': id, 'name': name, 'place': place};
+  // 列表里的一行说明：设备号、和房间不同的设备名、有哪几路。
+  String get detail => [if (name.isNotEmpty && !place.endsWith(name)) name, '设备号 $id', ?mode].join(' · ');
+
+  ZhuliDeviceEntry merged(ZhuliDeviceEntry? known) => ZhuliDeviceEntry(id: id, name: name, place: place, mode: mode ?? known?.mode, channel: channel ?? known?.channel);
+
+  Map<String, Object> toJson() => {'id': id, 'name': name, 'place': place, 'mode': ?mode, 'channel': ?channel};
 }
 
 // 一个账号的两份设备列表（用户 11-22 选「两份」）：最近使用自动记，最多 zhuliRecentLimit 台、新的在前；
@@ -96,7 +105,14 @@ class ZhuliDeviceStore {
   static List<ZhuliDeviceEntry> _entries(Object? raw, int limit) => [
     if (raw is List)
       for (final item in raw)
-        if (item is Map && item['id'] is int && item['name'] is String && item['place'] is String) ZhuliDeviceEntry(id: item['id'] as int, name: item['name'] as String, place: item['place'] as String),
+        if (item is Map && item['id'] is int && item['name'] is String && item['place'] is String)
+          ZhuliDeviceEntry(
+            id: item['id'] as int,
+            name: item['name'] as String,
+            place: item['place'] as String,
+            mode: item['mode'] is String ? item['mode'] as String : null,
+            channel: item['channel'] is int ? item['channel'] as int : null,
+          ),
   ].take(limit).toList();
 
   Future<ZhuliDeviceLists> load(String phone) async {
@@ -112,10 +128,22 @@ class ZhuliDeviceStore {
     return lists;
   }
 
-  // 用过（打开过设备页）的设备记到最近使用最前面，同一台只留一份。
+  // 用过（打开过设备页）的设备记到最近使用最前面，同一台只留一份；常用设备里有这台就原位更新名字、位置与有哪几路。上次选的通道留着。
   Future<ZhuliDeviceLists> used(String phone, ZhuliDeviceEntry entry) => _lock.synchronized(() async {
     final lists = await load(phone);
-    return _save(phone, (recent: [entry, ...lists.recent.where((known) => known.id != entry.id)].take(zhuliRecentLimit).toList(), favorites: lists.favorites));
+    ZhuliDeviceEntry? known(List<ZhuliDeviceEntry> list) => list.where((item) => item.id == entry.id).firstOrNull;
+    final fresh = entry.merged(known(lists.recent) ?? known(lists.favorites));
+    return _save(phone, (
+      recent: [fresh, ...lists.recent.where((item) => item.id != entry.id)].take(zhuliRecentLimit).toList(),
+      favorites: [for (final item in lists.favorites) item.id == entry.id ? entry.merged(item) : item],
+    ));
+  });
+
+  // 两用设备选了走哪一路：最近使用与常用设备里这台都记下，下次默认用它。
+  Future<ZhuliDeviceLists> prefer(String phone, int deviceId, int channel) => _lock.synchronized(() async {
+    final lists = await load(phone);
+    ZhuliDeviceEntry pick(ZhuliDeviceEntry item) => item.id == deviceId ? ZhuliDeviceEntry(id: item.id, name: item.name, place: item.place, mode: item.mode, channel: channel) : item;
+    return _save(phone, (recent: [for (final item in lists.recent) pick(item)], favorites: [for (final item in lists.favorites) pick(item)]));
   });
 
   // 收藏（已收藏的不动位置，满了抛 StateError，页面先看数量）。
@@ -123,7 +151,7 @@ class ZhuliDeviceStore {
     final lists = await load(phone);
     if (lists.favorites.any((known) => known.id == entry.id)) return lists;
     if (lists.favorites.length >= zhuliFavoriteLimit) throw StateError('favorites full');
-    return _save(phone, (recent: lists.recent, favorites: [...lists.favorites, entry]));
+    return _save(phone, (recent: lists.recent, favorites: [...lists.favorites, entry.merged(lists.recent.where((item) => item.id == entry.id).firstOrNull)]));
   });
 
   Future<ZhuliDeviceLists> unfavor(String phone, int deviceId) => _lock.synchronized(() async {

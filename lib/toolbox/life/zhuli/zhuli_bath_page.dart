@@ -9,6 +9,7 @@ import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_tokens.dart';
@@ -46,9 +47,9 @@ String _elapsed(Duration duration) {
 
 enum _Stage { checking, ready, starting, running, ending, done }
 
-// 一台洗浴设备：开水前查一遍（ZhuliBath.prepare），给人看设备、余额与券余额、预扣与单价，点「开水」；
-// 水开着时计时（云端的另每 3 秒查一次用了多少），点「关水」结算后原地显示这一单的账。自己在这台上没结束的单，打开就接着显示「关水」。
-// 打开即记进最近使用；右上角星标收藏到常用设备。
+// 一台洗浴设备：开水前查一遍（ZhuliBath.prepare），给人看设备（设备号、状态、走哪一路）、余额与券余额、预扣与单价，点「开水」；
+// 两用设备可以选走云端还是蓝牙（默认照学校设定，选过的下次照旧）。水开着时计时（云端的另每 3 秒查一次用了多少），点「关水」结算后原地显示这一单的账。
+// 自己在这台上没结束的单，打开就接着显示「关水」。打开即记进最近使用；右上角星标收藏到常用设备。
 class ZhuliBathPage extends StatefulWidget {
   const ZhuliBathPage({super.key, required this.service, required this.phone, required this.deviceId, this.link, this.clock});
   final ZhuliService service;
@@ -65,6 +66,8 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
   late final _bath = ZhuliBath(service: widget.service, phone: widget.phone, link: widget.link, clock: widget.clock);
   var _stage = _Stage.checking;
   ZhuliBathPlan? _plan;
+  // 这一次走哪一路的设备（plan.device 按选的通道 using 过）。
+  ZhuliDevice? _device;
   String? _loadError;
   String? _error;
   String? _orderId;
@@ -101,8 +104,10 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
       final plan = await _bath.prepare(widget.deviceId);
       final lists = await widget.service.devices.used(widget.phone, ZhuliDeviceEntry.of(plan.device));
       if (!mounted) return;
+      final chosen = lists.recent.where((entry) => entry.id == plan.device.id).firstOrNull?.channel;
       setState(() {
         _plan = plan;
+        _device = chosen != null && plan.channels.contains(chosen) ? plan.device.using(chosen) : plan.device;
         _favorite = lists.favorites.any((entry) => entry.id == plan.device.id);
         _stage = _Stage.ready;
       });
@@ -126,7 +131,7 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
       if (mounted) setState(() {});
     });
     // 云端的水开没开、用了多少看订单；蓝牙的用量要等关水时设备交回来，不查。
-    if (!_plan!.device.bluetooth) {
+    if (!_device!.bluetooth) {
       _poll?.cancel();
       _poll = Timer.periodic(const Duration(seconds: 3), (_) => unawaited(_refresh()));
       unawaited(_refresh());
@@ -156,8 +161,23 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
     });
   }
 
-  Future<void> _start() async {
+  // [人工决策-2026-11-23 12:47:51] 两用设备在洗浴页可选「云端 | 蓝牙」（用户选的方案 1：默认照原 App 的选路与学校设定 network_selection，用户可改）：
+  // 11-22 真机上同一台两用设备强制走蓝牙三轮都通，用户要能用蓝牙；没选「默认蓝牙连不上自动改云端」与「只照学校设定不给选」。选了记进本机设备列表，下次默认用它。
+  void _choose(int channel) {
     final plan = _plan!;
+    setState(() {
+      _device = plan.device.using(channel);
+      _error = null;
+      _mates = const [];
+    });
+    unawaited(widget.service.devices.prefer(widget.phone, plan.device.id, channel).catchError((Object error, StackTrace stack) {
+      campusLog('[Zhuli] action=prefer_channel errorType=${error.runtimeType}\n$stack');
+      return (recent: <ZhuliDeviceEntry>[], favorites: <ZhuliDeviceEntry>[]);
+    }));
+  }
+
+  Future<void> _start() async {
+    final plan = _plan!, device = _device!;
     if (plan.confirm case final question?) {
       final agreed = await showCampusConfirm(context, title: '开水', message: question, action: '仍要开');
       if (!agreed || !mounted) return;
@@ -168,7 +188,7 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
       _mates = const [];
     });
     try {
-      final order = await _bath.start(plan.device);
+      final order = await _bath.start(device);
       if (!mounted) return;
       _balanceAfter = order.balance;
       _running(order.orderId, _now());
@@ -178,7 +198,7 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
         _stage = _Stage.ready;
         _error = error.message;
       });
-      if (error.failure == ZhuliFailure.unreachable) unawaited(_findMates(plan.device));
+      if (error.failure == ZhuliFailure.unreachable) unawaited(_findMates(device));
     } catch (error, stack) {
       campusLog('[Zhuli] action=bath_start errorType=${error.runtimeType}\n$stack');
       if (!mounted) return;
@@ -201,8 +221,8 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
   void _switchTo(ZhuliDevice mate) => unawaited(Navigator.of(context).pushReplacement(CampusPageRoute<void>(builder: (_) => ZhuliBathPage(service: widget.service, phone: widget.phone, deviceId: mate.id, link: widget.link, clock: widget.clock))));
 
   Future<void> _end() async {
-    final plan = _plan!, orderId = _orderId!;
-    final agreed = await showCampusConfirm(context, title: '关水', message: plan.device.bluetooth ? '手机放在设备旁，现在关水并结算？' : '现在关水并结算？', action: '关水');
+    final device = _device!, orderId = _orderId!;
+    final agreed = await showCampusConfirm(context, title: '关水', message: device.bluetooth ? '手机放在设备旁，现在关水并结算？' : '现在关水并结算？', action: '关水');
     if (!agreed || !mounted) return;
     _poll?.cancel();
     setState(() {
@@ -210,7 +230,7 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
       _error = null;
     });
     try {
-      final bill = await _bath.end(plan.device, orderId);
+      final bill = await _bath.end(device, orderId);
       if (mounted) _finished(bill);
     } on ZhuliException catch (error) {
       if (!mounted) return;
@@ -259,13 +279,14 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
       ),
       body: CampusScrollFade(
         child: SafeArea(
+          bottom: false,
           child: ListView(
-            padding: const EdgeInsets.all(16),
+            padding: campusScrollPadding(context, const EdgeInsets.all(16)),
             children: [
               if (plan == null)
                 if (_loadError case final error?) CampusLoadError(message: error, onRetry: () => unawaited(_check())) else const CampusLoading(label: '正在查设备', inline: true, network: true, remote: '住理生活')
               else ...[
-                _deviceCard(context, plan.device),
+                _deviceCard(context, plan),
                 const SizedBox(height: CampusGap.large),
                 if (_stage != _Stage.done) ...[_walletCard(context, plan), const SizedBox(height: CampusGap.large)],
                 _actionCard(context, plan),
@@ -277,10 +298,13 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
     );
   }
 
-  Widget _deviceCard(BuildContext context, ZhuliDevice device) {
+  // 设备：位置、设备号与状态；两用设备开水前选走云端还是蓝牙，开着水时写这一单走的是哪一路。
+  Widget _deviceCard(BuildContext context, ZhuliBathPlan plan) {
     final palette = CampusPalette.of(context);
     final secondary = TextStyle(color: palette.onSurfaceVariant);
+    final device = _device!;
     final state = device.status != 0 ? '维护中' : device.idle ? '空闲' : '使用中';
+    final choosing = plan.channels.length > 1 && (_stage == _Stage.ready || _stage == _Stage.starting) && plan.blocked == null;
     return CampusSurface(
       padding: const EdgeInsets.all(20),
       child: Row(
@@ -294,8 +318,20 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
               children: [
                 Text(device.place.isEmpty ? '设备 ${device.id}' : device.place, style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: CampusGap.tight),
-                DotSeparatedText(['设备 ${device.name.isEmpty ? device.id : device.name}', if (_stage == _Stage.ready || _stage == _Stage.checking) state, device.bluetooth ? '蓝牙' : '云端'].join(' · '), style: secondary),
+                DotSeparatedText(
+                  ['设备号 ${device.id}', ?device.distinctName, if (_stage == _Stage.ready || _stage == _Stage.checking) state, if (!choosing) device.bluetooth ? '蓝牙' : '云端'].join(' · '),
+                  style: secondary,
+                ),
                 if (device.supply.isNotEmpty) Text('供水 ${device.supply.map((window) => '${_clockText(window.start)}–${_clockText(window.end)}').join('、')}', style: secondary),
+                if (choosing) ...[
+                  const SizedBox(height: CampusGap.medium),
+                  CampusSegmented<int>(
+                    values: plan.channels,
+                    label: (channel) => channel == 4 ? '蓝牙' : '云端',
+                    selected: device.channel,
+                    onSelected: _stage == _Stage.ready ? _choose : null,
+                  ),
+                ],
               ],
             ),
           ),
@@ -344,7 +380,7 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
     final palette = CampusPalette.of(context);
     final secondary = TextStyle(color: palette.onSurfaceVariant);
     final error = _error;
-    final bluetooth = plan.device.bluetooth;
+    final bluetooth = _device!.bluetooth;
     Widget errorLine() => error == null ? const SizedBox.shrink() : Padding(padding: const EdgeInsets.only(top: CampusGap.medium), child: Text(error, style: TextStyle(color: palette.danger)));
     switch (_stage) {
       case _Stage.checking:
@@ -356,7 +392,7 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (bluetooth) Padding(padding: const EdgeInsets.only(bottom: CampusGap.medium), child: Text('蓝牙开水：手机靠近设备，打开蓝牙', style: secondary)),
+              if (bluetooth) Padding(padding: const EdgeInsets.only(bottom: CampusGap.medium), child: Text('手机靠近设备、打开蓝牙', style: secondary)),
               CampusToastAnchor(
                 child: FilledButton(
                   style: campusProminent,
@@ -372,7 +408,7 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
                     key: ValueKey(mate.id),
                     onPressed: () => _switchTo(mate),
                     icon: const CampusIcon(CampusIcons.swapDevice),
-                    label: Text('换到设备 ${mate.name.isEmpty ? mate.id : mate.name} · ${mate.bluetooth ? '蓝牙' : '云端'}'),
+                    label: Text('换到设备号 ${mate.id} · ${mate.modeLabel}'),
                   ),
                 ),
             ],

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/theme/campus_animated_list.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
@@ -30,8 +31,8 @@ import 'package:superxd/toolbox/toolbox_runtime.dart';
 // 手机号打码（130****8541），账号卡与切换菜单用。
 String zhuliMaskedPhone(String phone) => phone.length == 11 ? '${phone.substring(0, 3)}****${phone.substring(7)}' : phone;
 
-// 住理生活首页：没登录时是登录表单；登录了是账号卡（⋯ 里切换、添加与退出账号）、余额与券余额（只读）、洗浴、优惠券与订单，下拉刷新。
-// 洗浴（学校开了才有）：有没结束的单时最上面一条「正在用水」点进去关水；扫码、输设备号、按楼栋选三个入口，最近使用的设备与常用设备。
+// 住理生活首页：没登录时是登录表单；登录了从上到下是账号卡（⋯ 里切换、添加与退出账号）、有没结束的单时的「正在用水」（点进去关水）、
+// 洗浴（学校开了才有）、余额与券余额（只读，下面充值与买券）、优惠券与订单，下拉刷新。排布的人工决策在 build。
 // 当前账号的会话恢复不了（要图形验证码、密码改过了）时，在账号卡下面原地重新登录。
 class ZhuliPage extends StatefulWidget {
   const ZhuliPage({super.key, required this.runtime, this.scanOnOpen = false});
@@ -55,6 +56,8 @@ class _ZhuliPageState extends State<ZhuliPage> {
   ZhuliLastRecord? _last;
   List<ZhuliDeviceEntry> _recent = const [];
   int _favoriteCount = 0;
+  // 最近使用默认只露两台，点「全部」展开。
+  var _recentOpen = false;
   String? _error;
   String? _relogin;
   // 切换账号后，旧账号晚回来的结果不再写界面。
@@ -189,6 +192,7 @@ class _ZhuliPageState extends State<ZhuliPage> {
     ),
     body: CampusScrollFade(
       child: SafeArea(
+        bottom: false,
         child: FutureBuilder<void>(
           future: _ready,
           builder: (context, snapshot) {
@@ -201,7 +205,7 @@ class _ZhuliPageState extends State<ZhuliPage> {
             final phone = _phone;
             if (phone == null) {
               return ListView(
-                padding: const EdgeInsets.all(16),
+                padding: campusScrollPadding(context, const EdgeInsets.all(16)),
                 children: [
                   CampusSurface(
                     padding: EdgeInsets.fromLTRB(16, campusFieldGap(context), 16, 16),
@@ -215,7 +219,7 @@ class _ZhuliPageState extends State<ZhuliPage> {
               slivers: [
                 CampusRefreshControl(onRefresh: _load),
                 SliverPadding(
-                  padding: const EdgeInsets.all(16),
+                  padding: campusScrollPadding(context, const EdgeInsets.all(16)),
                   sliver: SliverList.list(
                     children: [
                       _accountCard(context, phone),
@@ -225,14 +229,14 @@ class _ZhuliPageState extends State<ZhuliPage> {
                           padding: EdgeInsets.fromLTRB(16, campusFieldGap(context), 16, 16),
                           child: ZhuliLoginForm(key: ValueKey(phone), service: _service, consent: _consent, phone: phone, reason: reason, onSignedIn: (phone) => unawaited(_signedIn(phone))),
                         )
+                      // [人工决策-2026-11-23 12:47:51] 首页按用的多少排（用户截图指出主次不分、常用设备在不显眼处、按钮折行留大块空、最近使用占地方）：
+                      // 洗浴提到余额前面；洗浴卡里常用设备与按楼栋选在前、扫码与设备号在后，各一行两个等宽；最近使用默认两台、点「全部」展开；优惠券与订单并成一张卡。
                       else ...[
                         if (_last case final last? when last.running) ...[_runningCard(context, last), const SizedBox(height: CampusGap.large)],
+                        if (_config?.bath == true) ...[_bathCard(context, phone), const SizedBox(height: CampusGap.large)],
                         _walletCard(context),
                         const SizedBox(height: CampusGap.large),
-                        if (_config?.bath == true) ...[_bathCard(context, phone), const SizedBox(height: CampusGap.large)],
-                        _entry(context, CampusIcons.coupon, '优惠券', () => ZhuliCouponsPage(service: _service, phone: phone)),
-                        const SizedBox(height: CampusGap.large),
-                        _entry(context, CampusIcons.orders, '订单', () => ZhuliOrdersPage(service: _service, phone: phone)),
+                        _entries(context, phone),
                       ],
                     ],
                   ),
@@ -305,15 +309,14 @@ class _ZhuliPageState extends State<ZhuliPage> {
               amount('券余额', coupons.balance, '${coupons.count} 张可用'),
             ],
           ),
-          // 充值与买券（学校开着充值入口才有，付款只走支付宝，见 zhuli_pay.dart）。
+          // 充值与买券（学校开着充值入口才有，付款只走支付宝，见 zhuli_pay.dart），一行两个等宽。
           if (_config?.rechargeShown == true) ...[
             const SizedBox(height: CampusGap.large),
-            Wrap(
-              spacing: CampusGap.medium,
-              runSpacing: CampusGap.medium,
+            Row(
               children: [
-                FilledButton.icon(onPressed: () => unawaited(open(() => ZhuliRechargePage(service: _service, phone: phone))), icon: const CampusIcon(CampusIcons.wallet), label: const Text('充值')),
-                FilledButton.icon(onPressed: () => unawaited(open(() => ZhuliShopPage(service: _service, phone: phone))), icon: const CampusIcon(CampusIcons.shop), label: const Text('买券')),
+                Expanded(child: FilledButton.icon(onPressed: () => unawaited(open(() => ZhuliRechargePage(service: _service, phone: phone))), icon: const CampusIcon(CampusIcons.wallet), label: const Text('充值'))),
+                const SizedBox(width: CampusGap.medium),
+                Expanded(child: FilledButton.icon(onPressed: () => unawaited(open(() => ZhuliShopPage(service: _service, phone: phone))), icon: const CampusIcon(CampusIcons.shop), label: const Text('买券'))),
               ],
             ),
           ],
@@ -337,7 +340,7 @@ class _ZhuliPageState extends State<ZhuliPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text('正在用水', style: TextStyle(fontSize: CampusFontSize.body, fontWeight: FontWeight.w600)),
-                Text('${zhuliShownTime(last.createAt)} 开始 · 点这里关水', style: TextStyle(color: palette.onSurfaceVariant)),
+                DotSeparatedText('设备号 ${last.deviceId} · ${zhuliShownTime(last.createAt)} 开始', style: TextStyle(color: palette.onSurfaceVariant)),
               ],
             ),
           ),
@@ -347,9 +350,18 @@ class _ZhuliPageState extends State<ZhuliPage> {
     );
   }
 
-  // 洗浴：三个入口、最近使用（最多 6 台，新的在前）与常用设备。
+  Future<void> _favorites(String phone) async {
+    await Navigator.of(context).push<void>(CampusPageRoute(builder: (_) => ZhuliFavoritesPage(runtime: widget.runtime, service: _service, phone: phone)));
+    if (mounted) unawaited(_load());
+  }
+
+  // 洗浴：常用设备与按楼栋选（用得多，普通按钮加高）在前，扫码与设备号（中性按钮）在后，各一行两个等宽；
+  // 最近使用（最多 6 台，新的在前）默认露两台，每台写位置与设备号、有哪几路（同房间同名的设备据此分清）。
   Widget _bathCard(BuildContext context, String phone) {
     final palette = CampusPalette.of(context);
+    final secondary = TextStyle(color: palette.onSurfaceVariant);
+    const tall = ButtonStyle(minimumSize: WidgetStatePropertyAll(Size.fromHeight(52)));
+    final shown = _recentOpen ? _recent : _recent.take(2).toList();
     return CampusSurface(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -359,77 +371,115 @@ class _ZhuliPageState extends State<ZhuliPage> {
             children: [
               CampusIcon(CampusIcons.bath, size: 28, color: palette.primary),
               const SizedBox(width: CampusGap.large),
-              const Expanded(child: Text('洗浴', style: TextStyle(fontSize: CampusFontSize.body))),
+              Expanded(child: Text('洗浴', style: Theme.of(context).textTheme.titleMedium)),
             ],
           ),
-          const SizedBox(height: CampusGap.medium),
-          Wrap(
-            spacing: CampusGap.medium,
-            runSpacing: CampusGap.medium,
+          const SizedBox(height: CampusGap.large),
+          Row(
             children: [
-              if (widget.runtime.scanQrCode != null) FilledButton.icon(onPressed: () => unawaited(_scan()), icon: const CampusIcon(CampusIcons.scan), label: const Text('扫码')),
-              FilledButton.icon(onPressed: () => unawaited(_pickThen(() => zhuliAskDeviceId(context))), icon: const CampusIcon(CampusIcons.deviceNumber), label: const Text('设备号')),
-              FilledButton.icon(
-                onPressed: () => unawaited(_pickThen(() => Navigator.of(context).push<int>(CampusPageRoute(builder: (_) => ZhuliPickPage(service: _service, phone: phone))))),
-                icon: const CampusIcon(CampusIcons.building),
-                label: const Text('按楼栋选'),
+              Expanded(
+                child: FilledButton.icon(
+                  style: tall,
+                  onPressed: () => unawaited(_favorites(phone)),
+                  icon: const CampusIcon(CampusIcons.favorite),
+                  label: Text(_favoriteCount > 0 ? '常用设备 $_favoriteCount' : '常用设备'),
+                ),
               ),
+              const SizedBox(width: CampusGap.medium),
+              Expanded(
+                child: FilledButton.icon(
+                  style: tall,
+                  onPressed: () => unawaited(_pickThen(() => Navigator.of(context).push<int>(CampusPageRoute(builder: (_) => ZhuliPickPage(service: _service, phone: phone))))),
+                  icon: const CampusIcon(CampusIcons.building),
+                  label: const Text('按楼栋选'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: CampusGap.small),
+          Row(
+            children: [
+              if (widget.runtime.scanQrCode != null) ...[
+                Expanded(child: OutlinedButton.icon(onPressed: () => unawaited(_scan()), icon: const CampusIcon(CampusIcons.scan), label: const Text('扫码'))),
+                const SizedBox(width: CampusGap.medium),
+              ],
+              Expanded(child: OutlinedButton.icon(onPressed: () => unawaited(_pickThen(() => zhuliAskDeviceId(context))), icon: const CampusIcon(CampusIcons.deviceNumber), label: const Text('设备号'))),
             ],
           ),
           if (_recent.isNotEmpty) ...[
             const SizedBox(height: CampusGap.large),
-            Text('最近使用', style: TextStyle(color: palette.onSurfaceVariant)),
-            for (final entry in _recent)
-              InkWell(
-                key: ValueKey(entry.id),
-                onTap: () => unawaited(_openBath(entry.id)),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: CampusGap.small),
-                  child: Row(
-                    children: [
-                      Expanded(child: DotSeparatedText([if (entry.place.isNotEmpty) entry.place, '设备 ${entry.name.isEmpty ? entry.id : entry.name}'].join(' · '), style: const TextStyle(fontSize: CampusFontSize.body))),
-                      const CampusIcon(CampusIcons.next),
-                    ],
+            Row(
+              children: [
+                Expanded(child: Text('最近使用', style: secondary)),
+                if (_recent.length > 2)
+                  TextButton.icon(
+                    onPressed: () => setState(() => _recentOpen = !_recentOpen),
+                    icon: CampusIcon(_recentOpen ? CampusIcons.collapse : CampusIcons.expand),
+                    label: Text(_recentOpen ? '收起' : '全部 ${_recent.length} 台'),
                   ),
-                ),
-              ),
-          ],
-          const SizedBox(height: CampusGap.small),
-          InkWell(
-            onTap: () async {
-              await Navigator.of(context).push<void>(CampusPageRoute(builder: (_) => ZhuliFavoritesPage(runtime: widget.runtime, service: _service, phone: phone)));
-              if (mounted) unawaited(_load());
-            },
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: CampusGap.small),
-              child: Row(
-                children: [
-                  const CampusIcon(CampusIcons.favorite),
-                  const SizedBox(width: CampusGap.medium),
-                  Expanded(child: Text(_favoriteCount > 0 ? '常用设备 · $_favoriteCount 台' : '常用设备', style: const TextStyle(fontSize: CampusFontSize.body))),
-                  const CampusIcon(CampusIcons.next),
-                ],
-              ),
+              ],
             ),
-          ),
+            CampusAnimatedColumn(
+              children: [
+                for (final entry in shown)
+                  InkWell(
+                    key: ValueKey(entry.id),
+                    onTap: () => unawaited(_openBath(entry.id)),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: CampusGap.small),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(entry.place.isEmpty ? '设备号 ${entry.id}' : entry.place, style: const TextStyle(fontSize: CampusFontSize.body)),
+                                DotSeparatedText(entry.detail, style: secondary),
+                              ],
+                            ),
+                          ),
+                          const CampusIcon(CampusIcons.next),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
         ],
       ),
     );
   }
 
-  Widget _entry(BuildContext context, IconData icon, String label, Widget Function() page) => CampusSurface(
-    padding: const EdgeInsets.all(20),
-    onTap: () async {
-      await Navigator.of(context).push<void>(CampusPageRoute(builder: (_) => page()));
-      if (mounted) unawaited(_load());
-    },
-    child: Row(
-      children: [
-        CampusIcon(icon, size: 28, color: CampusPalette.of(context).primary),
-        const SizedBox(width: CampusGap.large),
-        Expanded(child: Text(label, style: const TextStyle(fontSize: CampusFontSize.body))),
-        const CampusIcon(CampusIcons.next),
-      ],
-    ),
-  );
+  // 优惠券与订单：一张卡两行。
+  Widget _entries(BuildContext context, String phone) {
+    Widget row(IconData icon, String label, Widget Function() page) => InkWell(
+      onTap: () async {
+        await Navigator.of(context).push<void>(CampusPageRoute(builder: (_) => page()));
+        if (mounted) unawaited(_load());
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: CampusGap.large),
+        child: Row(
+          children: [
+            CampusIcon(icon, size: 28, color: CampusPalette.of(context).primary),
+            const SizedBox(width: CampusGap.large),
+            Expanded(child: Text(label, style: const TextStyle(fontSize: CampusFontSize.body))),
+            const CampusIcon(CampusIcons.next),
+          ],
+        ),
+      ),
+    );
+    return CampusSurface(
+      padding: EdgeInsets.zero,
+      child: Column(
+        children: [
+          row(CampusIcons.coupon, '优惠券', () => ZhuliCouponsPage(service: _service, phone: phone)),
+          Divider(height: 1, indent: 20, endIndent: 20, color: CampusPalette.of(context).outline.withValues(alpha: .3)),
+          row(CampusIcons.orders, '订单', () => ZhuliOrdersPage(service: _service, phone: phone)),
+        ],
+      ),
+    );
+  }
+
 }

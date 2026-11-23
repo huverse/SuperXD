@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
+import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_bath.dart';
@@ -36,7 +37,7 @@ String _frame(int command, [int marker = 0]) => '0000${command.toRadixString(16)
 
 Map<String, Object?> _device(int id, {String module = '4,6', int status = 0, int consume = 1, int group = 0, String? supply, Object? change}) => {
   'device_id': id,
-  'device_name': '$id',
+  'device_name': '201',
   'device_type': 0,
   'net_type': module == '4' ? 4 : 64,
   'net_module': module,
@@ -226,12 +227,19 @@ void main() {
       expect([zhuliMac('0A1B2C3D4E5F'), zhuliMac('0A:1B:2C:3D:4E'), zhuliMac('zz1B2C3D4E5F')], ['0A:1B:2C:3D:4E:5F', null, null]);
     });
 
-    test('开水走哪一路同原 App：只有蓝牙走蓝牙，「4,6」走 6 云端，指定的优先通道优先，change_network 改走蓝牙', () {
+    test('开水走哪一路照原 App 的 oi()：change_network 先于优先通道；不止一个通道时看学校设定（3 蓝牙优先、2 走 7）；两用设备能选、写成云端/蓝牙', () {
       ZhuliDevice decode(Map<String, Object?> json) => decodeZhuliDevice(json);
       expect(decode(_device(1, module: '4')).channel, 4);
       expect(decode(_device(1)).channel, 6);
       expect(decode({..._device(1, module: '4'), 'primary_consume_net_type': 6}).channel, 6);
       expect(decode(_device(1, change: '4')).bluetooth, isTrue);
+      expect(decode({..._device(1, change: '4'), 'primary_consume_net_type': 6}).channel, 4, reason: 'change_network 先于优先通道');
+      final dual = decode(_device(1));
+      expect([dual.channelWith(0), dual.channelWith(3), dual.cloudChannel(3), dual.using(4).bluetooth], [6, 4, 6, true]);
+      expect([decode({..._device(1), 'net_module': '7,6'}).channelWith(0), decode({..._device(1), 'net_module': '7,6'}).channelWith(2)], [1, 7]);
+      expect([dual.dual, dual.modeLabel, decode(_device(1, module: '4')).modeLabel, decode({..._device(1), 'net_module': '6'}).modeLabel], [true, '云端/蓝牙', '蓝牙', '云端']);
+      expect([dual.distinctName, decode({..._device(1), 'device_name': 'A1'}).distinctName], [null, 'A1'], reason: '设备名就是房间号时不重复写');
+      expect(decodeZhuliConfig({'network_selection': 3}).networkSelection, 3);
       expect(decode({..._device(1), 'net_module': ''}).modules, [64], reason: '没有 net_module 时用 net_type');
       final device = decode(_device(1, supply: jsonEncode([{'start_time': '2025-03-08T06:00:00', 'end_time': '2025-03-08T08:00:00'}, {'start_time': 'x'}])));
       expect(device.supply, [(start: 360, end: 480)], reason: '认不出的段跳过');
@@ -276,6 +284,19 @@ void main() {
       expect((await store.load('13800000002')).recent, isEmpty);
       await store.deleteAll();
       expect((await store.load(_phone)).favorites, isEmpty);
+    });
+
+    test('记下有哪几路与两用设备选的通道：再打开不丢选的通道，常用设备原位跟着更新；说明行写设备号与有哪几路', () async {
+      final store = ZhuliDeviceStore.memory();
+      final dual = decodeZhuliDevice(_device(101));
+      await store.used(_phone, ZhuliDeviceEntry.of(dual));
+      await store.favor(_phone, ZhuliDeviceEntry.of(dual));
+      await store.prefer(_phone, 101, 4);
+      await store.used(_phone, ZhuliDeviceEntry.of(dual));
+      final lists = await store.load(_phone);
+      expect([lists.recent.single.channel, lists.favorites.single.channel], [4, 4]);
+      expect(lists.recent.single.detail, '设备号 101 · 云端/蓝牙');
+      expect(const ZhuliDeviceEntry(id: 7, name: '201', place: '1号楼 2层 201').detail, '设备号 7', reason: '11-23 以前记的条目没有模式，名字同房间号不写');
     });
 
     test('文件是外部输入：坏了当没有；写到临时文件再改名', () async {
@@ -450,7 +471,8 @@ void main() {
       await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ZhuliBathPage(service: service, phone: _phone, deviceId: 101, clock: () => _beijing(21, 0))));
       await _settle(tester);
       expect(find.text('1号楼 2层 201'), findsOneWidget);
-      expect(find.byWidgetPredicate((widget) => _dotted(widget, '设备 101 · 空闲 · 云端')), findsOneWidget);
+      expect(find.byWidgetPredicate((widget) => _dotted(widget, '设备号 101 · 空闲')), findsOneWidget);
+      expect(tester.widget<CampusSegmented<int>>(find.byType(CampusSegmented<int>)).selected, 6, reason: '两用设备默认照原 App 走云端');
       expect(find.text('¥17.49'), findsOneWidget);
       expect(find.text('¥176.35'), findsOneWidget);
       expect(find.byWidgetPredicate((widget) => _dotted(widget, '开水先预扣 ¥5.00 · 关水后按用量多退少补 · ¥0.07/升')), findsOneWidget);
@@ -485,15 +507,44 @@ void main() {
       final link = _FakeLink()..connectError = const ZhuliException(ZhuliFailure.unreachable, '附近没找到这台设备，靠近一点再试');
       await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ZhuliBathPage(service: service, phone: _phone, deviceId: 102, link: () => link, clock: () => _beijing(21, 0))));
       await _settle(tester);
-      expect(find.byWidgetPredicate((widget) => _dotted(widget, '设备 102 · 空闲 · 蓝牙')), findsOneWidget);
+      expect(find.byWidgetPredicate((widget) => _dotted(widget, '设备号 102 · 空闲 · 蓝牙')), findsOneWidget);
+      expect(find.byType(CampusSegmented<int>), findsNothing, reason: '只有蓝牙的设备没得选');
       await tester.tap(find.text('开水'));
       await _settle(tester);
       expect(find.text('附近没找到这台设备，靠近一点再试'), findsOneWidget);
-      expect(find.text('换到设备 101 · 云端'), findsOneWidget, reason: '同房间只剩 101，自己不列');
-      await tester.tap(find.text('换到设备 101 · 云端'));
+      expect(find.text('换到设备号 101 · 云端/蓝牙'), findsOneWidget, reason: '同房间只剩 101，自己不列；同名设备靠设备号分清');
+      await tester.tap(find.text('换到设备号 101 · 云端/蓝牙'));
       await _settle(tester);
-      expect(find.byWidgetPredicate((widget) => _dotted(widget, '设备 101 · 空闲 · 云端')), findsOneWidget);
-      expect(find.text('换到设备 101 · 云端'), findsNothing);
+      expect(find.byWidgetPredicate((widget) => _dotted(widget, '设备号 101 · 空闲')), findsOneWidget);
+      expect(find.text('换到设备号 101 · 云端/蓝牙'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('两用设备选蓝牙：开水走蓝牙搬帧、关水也走蓝牙；选的记下来，再打开默认蓝牙；学校设定蓝牙优先时默认就是蓝牙', (tester) async {
+      await signIn(tester);
+      final link = _FakeLink();
+      Widget page() => MaterialApp(theme: campusTheme(), home: ZhuliBathPage(key: UniqueKey(), service: service, phone: _phone, deviceId: 101, link: () => link, clock: () => _beijing(21, 0)));
+      await tester.pumpWidget(page());
+      await _settle(tester);
+      await tester.tap(find.text('蓝牙'));
+      await _settle(tester);
+      expect(find.text('手机靠近设备、打开蓝牙'), findsOneWidget);
+      await tester.tap(find.text('开水'));
+      await _settle(tester);
+      expect(link.connected, ['XN-101']);
+      expect(fake.count('/webapi/v1/device/collect_gprs_device_status'), 0, reason: '没走云端');
+      expect(fake.lastQuery('/webapi/v1/consume/create_order')['net_type'], '4');
+      expect((await tester.runAsync(() => service.devices.load(_phone)))!.recent.single.channel, 4);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(page());
+      await _settle(tester);
+      expect(tester.widget<CampusSegmented<int>>(find.byType(CampusSegmented<int>)).selected, 4, reason: '上次选的蓝牙');
+      await tester.pumpWidget(const SizedBox());
+      await tester.runAsync(() => service.devices.deleteAll());
+      fake.config = {...fake.config, 'network_selection': 3};
+      await tester.pumpWidget(page());
+      await _settle(tester);
+      expect(tester.widget<CampusSegmented<int>>(find.byType(CampusSegmented<int>)).selected, 4, reason: '学校设定蓝牙优先');
       await tester.pumpWidget(const SizedBox());
     });
 
@@ -518,7 +569,9 @@ void main() {
       await tester.runAsync(() async {
         await fixture.store.grantConsent(ZhuliService.serviceId, ZhuliService.consentVersion);
         await service.signIn(_phone, _password);
-        await service.devices.used(_phone, const ZhuliDeviceEntry(id: 102, name: '102', place: '1号楼 2层 201'));
+        for (final id in [103, 101, 102]) {
+          await service.devices.used(_phone, ZhuliDeviceEntry(id: id, name: '', place: '1号楼 2层 201', mode: id == 101 ? '云端/蓝牙' : '蓝牙'));
+        }
       });
       fake.last = {'order_id': 'O9', 'status': 'consuming', 'device_id': 102, 'device_type': 0, 'create_at': '2026-11-22 20:55:00'};
       final blueFirst = {102: fake.devices[102]!, 101: fake.devices[101]!};
@@ -526,13 +579,26 @@ void main() {
         ..clear()
         ..addAll(blueFirst);
       final runtime = ToolboxRuntime.testing(catalog: toolboxCatalog, store: fixture.store, downloads: fixture.manager, services: {ZhuliService.serviceId: service});
+      tester.view.physicalSize = const Size(800, 2000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ZhuliPage(runtime: runtime)));
       await _settle(tester);
       expect(find.text('正在用水'), findsOneWidget);
+      expect(find.byWidgetPredicate((widget) => widget is DotSeparatedText && widget.text.startsWith('设备号 102 · ') && widget.text.endsWith('开始')), findsOneWidget, reason: '正在用水写设备号');
       expect(find.text('设备号'), findsOneWidget);
       expect(find.text('按楼栋选'), findsOneWidget);
       expect(find.text('扫码'), findsNothing, reason: '测试里没有扫码能力');
-      expect(find.byWidgetPredicate((widget) => _dotted(widget, '1号楼 2层 201 · 设备 102')), findsOneWidget);
+      expect(tester.getTopLeft(find.text('常用设备')).dy, lessThan(tester.getTopLeft(find.text('设备号')).dy), reason: '常用设备与按楼栋选在前');
+      expect(tester.getTopLeft(find.text('洗浴')).dy, lessThan(tester.getTopLeft(find.text('余额')).dy), reason: '洗浴在余额前面');
+      // 最近使用默认两台，点「全部」展开。
+      expect(find.byWidgetPredicate((widget) => _dotted(widget, '设备号 102 · 蓝牙')), findsOneWidget);
+      expect(find.byWidgetPredicate((widget) => _dotted(widget, '设备号 101 · 云端/蓝牙')), findsOneWidget);
+      expect(find.byWidgetPredicate((widget) => _dotted(widget, '设备号 103 · 蓝牙')), findsNothing);
+      await tester.tap(find.text('全部 3 台'));
+      await _settle(tester);
+      expect(find.byWidgetPredicate((widget) => _dotted(widget, '设备号 103 · 蓝牙')), findsOneWidget);
+      expect(find.text('收起'), findsOneWidget);
       // 按楼栋选：只列有设备的房间，选中设备进洗浴页。
       await tester.tap(find.text('按楼栋选'));
       await _settle(tester);
@@ -544,10 +610,13 @@ void main() {
       expect(find.text('200'), findsNothing);
       await tester.tap(find.text('201'));
       await _settle(tester);
-      expect(find.byWidgetPredicate((widget) => _dotted(widget, zhuliDeviceState(decodeZhuliDevice(_device(102, module: '4'))))), findsOneWidget);
-      expect(tester.getTopLeft(find.text('设备 101')).dy, lessThan(tester.getTopLeft(find.text('设备 102')).dy), reason: '能走云端的排前面，住理回的顺序是蓝牙在前');
-      await tester.tap(find.text('设备 101'));
+      expect(find.byWidgetPredicate((widget) => _dotted(widget, '空闲 · 蓝牙')), findsOneWidget);
+      expect(find.byWidgetPredicate((widget) => _dotted(widget, '空闲 · 云端/蓝牙')), findsOneWidget);
+      expect(tester.getTopLeft(find.text('设备号 101')).dy, lessThan(tester.getTopLeft(find.text('设备号 102')).dy), reason: '能走云端的排前面，住理回的顺序是蓝牙在前');
+      expect(find.byType(ZhuliPickPage, skipOffstage: false), findsNWidgets(4), reason: '每一级推一个页面（同全应用的转场与跟手返回）');
+      await tester.tap(find.text('设备号 101'));
       await _settle(tester);
+      expect(find.byType(ZhuliPickPage, skipOffstage: false), findsNothing, reason: '选中后几级一起交回');
       expect(find.byType(ZhuliBathPage), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
     });
@@ -562,6 +631,8 @@ void main() {
       await _settle(tester);
       expect(find.text('还没有常用设备'), findsOneWidget);
       for (final id in ['101', '102']) {
+        await tester.tap(find.bySemanticsLabel('添加常用设备'));
+        await _settle(tester);
         await tester.tap(find.text('输设备号'));
         await _settle(tester);
         await tester.enterText(find.byType(TextField), id);
@@ -569,8 +640,8 @@ void main() {
         await tester.tap(find.text('打开'));
         await _settle(tester);
       }
-      expect(find.text('设备 101'), findsOneWidget);
-      expect(find.text('设备 102'), findsOneWidget);
+      expect(find.byWidgetPredicate((widget) => _dotted(widget, '设备号 101 · 云端/蓝牙')), findsOneWidget);
+      expect(find.byWidgetPredicate((widget) => _dotted(widget, '设备号 102 · 蓝牙')), findsOneWidget);
       await tester.tap(find.byTooltip('更多').last);
       await _settle(tester);
       await tester.tap(find.text('置顶'));

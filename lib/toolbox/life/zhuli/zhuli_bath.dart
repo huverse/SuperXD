@@ -8,9 +8,11 @@ import 'package:superxd/toolbox/life/zhuli/zhuli_service.dart';
 
 // 开水前的检查结果（资料 4.2 的清单，顺序同原 App）：blocked 不为空不能开；confirm 不为空要用户再点一次（供水时段外、余额低于门槛但允许继续）；
 // running 是自己在这台设备上正在用水的单（接回去，不再下单）。
+// device 已按学校设定定好默认走哪一路（via）；channels 是能选的几路（两用设备是云端的通道与蓝牙 4，其余只有一路）。
 class ZhuliBathPlan {
-  const ZhuliBathPlan({required this.device, required this.profile, required this.coupons, this.rule, this.blocked, this.confirm, this.running});
+  const ZhuliBathPlan({required this.device, required this.channels, required this.profile, required this.coupons, this.rule, this.blocked, this.confirm, this.running});
   final ZhuliDevice device;
+  final List<int> channels;
   final ZhuliProfile profile;
   // 未使用的券加起来还剩多少（开水前给人看，预扣先扣券还是余额看券的设定）。
   final ({int balance, int count}) coupons;
@@ -33,7 +35,7 @@ bool zhuliInSupply(List<ZhuliSupply> supply, DateTime now) {
   return supply.any((window) => window.start <= window.end ? minutes >= window.start && minutes <= window.end : minutes >= window.start || minutes <= window.end);
 }
 
-// 洗浴：开水与关水（资料第 4 节）。走哪一路看设备（ZhuliDevice.channel）：
+// 洗浴：开水与关水（资料第 4 节）。走哪一路看传进来的设备（ZhuliDevice.channel，洗浴页按学校设定或用户选的定下来）：
 // 云端（4G 等）由服务端下发开关，开水后 3 秒查一次订单看水开没开、用了多少；
 // 蓝牙（11-22 实测这个学校抽样的 50 台里 46 台只有蓝牙）由手机连上设备，按原 App 的 bleCommon 在服务端与设备之间搬运命令帧：
 // 握手（拿 isn）→ 有设费率帧先写 → 补传设备里的历史单 → 下单拿开始帧 → 写给设备 → 回帧交服务端；关水同样先握手再写结束帧、回帧交服务端结算。
@@ -52,10 +54,12 @@ class ZhuliBath {
   // 开水前查一遍：设备、账户与计费规则、券余额、项目配置、待支付的单、最近一单（一起发）。
   Future<ZhuliBathPlan> prepare(int deviceId) => _run((session) async {
     final values = await Future.wait<Object?>([_client.device(session, deviceId), _client.profile(session), service.couponBalance(session), _client.config(session), _client.pendingOrders(session), _client.lastRecord(session)]);
-    final device = values[0]! as ZhuliDevice, profile = values[1]! as ZhuliProfile, coupons = values[2]! as ({int balance, int count});
+    final found = values[0]! as ZhuliDevice, profile = values[1]! as ZhuliProfile, coupons = values[2]! as ({int balance, int count});
     final config = values[3]! as ZhuliConfig, pending = values[4]! as int, last = values[5] as ZhuliLastRecord?;
+    final device = found.using(found.channelWith(config.networkSelection));
+    final channels = found.dual && !found.forceBluetooth ? [found.cloudChannel(config.networkSelection), 4] : [device.channel];
     final rule = profile.ruleFor(device);
-    ZhuliBathPlan plan({String? blocked, String? confirm, ZhuliLastRecord? running}) => ZhuliBathPlan(device: device, profile: profile, coupons: coupons, rule: rule, blocked: blocked, confirm: confirm, running: running);
+    ZhuliBathPlan plan({String? blocked, String? confirm, ZhuliLastRecord? running}) => ZhuliBathPlan(device: device, channels: channels, profile: profile, coupons: coupons, rule: rule, blocked: blocked, confirm: confirm, running: running);
     if (last != null && last.running && last.deviceId == device.id) return plan(running: last);
     if (!config.bath) return plan(blocked: '这个学校没开洗浴');
     if (!device.bath) return plan(blocked: '这台不是洗浴设备，暂不支持');

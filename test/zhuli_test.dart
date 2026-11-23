@@ -131,6 +131,12 @@ void main() {
       expect(zhuliNonce(), matches(RegExp(r'^[A-Za-z0-9]{32}$')));
     });
 
+    test('消费订单号里取设备号（时间 14 位 + 设备 10 位 + 序号 8 位），别的格式不认', () {
+      expect(zhuliOrderDevice('20261121165104000123456700002063'), 1234567);
+      expect(zhuliOrderDevice('20261121165104000000432100000001'), 4321);
+      expect([zhuliOrderDevice('C1'), zhuliOrderDevice('AL1_9'), zhuliOrderDevice('20261121165104000000000000000001')], everyElement(isNull));
+    });
+
     test('金额按十进制文本换成分、四舍五入到分，不经浮点运算；时间按北京时间换成 UTC，占位的 0001 年当没有', () {
       expect([zhuliCents('13.3900'), zhuliCents(176.35), zhuliCents(-0.14), zhuliCents(0.005), zhuliCents(20), zhuliCents('x'), zhuliCents(null)], [1339, 17635, -14, 1, 2000, null, null]);
       expect([zhuliYuan(1840), zhuliYuan(-14), zhuliYuan(5)], ['18.40', '-0.14', '0.05']);
