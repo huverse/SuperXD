@@ -21,30 +21,33 @@ import 'package:superxd/theme/campus_transitions.dart';
 
 // [人工决策-2026-11-23 18:29:13] 今天页侧栏（用户 11-23 参照 Claude 应用的录屏提出，四项都选推荐）：点今天页左上角圆钮或在今天页从左往右滑拉出；
 // 侧栏左上角是开屏那笔「SuperXD」签名（每次启动后第一次打开时写一遍），列表滚到它下面时越往上越淡、完整玻璃档另渐进模糊（融进云雾），签名一直浮在上面；
-// 两组：常用（用户勾选与排序，没编辑过用组合根给的默认）与最近（自动记最近进过的几个，已在常用里的不重复列）；底部一行是自己（点了去「我的」）；
+// 两组：常用（用户勾选与排序，没编辑过用组合根给的默认）与最近（自动记最近进过的几个，已在常用里的不重复列）；
 // 在列表顶上往下拉：右上角搜索钮描一圈、到位铺满激活色展开成「搜索」胶囊并轻震，松手进搜索（侧栏展开成整屏，搜索钮原地变关闭钮，输入框从它左边长出来）。
 // 没选：两行大标题、按钮插在「今天」前（顶栏）；只有常用、常用加全部分类（分组）；普通文字、问候语（左上角）；所有档位只淡出（云雾）。
+// [人工决策-2026-11-23 21:08:21] 用户真机看过后改（取代上条的左上角与底部）：签名笔画 1.8 倍嫌粗，改 1.6 倍（用户自己试的）；签名为主、Newsreader 斜体为次，
+// 跟着列表滚动切换（同 iOS 大标题收成小标题：在顶上是签名，往上滚、内容滑进雾里时签名淡出收小、Newsreader 小一号淡入，滚回顶上换回，过渡跟手、先淡出再淡入）；
+// 没选点一下切换、写完签名后换成 Newsreader。底部「我的」那一行嫌冗余，删掉。Anthropic 自己的衬线体是商用字体，开源仓库不能打包，选了气质相近的 OFL 字体 Newsreader。
 class SideDrawerPanel extends StatefulWidget {
-  const SideDrawerPanel({super.key, required this.catalog, required this.nav, this.name, this.onAccount});
+  const SideDrawerPanel({super.key, required this.catalog, required this.nav});
   final QuickCatalog catalog;
   final QuickNav nav;
-  // 底部写的自己（教务姓名，未知时学号）；为空不画底部那一行。
-  final String? name;
-  final VoidCallback? onAccount;
 
   @override
   State<SideDrawerPanel> createState() => _SideDrawerPanelState();
 }
 
 const _headerHeight = 64.0;
-const _footerHeight = 56.0;
 // 往下拉多远算到位。
 const _pullDistance = 72.0;
+// 往上滚多远签名完全换成 Newsreader。
+const _collapseDistance = 48.0;
 // 签名这次运行写过没有（每次启动后第一次打开侧栏写一遍）。
 var _signatureWritten = false;
 
 class _SideDrawerPanelState extends State<SideDrawerPanel> with SingleTickerProviderStateMixin {
   final _pull = ValueNotifier<double>(0);
+  // 列表往上滚了多远（左上角签名换成 Newsreader 的进度跟着它）。
+  final _scroll = ValueNotifier<double>(0);
   final _settled = ValueNotifier<bool>(true);
   final _query = TextEditingController();
   final _focus = FocusNode();
@@ -68,11 +71,11 @@ class _SideDrawerPanelState extends State<SideDrawerPanel> with SingleTickerProv
     final drawer = CampusSideDrawer.maybeOf(context);
     if (drawer == _drawer) return;
     _detach();
-    _drawer = drawer?..progress.addListener(_write)..expanded.addListener(_searchChanged)..expansion.addStatusListener(_expansionStatus);
+    _drawer = drawer?..progress.addListener(_progressed)..expanded.addListener(_searchChanged)..expansion.addStatusListener(_expansionStatus);
   }
 
   void _detach() => _drawer
-    ?..progress.removeListener(_write)
+    ?..progress.removeListener(_progressed)
     ..expanded.removeListener(_searchChanged)
     ..expansion.removeStatusListener(_expansionStatus);
 
@@ -83,6 +86,7 @@ class _SideDrawerPanelState extends State<SideDrawerPanel> with SingleTickerProv
       unawaited(subscription.cancel());
     }
     _pull.dispose();
+    _scroll.dispose();
     _settled.dispose();
     _query.dispose();
     _focus.dispose();
@@ -90,9 +94,16 @@ class _SideDrawerPanelState extends State<SideDrawerPanel> with SingleTickerProv
     super.dispose();
   }
 
+  void _progressed() {
+    final progress = _drawer?.progress.value ?? 0;
+    // 合上了：拉到一半的下拉不作数（回弹跟着侧栏停在半路，圈会停在那里）。
+    if (progress == 0) _resetPull();
+    _write(progress);
+  }
+
   // 拉出过半时开始写签名（这次运行只写一遍；减少动画时直接写好）。
-  void _write() {
-    if (_signatureWritten || (_drawer?.progress.value ?? 0) < .5) return;
+  void _write(double progress) {
+    if (_signatureWritten || progress < .5) return;
     _signatureWritten = true;
     MediaQuery.disableAnimationsOf(context) ? _ink.value = 1 : _ink.forward(from: 0);
   }
@@ -108,18 +119,27 @@ class _SideDrawerPanelState extends State<SideDrawerPanel> with SingleTickerProv
     } else {
       _focus.unfocus();
       _query.clear();
+      // 列表退出搜索时是重新建的、在顶上：下拉的圈与滚动进度都从头算（不然停在松手进搜索那一刻的回弹进度上，11-23 用户录屏）。
+      _resetPull();
+      _scroll.value = 0;
     }
   }
 
-  void _search(bool value) {
+  void _resetPull() {
     _armed = false;
     _pull.value = 0;
+  }
+
+  void _search(bool value) {
+    _resetPull();
     _drawer?.expand(value);
   }
 
   // 列表顶上往下拉：手指拖着时按拉了多远描圈，到位轻震一下；拉回去不到位就取消。松手回弹时圈跟着退。
+  // 进了搜索就不再跟（列表淡出时还在回弹，跟着会把圈停在半路）；往上滚了多远交给左上角的字样。
   bool _scrolled(ScrollNotification notification) {
-    if (notification.depth != 0) return false;
+    if (notification.depth != 0 || (_drawer?.expanded.value ?? false)) return false;
+    _scroll.value = math.max(0, notification.metrics.pixels - notification.metrics.minScrollExtent);
     final over = notification.metrics.minScrollExtent - notification.metrics.pixels;
     final pull = over > 0 ? over / _pullDistance : 0.0;
     final dragging = (notification is ScrollUpdateNotification && notification.dragDetails != null) || (notification is OverscrollNotification && notification.dragDetails != null);
@@ -183,16 +203,10 @@ class _SideDrawerPanelState extends State<SideDrawerPanel> with SingleTickerProv
 
   Widget _home(List<QuickEntry> pinned, List<QuickEntry> recent, {required bool blur}) {
     final padding = MediaQuery.paddingOf(context);
-    final name = widget.name;
     return CampusFogScroll(
       header: const SizedBox.shrink(),
       headerHeight: _headerHeight,
       blur: blur,
-      footer: name == null ? null : _Account(name: name, onTap: () {
-        _drawer?.close();
-        widget.onAccount?.call();
-      }),
-      footerHeight: _footerHeight,
       child: Listener(
         onPointerUp: (_) => _released(),
         onPointerCancel: (_) => _armed = false,
@@ -202,7 +216,7 @@ class _SideDrawerPanelState extends State<SideDrawerPanel> with SingleTickerProv
             physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
             slivers: [
               SliverPadding(
-                padding: EdgeInsets.only(top: padding.top + _headerHeight, bottom: (name == null ? 0 : _footerHeight) + padding.bottom + CampusGap.large),
+                padding: EdgeInsets.only(top: padding.top + _headerHeight, bottom: padding.bottom + CampusGap.large),
                 sliver: SliverList.list(children: [
                   _Heading(label: '常用', action: TextButton(
                     style: campusLink,
@@ -225,7 +239,7 @@ class _SideDrawerPanelState extends State<SideDrawerPanel> with SingleTickerProv
     );
   }
 
-  // 顶上一行：左边签名（搜索时淡出上移），右边搜索钮（搜索时原地变关闭钮），搜索时输入框从按钮左边长出来。
+  // 顶上一行：左边字样（签名，列表往上滚时换成 Newsreader；搜索时淡出上移），右边搜索钮（搜索时原地变关闭钮），搜索时输入框从按钮左边长出来。
   Widget _header(double t, bool searching) {
     final palette = CampusPalette.of(context);
     final eased = Curves.easeOutCubic.transform(t);
@@ -236,9 +250,12 @@ class _SideDrawerPanelState extends State<SideDrawerPanel> with SingleTickerProv
       final field = math.max(0.0, constraints.maxWidth - CampusGap.large - side - button - gap);
       return Stack(children: [
         if (leaving < 1)
-          Positioned(key: const ValueKey('signature'), left: 20, top: 0, bottom: 0, child: IgnorePointer(child: Opacity(
+          Positioned(key: const ValueKey('wordmark'), left: 20, top: 0, bottom: 0, child: IgnorePointer(child: Opacity(
             opacity: 1 - leaving,
-            child: Transform.translate(offset: Offset(0, -10 * leaving), child: Center(child: _Signature(ink: _ink, colors: (palette.onSurface, palette.accentText)))),
+            child: Transform.translate(offset: Offset(0, -10 * leaving), child: Center(child: ValueListenableBuilder<double>(
+              valueListenable: _scroll,
+              builder: (context, scroll, _) => _Wordmark(ink: _ink, colors: (palette.onSurface, palette.accentText), collapse: (scroll / _collapseDistance).clamp(0.0, 1.0)),
+            ))),
           ))),
         if (t > 0 || searching)
           Positioned(key: const ValueKey('field'), right: side + button + gap, top: 0, bottom: 0, width: field, child: Center(child: ClipRRect(
@@ -264,24 +281,55 @@ class _SideDrawerPanelState extends State<SideDrawerPanel> with SingleTickerProv
   }
 }
 
-// 开屏那笔签名，高 34、宽按签名比例，笔画加粗到 1.8 倍（小尺寸的光学补偿）；墨色从正文色渐变到激活色（同开屏取画作最冷最暖两色的意思，这里取配色）。
-class _Signature extends StatelessWidget {
-  const _Signature({required this.ink, required this.colors});
+// 左上角的字样：签名为主、Newsreader 斜体为次（人工决策见 SideDrawerPanel 上 11-23 21:08:21 那条）。collapse 是列表往上滚的进度（0 在顶上、1 滚过 _collapseDistance）：
+// 签名在前六成淡完并收小上移，Newsreader 后六成从下面一点淡入并放到原大（先淡出再淡入，不同时半透明叠出重影），跟着手指走、不自己播。
+// 签名高 34、宽按比例，笔画 1.6 倍（小尺寸的光学补偿，用户试过）；两种墨色都从正文色渐变到激活色（同开屏取画作最冷最暖两色的意思，这里取配色）。读屏只读一遍名字。
+class _Wordmark extends StatelessWidget {
+  const _Wordmark({required this.ink, required this.colors, required this.collapse});
   final Animation<double> ink;
   final (Color, Color) colors;
+  final double collapse;
 
   @override
   Widget build(BuildContext context) {
     final bounds = SplashSignature.shared.bounds;
     const height = 34.0;
+    final leaving = Curves.easeOut.transform((collapse / .6).clamp(0.0, 1.0)), arriving = Curves.easeOut.transform(((collapse - .4) / .6).clamp(0.0, 1.0));
     return Semantics(
       label: 'SuperXD',
       header: true,
-      child: SizedBox(
-        width: height * bounds.width / bounds.height,
-        height: height,
-        child: AnimatedBuilder(animation: ink, builder: (context, _) => CustomPaint(painter: SplashSignaturePainter(progress: ink.value, ink: colors, weight: 1.8))),
-      ),
+      child: ExcludeSemantics(child: Stack(alignment: Alignment.centerLeft, clipBehavior: Clip.none, children: [
+        if (leaving < 1)
+          Opacity(opacity: 1 - leaving, child: Transform.scale(
+            scale: 1 - .14 * leaving,
+            alignment: Alignment.centerLeft,
+            child: Transform.translate(
+              offset: Offset(0, -4 * leaving),
+              child: SizedBox(
+                width: height * bounds.width / bounds.height,
+                height: height,
+                child: AnimatedBuilder(animation: ink, builder: (context, _) => CustomPaint(painter: SplashSignaturePainter(progress: ink.value, ink: colors, weight: 1.6))),
+              ),
+            ),
+          )),
+        if (arriving > 0)
+          Opacity(opacity: arriving, child: Transform.scale(
+            scale: .94 + .06 * arriving,
+            alignment: Alignment.centerLeft,
+            child: Transform.translate(
+              offset: Offset(0, 6 * (1 - arriving)),
+              // 斜体最后一个字母往右探出字框，右边留几像素，不被渐变的范围切掉。
+              child: ShaderMask(
+                blendMode: BlendMode.srcIn,
+                shaderCallback: (rect) => LinearGradient(colors: [colors.$1, colors.$2]).createShader(rect),
+                child: const Padding(
+                  padding: EdgeInsets.only(right: CampusGap.small),
+                  child: Text('SuperXD', maxLines: 1, softWrap: false, style: TextStyle(fontFamily: 'Newsreader', fontStyle: FontStyle.italic, fontSize: CampusFontSize.headline, height: 1, color: Colors.white)),
+                ),
+              ),
+            ),
+          )),
+      ])),
     );
   }
 }
@@ -320,33 +368,6 @@ class _EntryRow extends StatelessWidget {
       leading: CampusIcon(icon, size: 20, color: palette.onSurfaceVariant),
       title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: CampusFontSize.body, color: palette.onSurface)),
       trailing: trailing == null ? null : Text(trailing!, style: TextStyle(fontSize: CampusFontSize.secondary, color: palette.onSurfaceVariant)),
-    );
-  }
-}
-
-// 底部一行：自己（人形头像与姓名），点了去「我的」。
-class _Account extends StatelessWidget {
-  const _Account({required this.name, required this.onTap});
-  final String name;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = CampusPalette.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: CampusGap.small),
-      child: ListTile(
-        onTap: onTap,
-        shape: const StadiumBorder(),
-        contentPadding: const EdgeInsets.symmetric(horizontal: CampusGap.medium),
-        horizontalTitleGap: CampusGap.medium,
-        leading: DecoratedBox(
-          decoration: BoxDecoration(shape: BoxShape.circle, color: palette.surfaceSelected, border: Border.all(color: palette.surfaceBorder)),
-          child: Padding(padding: const EdgeInsets.all(CampusGap.small), child: CampusIcon(CampusIcons.account, size: 20, color: palette.onSurfaceVariant)),
-        ),
-        title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: CampusFontSize.body, color: palette.onSurface)),
-        trailing: CampusIcon(CampusIcons.next, size: 18, color: palette.onSurfaceVariant),
-      ),
     );
   }
 }

@@ -17,6 +17,8 @@ import 'package:superxd/page/quick_edit_page.dart';
 import 'package:superxd/page/schedule_page.dart';
 import 'package:superxd/page/shell_page.dart';
 import 'package:superxd/page/today_page.dart';
+import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/theme/campus_pull_button.dart';
 import 'package:superxd/theme/campus_side_drawer.dart';
 import 'fixture_campus_gateway.dart';
 import 'page_fixture_support.dart';
@@ -119,11 +121,13 @@ void main() {
     expect(menu.dx + sync.dx, moreOrLessEquals(width, epsilon: 1), reason: '两个圆钮左右对称');
     await _open(tester);
     expect(_drawer(tester).isOpen, isTrue);
-    for (final title in ['常用', '课表', '成绩', '学习通签到', '快递', '视频解析', '游乐场', '林同学']) {
+    expect(find.descendant(of: find.byTooltip('侧栏'), matching: find.byType(CampusMenuGlyph)), findsOneWidget, reason: '左上角是同 Claude 的三道横线');
+    for (final title in ['常用', '课表', '成绩', '学习通签到', '快递', '视频解析', '游乐场']) {
       expect(find.text(title), findsOneWidget, reason: title);
     }
     expect(find.text('住理生活'), findsNothing, reason: '灰度没开的不列');
     expect(find.text('最近'), findsNothing, reason: '还没进过任何一页');
+    expect(find.text('林同学'), findsNothing, reason: '底部没有「我的」那一行（11-23 用户嫌冗余删掉）');
     await tester.tapAt(Offset(width - 12, 400));
     await tester.pumpAndSettle();
     expect(_drawer(tester).isOpen, isFalse);
@@ -257,6 +261,42 @@ void main() {
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     expect(_drawer(tester).isOpen, isFalse);
+    await _done(tester, session);
+  });
+
+  testWidgets('下拉进搜索再退回来：搜索钮上的圈从头算，不停在松手那一刻的回弹进度上（11-23 用户录屏）', (tester) async {
+    final (_, session) = await _app(tester);
+    await _open(tester);
+    await tester.drag(find.text('课表'), const Offset(0, 400));
+    await tester.pumpAndSettle();
+    expect(_drawer(tester).expanded.value, isTrue);
+    // 用户录屏里是按返回退出搜索（不经关闭钮）。
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(_drawer(tester).expanded.value, isFalse);
+    expect(tester.widget<CampusPullButton>(find.byType(CampusPullButton)).pull, 0);
+    await _done(tester, session);
+  });
+
+  testWidgets('左上角签名为主：列表往上滚时跟着手指换成 Newsreader 斜体，滚回顶上换回签名', (tester) async {
+    final (_, session) = await _app(tester, prefs: const QuickNavPrefs(pinned: ['/schedule', '/grades', '/academic', '/academic/records', '/toolbox', '/toolbox/short_video', '/toolbox/chaoxing', '/toolbox/express', '/playground', 'appearance', 'about', 'account']));
+    await _open(tester);
+    final newsreader = find.byWidgetPredicate((widget) => widget is Text && widget.data == 'SuperXD' && widget.style?.fontFamily == 'Newsreader');
+    expect(newsreader, findsNothing, reason: '在顶上只有签名');
+    final gesture = await tester.startGesture(tester.getCenter(find.text('成绩')));
+    await gesture.moveBy(const Offset(0, -20));
+    await tester.pump();
+    await gesture.moveBy(const Offset(0, -20));
+    await tester.pump();
+    expect(newsreader, findsNothing, reason: '滚了一点还是签名在淡出');
+    await gesture.moveBy(const Offset(0, -60));
+    await tester.pump();
+    expect(tester.widget<Opacity>(find.ancestor(of: newsreader, matching: find.byType(Opacity)).first).opacity, greaterThan(.9));
+    await gesture.moveBy(const Offset(0, 100));
+    await tester.pump();
+    expect(newsreader, findsNothing, reason: '滚回顶上换回签名');
+    await gesture.up();
+    await tester.pumpAndSettle();
     await _done(tester, session);
   });
 

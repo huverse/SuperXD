@@ -180,7 +180,7 @@ GoRouter buildRouter({required AppSession session, required AppServices services
         navigatorContainerBuilder: (context, shell, children) => AnimatedBranches(index: shell.currentIndex, children: children),
         pageBuilder: (context, state, navigationShell) => campusPage(key: state.pageKey, child: LegacyImportGate(session: session, child: ShellPage(
           navigationShell: navigationShell, social: social, notes: notes, revealed: splashGone,
-          drawer: quickNav == null ? null : ListenableBuilder(listenable: session, builder: (context, _) => SideDrawerPanel(catalog: quick, nav: quickNav, name: sessionName(), onAccount: () => navigationShell.goBranch(3))),
+          drawer: quickNav == null ? null : SideDrawerPanel(catalog: quick, nav: quickNav),
         ))),
         branches: [
           StatefulShellBranch(routes: [GoRoute(path: '/today', builder: (context, state) => TodayPage(gateway: gateway, onSessionExpired: () => session.expire(generation), isAccountCurrent: () => session.generation == generation && session.loggedIn, syncRequest: todaySync, autoSync: autoSync))]),

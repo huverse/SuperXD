@@ -95,6 +95,14 @@ GPL 的例外：下文第四节所述 math-curve-loaders 改编部分（lib/them
    许可：mpv 与 FFmpeg 按 LGPL-2.1 或更高版本（部分组件为 GPL），与本项目的 GPL-3.0 兼容；源代码见上述来源
    用途：百宝箱「电影院」的视频播放，在本机解码。
 
+12. Newsreader（斜体，侧栏左上角的字样）
+   来源：https://github.com/google/fonts/tree/main/ofl/newsreader（提交 991ce1de6075188e6b8977a5aa9fcd3610a4e946），上游 https://github.com/productiontype/Newsreader
+   许可：SIL Open Font License 1.1（版权声明里没有保留字体名，修改后沿用原字体名）
+   版权：Copyright 2020 The Newsreader Project Authors
+   改动：上游为斜体可变字体（opsz 6–72、wght 200–800，SHA256 796668611f80b64d5adf182fde3b6f29ed83b4e7cbec7b96937e84ac01364792）。本应用用 fontTools 4.66.1 的 instancer 导出 opsz 72、wght 420 的静态斜体，只保留「SuperXD」七个字母（tool/font_subset.py wordmark）；保留的字形、度量与排版特性未改。
+   裁剪后 SHA256：6c53a91912121b3d81b116e33a4b27eb3ec30b540336162f08eb92e39efdfc0b（assets/fonts/newsreader_wordmark.ttf）
+   许可全文见“全部依赖许可”中的 Newsreader。
+
 
 三、参考与借鉴
 

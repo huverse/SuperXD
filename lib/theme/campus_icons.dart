@@ -28,8 +28,6 @@ abstract final class CampusIcons {
   static const eye = LucideIcons.eye;
   static const eyeClosed = LucideIcons.eyeClosed;
   static const search = LucideIcons.search;
-  // 今天页左上角拉出侧栏（同 Claude 的长短横线）。
-  static const sidebar = LucideIcons.alignLeft;
   static const filter = LucideIcons.slidersHorizontal;
   static const sync = LucideIcons.refreshCw;
   static const edit = LucideIcons.pencil;
@@ -199,6 +197,38 @@ abstract final class CampusIcons {
 
 void configureCampusIcons() =>
     MorphCache.configure(maxMorphs: 32, maxBytes: 4 * 1024 * 1024);
+
+// 拉出侧栏的三道横线（今天页左上角，11-23 用户要求同 Claude）：上两道一样长、最下一道一半，左对齐，整组在图标框里居中，圆头；
+// Lucide 里没有这个比例（alignLeft 是长短交错），所以自己画。颜色跟按钮的图标色（IconTheme），读屏名由外面的按钮给。
+class CampusMenuGlyph extends StatelessWidget {
+  const CampusMenuGlyph({super.key, this.size = 20, this.color});
+  final double size;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(size: Size.square(size), painter: _MenuGlyphPainter(color ?? IconTheme.of(context).color ?? const Color(0xFF000000)));
+}
+
+class _MenuGlyphPainter extends CustomPainter {
+  const _MenuGlyphPainter(this.color);
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = size.width * .09
+      ..strokeCap = StrokeCap.round;
+    final long = size.width * .8, left = (size.width - long) / 2, gap = size.height * .29, middle = size.height / 2;
+    canvas
+      ..drawLine(Offset(left, middle - gap), Offset(left + long, middle - gap), paint)
+      ..drawLine(Offset(left, middle), Offset(left + long, middle), paint)
+      ..drawLine(Offset(left, middle + gap), Offset(left + long / 2, middle + gap), paint);
+  }
+
+  @override
+  bool shouldRepaint(_MenuGlyphPainter oldDelegate) => oldDelegate.color != color;
+}
 
 class CampusIcon extends StatelessWidget {
   const CampusIcon(

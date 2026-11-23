@@ -9,7 +9,7 @@
   - campus_tokens.dart：字号与间距令牌 CampusFontSize（14、16、17、18、20、26，与主题的文字样式同一份）与 CampusGap（2、4、8、12、16、24），只镜像现值、不改样子；新代码写字号与 SizedBox 间距用它们，lib/theme 以外的数字字面量个数由 test/code_conventions_test.dart 冻结、只许减少（碰到的文件顺手换）。
   - campus_tone.dart：OKLCH 取色 CampusTone（同 CSS 的 oklch()：明度、彩度、色相分开调，换色相看起来一样亮，超出 sRGB 时降彩度）：色相取自一个颜色或直接给角度；节日红包的主题与汉诺塔的盘子共用，不另写一份。
   - campus_theme.dart：campusTheme 按配色和字体生成 ThemeData：按钮 textStyle 显式带应用字体（不带会回落系统字体）；AppBar 返回图标与内容左边距 16 对齐、标题从 56 起（人工决策见文件内）；OutlinedButton 与 TextButton 是中性胶囊；输入框边框是轮廓色 outline、聚焦时主色加粗（对卡片底不低于 3:1，[人工决策] 在 inputDecorationTheme）；复选框选中是激活色底白勾（同强调按钮的白字）。另有 campusFieldGap（带浮动标签输入框的上方间距，随字号缩放）、campusSystemOverlay（系统栏透明）、CampusScrollBehavior（弹性回弹、不加拉伸效果，拉伸会让里面的玻璃退成底色；iOS 上拖动滚动区收起键盘）；按压反馈不用水波、按下整块变暗。CampusBackground 是空包装，只为兼容现有调用点。
-  - campus_icons.dart：CampusIcons 统一映射 Lucide 图标，CampusIcon 渲染（iOS 上返回画成向左尖角，同系统导航栏），CampusMorphIcon 做导航图标形变，configureCampusIcons 启动时配置。
+  - campus_icons.dart：CampusIcons 统一映射 Lucide 图标，CampusIcon 渲染（iOS 上返回画成向左尖角，同系统导航栏），CampusMorphIcon 做导航图标形变，configureCampusIcons 启动时配置；CampusMenuGlyph 是今天页左上角拉出侧栏的三道横线（同 Claude：上两道一样长、最下一道一半，Lucide 没有这个比例，自己画）。
 - 背景：
   - campus_background.dart：CampusAtmosphere 是全应用唯一的背景循环（24 秒柔雾），放在 MaterialApp 上方，弹窗、弹层开着时停在原处（overlays 由组合根传 campusOverlayDepth，不然整屏模糊每帧重算）；CampusWallpaper 是可选的自定义壁纸（静态图，按色调网格逐格铺淡化保证文字可读，高对比度时不显示）；FrostTexture 是固定颗粒纹理（全部小圆点拼成一组一次画完：Impeller 没有栅格缓存，逐个画的上千个小圆每帧都要重新提交；不经离屏贴图，见关键规则）；CampusBackdrop 提供同相位的背景副本，只给入场遮罩和页面转场用（安卓只在压在弹窗上时，iOS 新页面盖在旧页面上时都垫）。换背景前先按屏幕尺寸解码（precacheImage），再交叉淡化。云雾不跟屏幕刷新逐帧走，按共用节拍 campusDecorTick 每秒推约 20 次（[人工决策] 在 _ticking 上方，先 iOS 后安卓），每次更新先画成半分辨率贴图 AtmosphereCache、每帧只贴图；自己监听前后台，离开前台立即停（后台不出帧不重建，等不到 CampusMotion 传过来）；没人操作满 idleAfter（8 秒，全局指针路由上没有任何指针事件）就停在原处，一碰从原处接着走，重新具备流动条件（回前台、开屏走完、弹窗关掉）时重新计（11-17 的 [人工决策] 同在 _ticking 上方）。
   - wallpaper_tone.dart：壁纸色调网格 WallpaperTone（导入时解码成小图记每格最暗最亮像素）与可读下限 wallpaperVeilAlphas、wallpaperVeilAlpha：叠在最不利的像素上，正文、次要文字和主色文字都不低于 4.8:1。改动后要在模拟器上用高反差测试图复测。
@@ -46,7 +46,7 @@
   - campus_surface.dart：通用卡片表面 CampusSurface，可带点击（带点击时读屏报按钮）；卡片底色 campusSurfaceFill（平时 91% 不透明，高对比度与读屏导航时不透明），卡片、搜索框与快递登录的胶囊框共用。按需建的长列表做成一张卡片用 CampusSliverCard（底色、描边、圆角同上，画在整段 sliver 后面，没有颗粒纹理）加每行的 CampusCardRow（透明 Material 接按下变暗、首尾行按卡片圆角裁剪）。
   - campus_segmented.dart：内容区分段控件 CampusSegmented，二至三项的单选一律用它（规则见文件内人工决策）；等分放不下最长的文字时按文字宽度分配各段（同 iOS 的按内容分宽），连按文字分都放不下才等分加省略。
   - campus_search_field.dart：搜索框 CampusSearchField：胶囊形、底色描边同卡片，占位文字不用浮动标签，有字时出「清空搜索」；成绩页与学习通群聊签到、按课程共用，页面不再自己拼搜索用的 TextField；要由调用方拿焦点时给 focusNode（侧栏进入搜索时弹键盘）。
-  - campus_fog_scroll.dart：浮在云雾上的顶部 CampusFogScroll（侧栏用，同 Claude 侧栏顶上的标题）：内容滚到顶部下面时越往上越淡、融进背景柔雾，完整玻璃档另叠六段渐进模糊（BackdropGroup 共用一次采样，半径逐段减到几乎为零、下沿不见接缝），只在真滚到下面时才模糊；顶上一行与底部一行浮在最上面；滚动区里不能放玻璃；blur 为假时只淡出（调用方整块在做半透明过渡时）。
+  - campus_fog_scroll.dart：浮在云雾上的顶部 CampusFogScroll（侧栏用，同 Claude 侧栏顶上的标题）：内容滚到顶部下面时越往上越淡、融进背景柔雾，完整玻璃档另叠六段渐进模糊（BackdropGroup 共用一次采样，半径逐段减到几乎为零、下沿不见接缝），只在真滚到下面时才模糊；顶上一行浮在最上面；滚动区里不能放玻璃；blur 为假时只淡出（调用方整块在做半透明过渡时）。
   - campus_field_table.dart：详情里的「标签 值」两列行 CampusFieldTable（左列次要色按最宽标签对齐，值可选中复制，空值的行不画）；课程详情与成绩详情共用。
   - campus_prose.dart：按行排版的长说明 CampusProse：「1. 正文」编号悬挂缩进，「登录：正文」冒号前的段内小标题半粗，以冒号结尾的整行是小节标题；协议、隐私政策、首次同意弹窗与学习通同意说明共用，文字原样显示。
   - campus_animated_list.dart：列表增删的过渡（[人工决策] 在文件头，时长 campusListDuration，要等过渡走完再定位的调用方用它）：CampusAnimatedColumn 按 key 比对前后子项，新的展开淡入、去掉的原地收起；CampusAppear 给按需建的长列表里新到的一项展开；CampusAnimatedSliverList 是按需建的长列表（SliverList.builder）的增删过渡，同 CampusAnimatedColumn 的规则，只有正在进出的条目有动画控制器（好友列表用，11-18）。第一次显示不动画、减少动画时直接换，只用于没有玻璃的内容区列表。过渡不改条目的横向排布：条目始终铺满列表宽度，按内容收窄的条目（会话卡片）照旧靠左或靠右，不被居中。

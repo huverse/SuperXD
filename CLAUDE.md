@@ -127,7 +127,7 @@
   - 发版：release_changelog.dart（从 CHANGELOG 取更新说明与 Release 正文，正文模板 release_body.md）、release_manifest.dart（生成更新清单并按架构签名）、content_signing.dart（清单、开发者的话与灰度配置的签名，以及签完按客户端内置公钥再验一遍的 check-release、check-notes、check-rollout、check-flags；私钥在仓库外，人工决策见 lib/device/signed_content.dart），开发者的话流水线另用它与 developer_notes.dart；灰度配置不在仓库（人工决策见 lib/domain/rollout.dart 文件头 11-16 那两条），维护者本机用 rollout_publish.sh（调 rollout_config.dart 签出第 1、2 版两份并核对、传中转、公网核对）。
   - 电影院：cinema_rules.dart（把维护者本机的私有规则包签成中转用的 cinema.json，规则包不进仓库）与 cinema_publish.sh（签名、核对、上传、公网核对，用法见文件头）；content_signing.dart 另有 check-cinema。
   - 挑战：challenge_vectors.dart（生成双端判定向量 server/test/vectors/challenge_judge_v1.json，规则改了就重跑；本机对拍可加 --seeds）、challenge_bank.dart（用保密种子 CHALLENGE_BANK_SEED 出题库，连同仓库 challenge/config.json 由流水线 challenge.yml 传到中转发布目录的 challenge 下，中转热加载）。
-  - 生成与演示：painting_colors.dart（开屏画作清单里的尺寸与天空色，加画时跑）、readme_demo.dart（README 截图）、font_previews.dart（字体预览图）、font_subset.py（字体裁剪：Maple 与衬线字体包按 tool/font_charset.txt 裁，逐字节可复现，用法见文件头）、schedule_smoke.dart、glass_preview.dart、motion_preview.dart。
+  - 生成与演示：painting_colors.dart（开屏画作清单里的尺寸与天空色，加画时跑）、readme_demo.dart（README 截图）、font_previews.dart（字体预览图）、font_subset.py（字体裁剪：Maple 与衬线字体包按 tool/font_charset.txt 裁，侧栏字样的 Newsreader 斜体只留「SuperXD」七个字母，逐字节可复现，用法见文件头）、schedule_smoke.dart、glass_preview.dart、motion_preview.dart。
 
 # 已知约束
 

@@ -592,7 +592,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
           // [人工决策-2026-11-23 18:29:13] 顶栏两侧玻璃圆钮、日期居中（用户 11-23 选定，同 Claude、Google 日历）：左边拉出侧栏（见 side_drawer.dart），右边同步；
           // 去掉「今天」大字（底栏已写着今天，看别的日子时日期下面写明天、几天前）。没选两行大标题、把按钮插在「今天」前面。没有侧栏时左边空出同宽，日期仍居中。
           return Row(children: [
-            if (drawer != null) CampusGlassCircleButton(label: '侧栏', size: 44, onPressed: drawer.open, icon: const CampusIcon(CampusIcons.sidebar, size: 20)) else const SizedBox(width: 44),
+            if (drawer != null) CampusGlassCircleButton(label: '侧栏', size: 44, onPressed: drawer.open, icon: const CampusMenuGlyph()) else const SizedBox(width: 44),
             const SizedBox(width: 8),
             Expanded(child: date),
             const SizedBox(width: 8),
