@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:superxd/application/quick_nav.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/page/quick_entry.dart';
+import 'package:superxd/theme/campus_animated_list.dart';
 import 'package:superxd/theme/campus_glass_material.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
@@ -15,6 +16,7 @@ import 'package:superxd/theme/scroll_edge_fade.dart';
 
 // 编辑侧栏的常用（人工决策见 side_drawer.dart 的 SideDrawerPanel）：上面是常用，勾着、按住右边把手拖动排序；下面按分组列其余的，勾上接到常用末尾。
 // 点了就存（同开屏画作的播放顺序页）。此刻看不见的（灰度关了、锁着）不列出来，存的时候原样留在末尾，看得见了还在常用里。
+// 勾上、取消时那一行滑到新位置、中间的让开或补上，分组空了标题淡出（theme 的 CampusMove，11-23 用户录屏指出一下子跳过去）。
 class QuickEditPage extends StatefulWidget {
   const QuickEditPage({super.key, required this.catalog, required this.nav});
   final QuickCatalog catalog;
@@ -29,6 +31,8 @@ class _QuickEditPageState extends State<QuickEditPage> {
   late final _saved = widget.nav.prefs.pinned ?? widget.catalog.defaults;
   late final _visible = {for (final entry in _entries) entry.id};
   late final _pinned = [for (final id in _saved) ?_entries.where((entry) => entry.id == id).firstOrNull];
+  late final _groups = {for (final entry in _entries) entry.group};
+  final _moves = GlobalKey<CampusMoveScopeState>();
 
   Future<void> _save() async {
     try {
@@ -40,24 +44,24 @@ class _QuickEditPageState extends State<QuickEditPage> {
   }
 
   void _toggle(QuickEntry entry) {
-    setState(() {
+    _moves.currentState!.move(() => setState(() {
       if (!_pinned.remove(entry)) _pinned.add(entry);
-    });
+    }));
     unawaited(_save());
   }
 
   @override
   Widget build(BuildContext context) {
-    final others = <String, List<QuickEntry>>{};
+    final others = <String, List<QuickEntry>>{for (final group in _groups) group: []};
     for (final entry in _entries) {
-      if (!_pinned.contains(entry)) (others[entry.group] ??= []).add(entry);
+      if (!_pinned.contains(entry)) others[entry.group]!.add(entry);
     }
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(tooltip: '返回', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.back)),
         title: const Text('常用'),
       ),
-      body: CampusScrollFade(child: SafeArea(bottom: false, child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: CustomScrollView(slivers: [
+      body: CampusScrollFade(child: SafeArea(bottom: false, child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: CampusMoveScope(key: _moves, child: CustomScrollView(slivers: [
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(CampusGap.large, CampusGap.small, CampusGap.large, 0),
           sliver: SliverToBoxAdapter(child: _Heading('常用')),
@@ -78,19 +82,20 @@ class _QuickEditPageState extends State<QuickEditPage> {
               setState(() => _pinned.insert(newIndex, _pinned.removeAt(oldIndex)));
               unawaited(_save());
             },
-            itemBuilder: (context, index) => _Row(key: ValueKey(_pinned[index].id), entry: _pinned[index], pinned: true, index: index, onToggle: _toggle),
+            itemBuilder: (context, index) => CampusMove(key: ValueKey(_pinned[index].id), id: _pinned[index].id, child: _Row(entry: _pinned[index], pinned: true, index: index, onToggle: _toggle)),
           ),
         ),
         SliverPadding(
           padding: campusScrollPadding(context, const EdgeInsets.fromLTRB(CampusGap.large, 0, CampusGap.large, CampusGap.large)),
           sliver: SliverList.list(children: [
             for (final MapEntry(key: group, value: members) in others.entries) ...[
-              _Heading(group),
-              for (final entry in members) _Row(key: ValueKey(entry.id), entry: entry, pinned: false, onToggle: _toggle),
+              // 分组空了标题留在树里、不占位置，再有条目时从原处淡入。
+              CampusMove(key: ValueKey(('group', group)), id: ('group', group), present: members.isNotEmpty, child: _Heading(group)),
+              for (final entry in members) CampusMove(key: ValueKey(entry.id), id: entry.id, child: _Row(entry: entry, pinned: false, onToggle: _toggle)),
             ],
           ]),
         ),
-      ]))))),
+      ])))))),
     );
   }
 }
@@ -107,7 +112,7 @@ class _Heading extends StatelessWidget {
 }
 
 class _Row extends StatelessWidget {
-  const _Row({super.key, required this.entry, required this.pinned, required this.onToggle, this.index});
+  const _Row({required this.entry, required this.pinned, required this.onToggle, this.index});
   final QuickEntry entry;
   final bool pinned;
   final ValueChanged<QuickEntry> onToggle;

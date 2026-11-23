@@ -17,6 +17,7 @@ import 'package:superxd/page/quick_edit_page.dart';
 import 'package:superxd/page/schedule_page.dart';
 import 'package:superxd/page/shell_page.dart';
 import 'package:superxd/page/today_page.dart';
+import 'package:superxd/theme/campus_animated_list.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_pull_button.dart';
 import 'package:superxd/theme/campus_side_drawer.dart';
@@ -225,6 +226,48 @@ void main() {
     expect(_drawer(tester).isOpen, isTrue, reason: '编辑页不合上侧栏');
     final express = tester.getTopLeft(find.text('快递')).dy, grades = tester.getTopLeft(find.text('成绩')).dy;
     expect(express, lessThan(grades));
+    await _done(tester, session);
+  });
+
+  testWidgets('编辑常用：勾上、取消时那一行滑到新位置，分组空了标题淡出且不占位置、再有条目时淡入（11-23 用户录屏指出一下子跳过去）', (tester) async {
+    final (nav, session) = await _app(tester, prefs: const QuickNavPrefs(pinned: ['/schedule', '/grades', '/academic']));
+    await _open(tester);
+    await tester.tap(find.text('编辑'));
+    await tester.pumpAndSettle();
+    // 空了的分组标题高度为零，查找器把它当作不在屏上，所以带 skipOffstage: false。
+    final heading = find.byWidgetPredicate((widget) => widget is CampusMove && widget.id == ('group', '学业'), skipOffstage: false);
+    double headingOpacity() => tester.widget<FadeTransition>(find.descendant(of: heading, matching: find.byType(FadeTransition, skipOffstage: false), skipOffstage: false).first).opacity.value;
+    double top() => tester.getTopLeft(find.text('同步记录')).dy;
+    expect(headingOpacity(), 1);
+    final before = top();
+
+    await tester.tap(find.text('同步记录'));
+    await tester.pump();
+    expect(top(), moreOrLessEquals(before), reason: '第一帧还在原处');
+    await tester.pump(const Duration(milliseconds: 150));
+    final middle = top(), fading = headingOpacity();
+    await tester.pumpAndSettle();
+    final after = top();
+    expect(nav.prefs.pinned, ['/schedule', '/grades', '/academic', '/academic/records']);
+    expect(after, lessThan(before), reason: '接到常用末尾，在学业那一组上面');
+    expect(middle, lessThan(before));
+    expect(middle, greaterThan(after), reason: '中途在两处之间，是滑过去的');
+    expect(fading, inExclusiveRange(0, 1), reason: '学业这一组空了，标题在淡出');
+    expect(headingOpacity(), 0);
+    expect(tester.getSize(heading).height, 0, reason: '空了的分组标题不占位置');
+
+    await tester.tap(find.text('同步记录'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    final returning = top(), appearing = headingOpacity();
+    await tester.pumpAndSettle();
+    expect(nav.prefs.pinned, ['/schedule', '/grades', '/academic']);
+    expect(returning, inExclusiveRange(after, top()), reason: '滑回学业那一组');
+    expect(top(), moreOrLessEquals(before));
+    expect(appearing, inExclusiveRange(0, 1));
+    expect(headingOpacity(), 1);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
     await _done(tester, session);
   });
 
