@@ -1177,10 +1177,17 @@ void main() {
       final service = await open(() async => packageBytes(), client: client);
       final rule = (await service.rules()).rules.first;
       await service.grantRules([rule]);
+      // 等请求真的发到假服务器再放行：chapters 先查本机库（sqflite 是真异步），慢机器上两次 pumpEventQueue 不够（11-23 CI 偶发 gates[1] 越界）。
+      Future<void> requested(int count) async {
+        for (var wait = 0; wait < 400 && gates.length < count; wait++) {
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+        expect(gates, hasLength(count));
+      }
       final old = service.chapters(rule, '7');
-      await pumpEventQueue();
+      await requested(1);
       final fresh = service.chapters(rule, '7', fresh: true);
-      await pumpEventQueue();
+      await requested(2);
       gates[1].complete();
       expect((await fresh).single.episodes.single.url, 'https://cdn.example.com/2.m3u8');
       gates[0].complete();
