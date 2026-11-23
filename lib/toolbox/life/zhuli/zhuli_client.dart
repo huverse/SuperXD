@@ -162,6 +162,45 @@ class ZhuliClient {
   // 设备回的结束帧与结束回执都交这里（历史单也是）。
   Future<void> bleEnded(ZhuliSession session, int deviceId, String reply) => _call(session, '/webapi/v1/consume/ble/end_consume_response', {'hex': reply, 'device_id': deviceId});
 
+  // ---------- 充值与买券（资料第 5、6 节） ----------
+
+  static String get _platformName => Platform.isIOS ? 'iOS' : 'Android';
+
+  Future<List<ZhuliQuota>> quotas(ZhuliSession session) async => decodeZhuliQuotas(await _call(session, '/webapi/v1/recharge/list_recharge_quota'));
+
+  // 充值下单：金额按分给（页面先限在 zhuliRechargeMin 到 zhuliRechargeMax、最多两位小数，住理只拒负数），只走支付宝；充给自己（staff_id 空）。
+  Future<ZhuliPayOrder> recharge(ZhuliSession session, int cents) async => decodeZhuliPayOrder(
+    await _call(session, '/webapi/v1/recharge/createorder', {
+      'rechargerecord': {
+        'user_id': session.userId,
+        'recharge_value': num.parse(zhuliYuan(cents)),
+        'staff_id': '',
+        'isminiprogram': 'False',
+        'trade_type': 'APP',
+        'recharge_method': 'alipay',
+        'use_platform': _platformName,
+      },
+    }),
+  );
+
+  Future<List<ZhuliGoods>> goods(ZhuliSession session) async => decodeZhuliGoods(await _call(session, '/webapi/v1/cash_coupon/get_cash_coupon_app', {'staff_id': ''}));
+
+  // 买一张券：不带金额（住理按商品定价）、买给自己，只走支付宝。
+  Future<ZhuliPayOrder> buyCoupon(ZhuliSession session, String goodsId) async => decodeZhuliPayOrder(
+    await _call(session, '/webapi/v1/cash_coupon/buy_cash_coupon', {
+      'user_id': session.userId,
+      'cash_coupon_id': goodsId,
+      'staff_id': '',
+      'isminiprogram': 'False',
+      'trade_type': 'APP',
+      'pay_type': 'alipay',
+      'use_platform': _platformName,
+    }),
+  );
+
+  Future<bool> couponPaid(ZhuliSession session, String orderId) async =>
+      decodeZhuliCouponPaid(await _call(session, '/webapi/v1/cash_coupon/list_staff_cash_coupon_app', {'id': orderId, 'staff_id': ''}));
+
   // 命令帧：20 字节的十六进制串（外部输入）。
   static String _frame(Object? data) => data is String && data.length == zhuliFrameLength * 2 ? data.toUpperCase() : throw const ZhuliException(ZhuliFailure.invalidResponse, '住理生活的返回看不懂，稍后再试');
 

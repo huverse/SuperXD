@@ -22,6 +22,7 @@ import 'package:superxd/toolbox/life/zhuli/zhuli_login.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_models.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_orders_page.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_pick_page.dart';
+import 'package:superxd/toolbox/life/zhuli/zhuli_recharge_page.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_service.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_vault.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
@@ -286,14 +287,36 @@ class _ZhuliPageState extends State<ZhuliPage> {
         ],
       ),
     );
+    Future<void> open(Widget Function() page) async {
+      await Navigator.of(context).push<void>(CampusPageRoute(builder: (_) => page()));
+      if (mounted) unawaited(_load());
+    }
+    final phone = _phone!;
     return CampusSurface(
       padding: const EdgeInsets.all(20),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          amount('余额', profile.balance, profile.frozen > 0 ? '冻结 ¥${zhuliYuan(profile.frozen)}' : null),
-          const SizedBox(width: CampusGap.large),
-          amount('券余额', coupons.balance, '${coupons.count} 张可用'),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              amount('余额', profile.balance, profile.frozen > 0 ? '冻结 ¥${zhuliYuan(profile.frozen)}' : null),
+              const SizedBox(width: CampusGap.large),
+              amount('券余额', coupons.balance, '${coupons.count} 张可用'),
+            ],
+          ),
+          // 充值与买券（学校开着充值入口才有，付款只走支付宝，见 zhuli_pay.dart）。
+          if (_config?.rechargeShown == true) ...[
+            const SizedBox(height: CampusGap.large),
+            Wrap(
+              spacing: CampusGap.medium,
+              runSpacing: CampusGap.medium,
+              children: [
+                FilledButton.icon(onPressed: () => unawaited(open(() => ZhuliRechargePage(service: _service, phone: phone))), icon: const CampusIcon(CampusIcons.wallet), label: const Text('充值')),
+                FilledButton.icon(onPressed: () => unawaited(open(() => ZhuliShopPage(service: _service, phone: phone))), icon: const CampusIcon(CampusIcons.shop), label: const Text('买券')),
+              ],
+            ),
+          ],
         ],
       ),
     );

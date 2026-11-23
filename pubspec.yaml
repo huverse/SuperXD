@@ -86,6 +86,7 @@ dependencies:
   media_kit_libs_video: ^1.0.7
   json_path: ^0.9.0
   flutter_svg: ^2.5.0
+  tobias: ^6.0.0
 
 dev_dependencies:
   flutter_test:

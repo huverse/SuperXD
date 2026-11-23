@@ -1,6 +1,15 @@
 {
   "pins" : [
     {
+      "identity" : "alipaysdk-spm",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/JarvanMo/AliPaySDK-SPM.git",
+      "state" : {
+        "revision" : "61485eb20bdf3fcf69ee69d047a8bab13454608f",
+        "version" : "15.8.42"
+      }
+    },
+    {
       "identity" : "tocropviewcontroller",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/TimOliver/TOCropViewController.git",

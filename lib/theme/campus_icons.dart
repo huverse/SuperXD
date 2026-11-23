@@ -54,6 +54,9 @@ abstract final class CampusIcons {
   static const deviceNumber = LucideIcons.keyboard;
   static const building = LucideIcons.building2;
   static const swapDevice = LucideIcons.arrowLeftRight;
+  // 住理生活的充值与买券（用支付宝付）。
+  static const wallet = LucideIcons.wallet;
+  static const shop = LucideIcons.shoppingBag;
   static const image = LucideIcons.image;
   static const images = LucideIcons.images;
   static const camera = LucideIcons.camera;
