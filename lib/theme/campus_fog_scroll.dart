@@ -1,13 +1,17 @@
-import 'dart:ui' show ImageFilter;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as liquid;
 
 import 'package:superxd/theme/campus_glass_tier.dart';
 import 'package:superxd/theme/glass_panel.dart';
 
 // 浮在云雾上的顶部（同 Claude 侧栏顶上的标题）：内容滚到顶部下面时越往上越淡、融进背景的柔雾，标题与按钮浮在最上面。
-// 完整玻璃档另叠渐进模糊（越往上越糊，六段共用一次背景采样 BackdropGroup）；简化、关闭档与减少动画时只淡出。
-// 只在内容真的滚到顶部下面时才模糊，没滚动时不花这份开销。滚动区自己在顶部留出状态栏加 headerHeight；
+// 完整玻璃档另叠渐进模糊：玻璃库的 ProgressiveBlur，一次背景采样、着色器按位置连续减小半径，越往上越糊、到下沿正好清晰
+// （11-23 用户真机深色截图：原来分六段各自裁剪模糊，段界在滚上来的字上切出一道道硬边；段分得再细也只是硬边变细，所以换成连续的）。
+// 简化、关闭档、减少动画与不支持着色器滤镜时只淡出（库在不支持时退回一整块均匀模糊，下沿又是一道硬边）。
+// 只在内容滚到顶部下面时才模糊，滚开头一段里半径从零长到满（不一下子糊上），没滚动时不花这份开销；滚动只重建模糊这一层。
+// 滚动区自己在顶部留出状态栏加 headerHeight；
 // 滚动区里不能放玻璃（整块包了渐隐遮罩，玻璃在遮罩下取不到背景）。
 class CampusFogScroll extends StatefulWidget {
   const CampusFogScroll({super.key, required this.header, required this.headerHeight, required this.child, this.blur = true});
@@ -22,18 +26,24 @@ class CampusFogScroll extends StatefulWidget {
   State<CampusFogScroll> createState() => _CampusFogScrollState();
 }
 
-// 雾带各段的模糊半径，从上往下（段高按雾带高度的比例 _bands）：半径一段段往下减到几乎为零，相邻两段差得小，下沿看不出接缝（模拟器上三段 14、7、3 时下沿一道硬边）。
-const _sigmas = [12.0, 8.0, 5.0, 3.0, 1.5, .6];
-const _bands = [.36, .2, .15, .12, .1, .07];
+// 雾带顶上的模糊半径（往下按位置线性减到下沿为零，同原来分段的走势）与滚多远模糊才长满。
+const _fogSigma = 14.0;
+const _fogRamp = 24.0;
 
 class _CampusFogScrollState extends State<CampusFogScroll> {
-  bool _covered = false;
+  // 内容滚到顶部下面的程度：0 是没滚（或在顶上回弹），滚过 _fogRamp 为 1。
+  final _cover = ValueNotifier<double>(0);
 
   bool _scrolled(ScrollNotification notification) {
     if (notification.depth != 0 || notification.metrics.axis != Axis.vertical) return false;
-    final covered = notification.metrics.pixels > .5;
-    if (covered != _covered) setState(() => _covered = covered);
+    _cover.value = ((notification.metrics.pixels - notification.metrics.minScrollExtent) / _fogRamp).clamp(0.0, 1.0);
     return false;
+  }
+
+  @override
+  void dispose() {
+    _cover.dispose();
+    super.dispose();
   }
 
   @override
@@ -61,28 +71,26 @@ class _CampusFogScrollState extends State<CampusFogScroll> {
           child: widget.child,
         ),
       )),
-      if (_covered && widget.blur) Positioned(left: 0, top: 0, right: 0, height: band + 16, child: _FogBlur(height: band + 16)),
+      if (widget.blur) Positioned(left: 0, top: 0, right: 0, height: band + 16, child: _FogBlur(cover: _cover)),
       Positioned(left: 0, top: padding.top, right: 0, height: widget.headerHeight, child: widget.header),
     ]);
   }
 }
 
 class _FogBlur extends StatelessWidget {
-  const _FogBlur({required this.height});
-  final double height;
+  const _FogBlur({required this.cover});
+  final ValueNotifier<double> cover;
 
   @override
   Widget build(BuildContext context) => ValueListenableBuilder<bool>(
     valueListenable: campusGlassReady,
     builder: (context, ready, _) {
-      if (CampusGlassScope.tierOf(context, ready: ready) != CampusGlassTier.full) return const SizedBox.shrink();
-      return IgnorePointer(child: BackdropGroup(child: Column(children: [
-        for (final (index, sigma) in _sigmas.indexed)
-          SizedBox(height: height * _bands[index], child: ClipRect(child: BackdropFilter.grouped(
-            filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma, tileMode: TileMode.mirror),
-            child: const SizedBox.expand(),
-          ))),
-      ])));
+      // 着色器由组合根初始化玻璃时预热（LiquidGlassWidgets.initialize），完整档要等它就绪，所以第一次滚上来时已经编译好。
+      if (CampusGlassScope.tierOf(context, ready: ready) != CampusGlassTier.full || !ui.ImageFilter.isShaderFilterSupported) return const SizedBox.shrink();
+      return IgnorePointer(child: ValueListenableBuilder<double>(
+        valueListenable: cover,
+        builder: (context, cover, _) => cover <= 0 ? const SizedBox.shrink() : liquid.ProgressiveBlur(maxSigma: _fogSigma * cover, falloff: 1),
+      ));
     },
   );
 }

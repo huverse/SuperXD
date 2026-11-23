@@ -46,7 +46,7 @@
   - campus_surface.dart：通用卡片表面 CampusSurface，可带点击（带点击时读屏报按钮）；卡片底色 campusSurfaceFill（平时 91% 不透明，高对比度与读屏导航时不透明），卡片、搜索框与快递登录的胶囊框共用。按需建的长列表做成一张卡片用 CampusSliverCard（底色、描边、圆角同上，画在整段 sliver 后面，没有颗粒纹理）加每行的 CampusCardRow（透明 Material 接按下变暗、首尾行按卡片圆角裁剪）。
   - campus_segmented.dart：内容区分段控件 CampusSegmented，二至三项的单选一律用它（规则见文件内人工决策）；等分放不下最长的文字时按文字宽度分配各段（同 iOS 的按内容分宽），连按文字分都放不下才等分加省略。
   - campus_search_field.dart：搜索框 CampusSearchField：胶囊形、底色描边同卡片，占位文字不用浮动标签，有字时出「清空搜索」；成绩页与学习通群聊签到、按课程共用，页面不再自己拼搜索用的 TextField；要由调用方拿焦点时给 focusNode（侧栏进入搜索时弹键盘）。
-  - campus_fog_scroll.dart：浮在云雾上的顶部 CampusFogScroll（侧栏用，同 Claude 侧栏顶上的标题）：内容滚到顶部下面时越往上越淡、融进背景柔雾，完整玻璃档另叠六段渐进模糊（BackdropGroup 共用一次采样，半径逐段减到几乎为零、下沿不见接缝），只在真滚到下面时才模糊；顶上一行浮在最上面；滚动区里不能放玻璃；blur 为假时只淡出（调用方整块在做半透明过渡时）。
+  - campus_fog_scroll.dart：浮在云雾上的顶部 CampusFogScroll（侧栏用，同 Claude 侧栏顶上的标题）：内容滚到顶部下面时越往上越淡、融进背景柔雾，完整玻璃档另叠渐进模糊（玻璃库的 ProgressiveBlur：一次背景采样、着色器按位置连续减小半径，到下沿正好清晰；原来分六段各自模糊，段界在滚上来的字上切出硬边，11-23 用户真机截图后换掉），滚开头一段里半径从零长满，滚动只重建模糊这一层；不支持着色器滤镜时只淡出；顶上一行浮在最上面；滚动区里不能放玻璃；blur 为假时只淡出（调用方整块在做半透明过渡时）。
   - campus_field_table.dart：详情里的「标签 值」两列行 CampusFieldTable（左列次要色按最宽标签对齐，值可选中复制，空值的行不画）；课程详情与成绩详情共用。
   - campus_prose.dart：按行排版的长说明 CampusProse：「1. 正文」编号悬挂缩进，「登录：正文」冒号前的段内小标题半粗，以冒号结尾的整行是小节标题；协议、隐私政策、首次同意弹窗与学习通同意说明共用，文字原样显示。
   - campus_animated_list.dart：列表增删的过渡（[人工决策] 在文件头，时长 campusListDuration，要等过渡走完再定位的调用方用它）：CampusAnimatedColumn 按 key 比对前后子项，新的展开淡入、去掉的原地收起；CampusAppear 给按需建的长列表里新到的一项展开；CampusAnimatedSliverList 是按需建的长列表（SliverList.builder）的增删过渡，同 CampusAnimatedColumn 的规则，只有正在进出的条目有动画控制器（好友列表用，11-18）。第一次显示不动画、减少动画时直接换，只用于没有玻璃的内容区列表。过渡不改条目的横向排布：条目始终铺满列表宽度，按内容收窄的条目（会话卡片）照旧靠左或靠右，不被居中。
