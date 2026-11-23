@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -9,7 +10,11 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:superxd/app_session.dart';
+import 'package:superxd/application/campus_timetable.dart';
+import 'package:superxd/application/quick_nav.dart';
 import 'package:superxd/domain/account.dart';
+import 'package:superxd/domain/feature_flags.dart';
+import 'package:superxd/domain/quick_nav.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/auto_sync.dart';
 import 'package:superxd/domain/campus_gateway.dart';
@@ -21,6 +26,8 @@ import 'package:superxd/gateway/account_access.dart';
 import 'package:superxd/gateway/kingo_campus_gateway.dart';
 import 'package:superxd/local/app_database.dart';
 import 'package:superxd/local/display_settings.dart';
+import 'package:superxd/local/quick_nav_memory.dart';
+import 'package:superxd/page/qr_scan_page.dart';
 import 'package:superxd/app_services.dart';
 import 'package:superxd/app_shell.dart';
 import 'package:superxd/social/identity_vault.dart';
@@ -29,22 +36,48 @@ import 'package:superxd/relay/app_account_vault.dart';
 import 'package:superxd/social/social_service.dart';
 import 'package:superxd/social/social_spaces.dart';
 import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/theme/third_party_licenses.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_accounts.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_http.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_service.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_vault.dart';
+import 'package:superxd/toolbox/cinema/cinema_http.dart';
+import 'package:superxd/toolbox/cinema/cinema_models.dart';
+import 'package:superxd/toolbox/cinema/cinema_service.dart';
 import 'package:superxd/toolbox/express/express_client.dart';
 import 'package:superxd/toolbox/express/express_http.dart';
 import 'package:superxd/toolbox/express/express_models.dart';
 import 'package:superxd/toolbox/express/express_service.dart';
 import 'package:superxd/toolbox/express/express_vault.dart';
+import 'package:superxd/toolbox/life/zhuli/zhuli_client.dart';
+import 'package:superxd/toolbox/life/zhuli/zhuli_devices.dart';
+import 'package:superxd/toolbox/life/zhuli/zhuli_http.dart';
+import 'package:superxd/toolbox/life/zhuli/zhuli_pay.dart';
+import 'package:superxd/toolbox/life/zhuli/zhuli_protocol.dart';
+import 'package:superxd/toolbox/life/zhuli/zhuli_service.dart';
+import 'package:superxd/toolbox/life/zhuli/zhuli_vault.dart';
+import 'package:superxd/toolbox/short_video/media_resource.dart';
+import 'package:superxd/toolbox/short_video/parse_coordinator.dart';
+import 'package:superxd/toolbox/short_video/parse_result.dart';
+import 'package:superxd/toolbox/short_video/parse_source.dart';
+import 'package:superxd/toolbox/short_video/short_video_service.dart';
+import 'package:superxd/toolbox/short_video/short_video_store.dart';
+import 'package:superxd/toolbox/short_video/svparse_video_parser.dart';
 import 'package:superxd/toolbox/toolbox_catalog.dart';
+import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_module.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
+import '../test/chaoxing_fake_server.dart';
 import '../test/fake_relay.dart';
 
 // README 截图入口（手动，不进 CI）：内存 SQLite 里的合成课表与作息，假登录，不连教务、不读写本机账号库。
-// 私信是内存中转上的两台设备（好友「小红」发来一份课表），快递是内存会话加假拼多多，都不联网。
-// 课程、教师、教室、快递与取件码均为虚构。运行：flutter run --profile -t tool/readme_demo.dart
+// 私信是内存中转上的两台设备（好友「小红」发来一份课表），快递是内存会话加假拼多多，住理生活是登好的合成账号加假住理，都不联网。
+// 功能开关按全量开着（电影院的解析照线上关着），侧栏的常用与最近只在内存里。
+// 课程、教师、教室、快递、取件码与洗浴设备均为虚构。运行：flutter run --profile -t tool/readme_demo.dart
 Future<void> main() async {
   campusLog = debugPrint;
   WidgetsFlutterBinding.ensureInitialized();
@@ -68,7 +101,15 @@ Future<void> main() async {
   await gateway.saveScheduleRevision(term, _courses, '演示课表', expectedRevisionId: null);
   final social = await _demoSocial(term, start);
   final session = AppSession(_DemoAccounts(gateway));
-  runApp(SuperXdApp(session: session, services: AppServices(display: DisplaySettings.memory(), social: social, toolbox: ToolboxRuntime(catalog: _demoCatalog))));
+  final quickNav = QuickNav(memory: FileQuickNavMemory.memory(const QuickNavPrefs(recent: ['/toolbox/cinema', '/playground/nonogram', 'appearance'])));
+  // 扫码同组合根接扫码页（住理生活首页有扫码才画「扫码」按钮）。
+  // 学习通推断正在上的课读本应用课表，同组合根。
+  final toolbox = ToolboxRuntime(
+    catalog: _demoCatalog,
+    scanQrCode: (context, hint, accept, {then}) => Navigator.of(context).push<String>(CampusPageRoute(builder: (_) => QrScanPage(hint: hint, accept: accept, then: then))),
+    campusTimetable: () => campusTimetableToday(session.gateway, signedIn: session.loggedIn),
+  );
+  runApp(SuperXdApp(session: session, services: AppServices(display: DisplaySettings.memory(), social: social, toolbox: toolbox, features: _DemoFeatures(), quickNav: quickNav)));
   await initializeCampusGlass();
   await session.restore();
 }
@@ -96,13 +137,169 @@ Future<SocialService> _demoSocial(TermRef term, String start) async {
   return me;
 }
 
-// 百宝箱用正式注册表，只把快递换成内存会话加假拼多多（已登录、驿站有件），其余工具照常。
-List<ToolboxModule> _demoCatalog(ToolboxRuntime runtime) => [
-  for (final module in toolboxCatalog(runtime))
-    module.id == ExpressService.serviceId
-        ? ToolboxModule(id: module.id, name: module.name, icon: module.icon, builder: module.builder, clearedData: module.clearedData, shortcuts: module.shortcuts, openService: (_) async => _demoExpress())
-        : module,
-];
+// 百宝箱用正式注册表，只把快递换成内存会话加假拼多多（已登录、驿站有件）、住理生活换成登好的合成账号，其余工具照常。
+List<ToolboxModule> _demoCatalog(ToolboxRuntime runtime) => [for (final module in toolboxCatalog(runtime)) _demoModule(module)];
+
+ToolboxModule _demoModule(ToolboxModule module) => ToolboxModule(
+  id: module.id, name: module.name, icon: module.icon, builder: module.builder, resource: module.resource, clearedData: module.clearedData,
+  openShared: module.openShared, shortcuts: module.shortcuts, flag: module.flag, children: [for (final child in module.children) _demoModule(child)],
+  openService: switch (module.id) {
+    ExpressService.serviceId => (_) async => _demoExpress(),
+    ZhuliService.serviceId => (_) async => _demoZhuli(),
+    ShortVideoService.serviceId => _demoShortVideo,
+    ChaoxingService.serviceId => _demoChaoxing,
+    CinemaService.serviceId => _demoCinema,
+    _ => module.openService,
+  },
+);
+
+// 合成图片：本仓库自己的开屏画作（GitHub 上的公开原图），当视频封面与电影海报，不用任何第三方的内容。
+Uri _painting(String name) => Uri.parse('https://raw.githubusercontent.com/huverse/SuperXD/main/assets/paintings/$name.jpg');
+
+// 合成视频解析：来源的名字与画质字段同线上的 BugPK 新版，解析结果是假的（封面是开屏画作）；预先记一条解析历史，点开就是结果页。
+Future<ShortVideoService> _demoShortVideo(ToolboxServiceContext context) async {
+  final file = path.join(context.base.path, 'readme_demo_short_video.db');
+  if (File(file).existsSync()) File(file).deleteSync();
+  final store = await ShortVideoStore.open(file, legacy: context.store);
+  final link = Uri.parse('https://v.example.com/s/demo');
+  await store.addHistory(id: 'demo', sourceUrl: link, providerId: _DemoParser.real.id, title: '清晨的钟楼（合成演示）', kind: 'video');
+  return ShortVideoService(coordinator: ParseCoordinator([_DemoParser()]), store: store, downloads: context.downloads, consents: context.store);
+}
+
+class _DemoParser implements ParseProvider {
+  static final real = SvparseVideoParser(key: 'demo').source;
+  @override
+  ParseSource get source => real;
+  @override
+  bool supports(Uri uri) => true;
+  @override
+  Future<ParseResult> resolve(Uri uri, ToolboxCancellation cancellation) async => ParseResult(
+    sourceUrl: uri,
+    providerId: real.id,
+    title: '清晨的钟楼（合成演示）',
+    author: '示例作者',
+    cover: MediaResource(id: 'cover', kind: MediaKind.image, url: _painting('misty_sunrise'), label: '封面'),
+    resources: [
+      MediaResource(id: 'v1', kind: MediaKind.video, url: Uri.parse('https://media.example.com/demo-1080.mp4'), label: '视频', quality: '原画', bytes: 10590000, duration: const Duration(seconds: 13), width: 1080, height: 1920),
+      MediaResource(id: 'v2', kind: MediaKind.video, url: Uri.parse('https://media.example.com/demo-720.mp4'), label: '备用清晰度', quality: '720p', bytes: 4180000, duration: const Duration(seconds: 13), width: 720, height: 1280),
+    ],
+  );
+  @override
+  void close() {}
+}
+
+// 合成学习通：测试用的内存版学习通服务（test/chaoxing_fake_server.dart），登好一个账号；两门课各有一场签到，
+// 高等数学那场正在进行（对上今天页的课，首页出「可能正在签到」）。
+Future<ChaoxingService> _demoChaoxing(ToolboxServiceContext context) async {
+  final fake = await FakeChaoxing.create(name: '林同学');
+  fake.photo = '';
+  fake.courses = [
+    {'content': {'id': 88, 'course': {'data': [{'id': 9001, 'name': '高等数学（上）', 'teacherfactor': '林老师'}]}}},
+    {'content': {'id': 89, 'course': {'data': [{'id': 9002, 'name': '大学英语', 'teacherfactor': '周老师'}]}}},
+  ];
+  final now = DateTime.now().millisecondsSinceEpoch;
+  const minute = 60000;
+  final activities = {
+    '9001': [{'id': 601, 'type': 2, 'otherId': '4', 'nameOne': '位置签到', 'startTime': now - 6 * minute, 'endTime': now + 9 * minute, 'status': 1, 'userStatus': 0}],
+    '9002': [{'id': 602, 'type': 2, 'otherId': '5', 'nameOne': '签到码签到', 'startTime': now - 3 * 24 * 60 * minute, 'endTime': now - 3 * 24 * 60 * minute + 10 * minute, 'status': 2, 'userStatus': 1}],
+  };
+  final inner = fake.client();
+  final client = MockClient((request) async {
+    if (request.url.path == '/v2/apis/active/student/activelist') {
+      final list = activities[request.url.queryParameters['courseId']] ?? const [];
+      return http.Response.bytes(utf8.encode(jsonEncode({'result': 1, 'data': {'activeList': list, 'ext': {'a': 1}}})), 200, headers: {'content-type': 'application/json; charset=utf-8'});
+    }
+    // 外层已经定型的请求不能再发一次，复制一份交给内存版学习通。
+    final copy = http.Request(request.method, request.url)
+      ..headers.addAll(request.headers)
+      ..bodyBytes = request.bodyBytes;
+    return http.Response.fromStream(await inner.send(copy));
+  });
+  final file = path.join(context.base.path, 'readme_demo_chaoxing.db');
+  if (File(file).existsSync()) File(file).deleteSync();
+  final accounts = ChaoxingAccounts(store: await ChaoxingStore.open(file), vault: MemoryChaoxingVault(), transport: (cookies) => ChaoxingHttp(client: client, cookies: cookies));
+  await accounts.signIn(phoneNumber: '13800138000', password: 'myPassword123');
+  return ChaoxingService(accounts: accounts, hub: null);
+}
+
+// 合成电影院：两个假片源（苹果 CMS 写法，同测试里的规则），对任何片名都回同样几部合成影片，海报是开屏画作；预先记两条看过的。
+Future<CinemaService> _demoCinema(ToolboxServiceContext context) async {
+  Map<String, Object?> rule(String id, String name) {
+    final api = 'https://$id.example.com/api.php/provide/vod/';
+    return {
+      'id': id, 'api': '1', 'type': 'movie', 'name': name, 'version': '1', 'userAgent': '', 'referer': '', 'adBlocker': false, 'searchMode': 'api', 'chapterMode': 'api',
+      'searchApiConfig': {
+        'request': {'method': 'GET', 'url': api, 'query': {'ac': 'detail', 'wd': '@keyword'}},
+        'listPath': r'$.list[*]', 'namePath': r'$.vod_name', 'sourcePath': r'$.vod_id', 'coverPath': r'$.vod_pic', 'yearPath': r'$.vod_year', 'remarksPath': r'$.vod_remarks', 'categoryPath': r'$.type_name',
+      },
+      'chapterApiConfig': {
+        'request': {'method': 'GET', 'url': api, 'query': {'ac': 'detail', 'ids': '@source'}},
+        'format': 'delimited', 'roadNamesPath': r'$.list[0].vod_play_from', 'roadEpisodesPath': r'$.list[0].vod_play_url',
+      },
+    };
+  }
+  final package = Uint8List.fromList(utf8.encode(jsonEncode({'format': 1, 'version': 1, 'minClient': 0, 'rules': [rule('demo-a', '合成资源甲'), rule('demo-b', '合成资源乙')], 'catalogRules': <Object>[], 'parsers': <Object>[]})));
+  final titles = [
+    ('1', '雾中钟楼', '2026', '剧情', '正片', 'misty_sunrise'),
+    ('2', '河畔的树', '2025', '剧集', '更新至12集', 'riverside_tree'),
+    ('3', '星夜列车', '2024', '动画', '全24集', 'starry_night'),
+  ];
+  final client = MockClient((request) async {
+    final ids = request.url.queryParameters['ids'];
+    final list = [
+      for (final (id, name, year, category, remarks, poster) in titles)
+        if (ids == null || ids == id)
+          {'vod_id': id, 'vod_name': name, 'vod_pic': _painting(poster).toString(), 'vod_year': year, 'vod_remarks': remarks, 'type_name': category, 'vod_play_from': '合成线路', 'vod_play_url': [for (var episode = 1; episode <= 12; episode++) '第${episode.toString().padLeft(2, '0')}集\$https://media.example.com/$id/$episode.m3u8'].join('#')},
+    ];
+    return http.Response.bytes(utf8.encode(jsonEncode({'code': 1, 'msg': '数据列表', 'page': 1, 'pagecount': 1, 'total': list.length, 'list': list})), 200, headers: {'content-type': 'application/json; charset=utf-8'});
+  });
+  final service = await CinemaService.open(context, feed: CinemaRulesFeed(fetch: () async => package, versionCode: () async => 40), http: CinemaHttp(client: client));
+  final now = DateTime.now().toUtc();
+  for (final (index, (id, name, year, category, _, poster)) in titles.take(2).indexed) {
+    await service.store.saveHistory(CinemaHistory(key: cinemaTitleKey(name, year, category: category), name: name, cover: _painting(poster).toString(), ruleId: 'demo-a', source: id, road: 0, episode: index * 4, episodeName: '第${(index * 4 + 1).toString().padLeft(2, '0')}集', position: Duration(minutes: 18 + index * 7), duration: const Duration(minutes: 45), updatedAt: now.subtract(Duration(hours: index + 1))));
+  }
+  return service;
+}
+
+// 功能开关按线上现状：灰度中的功能都开着，电影院的解析关着。
+class _DemoFeatures implements FeatureGate {
+  @override
+  bool isOn(FeatureFlag flag) => flag != cinemaParseFlag;
+  @override
+  Stream<void> get changes => const Stream.empty();
+}
+
+// 合成住理生活：登好的账号（合成学院），余额、券余额与最近使用的四台设备，没有进行中的单；只答首页要的几个接口。
+Future<ZhuliService> _demoZhuli() async {
+  Map<String, Object?> ok(Object? data) => {'result': true, 'data': zhuliBase64(jsonEncode(data))};
+  final client = MockClient((request) async {
+    final reply = switch (request.url.path) {
+      '/webapi/users/login' => ok({'user_info': {'id': 'U1', 'identity_code': 'I1'}, 'server_info': {'server_addr': 'https://demo.whxinna.com', 'server_appid': 1, 'server_id': 2, 'session_secret': 'S', 'projectname': '合成学院'}}),
+      '/webapi/v1/staff/get_user_detail_by_id' => ok({'balance': '17.4900', 'frozen_balance': 0.0, 'cash_coupon_count': 2, 'ChargeRules': [{'device_type': 0, 'device_group_id': 0, 'charge_option': 'metering', 'charge_money': 5.0, 'charge_units': [{'price': 0.07}]}]}),
+      '/webapi/v1/app_setting/get_config' => ok({'consume_order_display_cut_enable': 1, 'consume_order_display_cut_days': 30, 'bath_enable': 1, 'recharge_enable': 1, 'recharge_display_enable': 1, 'alipay_enable': 1}),
+      '/webapi/v1/cash_coupon/list_staff_cash_coupon_app' => ok({'rows': [
+        {'id': 'Q1', 'cash_coupon_name': '买200赠80', 'balance': 176.35, 'total_money': 280.0, 'use_limit': 'bath', 'use_order': 0, 'start_at': '2026-09-30 11:37:49', 'expire_at': '2028-09-19 11:37:49'},
+        {'id': 'Q2', 'cash_coupon_name': '优惠券', 'balance': 12.5, 'total_money': 130.0, 'use_limit': 'bath', 'use_order': 1, 'start_at': '2026-10-01 00:00:00', 'expire_at': '2028-12-31 23:59:59'},
+      ], 'total_count': 2}),
+      '/webapi/v1/consume/get_staff_last_record' => ok(null),
+      '/webapi/v1/staff/query_pending_order' => ok(<Object>[]),
+      _ => {'result': false, 'msg': '合成服务没有这个接口'},
+    };
+    return http.Response.bytes(utf8.encode(jsonEncode(reply)), 200, headers: {'content-type': 'application/json; charset=utf-8'});
+  });
+  final service = ZhuliService(vault: MemoryZhuliVault(), devices: ZhuliDeviceStore.memory(), client: ZhuliClient(http: ZhuliHttp(client: client)), payer: _DemoPayer());
+  await service.signIn('13800000001', '123456');
+  for (final (id, room, mode) in [(1300021, 231, '蓝牙'), (1300017, 118, '蓝牙'), (2100342, 232, '云端/蓝牙'), (1300024, 232, '蓝牙')]) {
+    await service.devices.used('13800000001', ZhuliDeviceEntry(id: id, name: '', place: '14号楼 2层 $room', mode: mode));
+  }
+  return service;
+}
+
+// 演示里不付钱。
+class _DemoPayer implements ZhuliPayer {
+  @override
+  Future<String> pay(String orderContent) => Completer<String>().future;
+}
 
 Future<ExpressService> _demoExpress() async {
   final vault = MemoryExpressVault();
