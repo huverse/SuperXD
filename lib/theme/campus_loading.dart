@@ -373,6 +373,7 @@ Future<T> showCampusWaiting<T>(
     return await operation();
   } finally {
     delay.cancel();
-    if (route.isActive && navigator.mounted) navigator.removeRoute(route);
+    // 在最上面时照弹窗平常的样子退场（以前直接拿掉，一下子没了，11-23 全应用切换走查）；上面已经又盖了别的才直接拿掉（看不见）。
+    if (route.isActive && navigator.mounted) route.isCurrent ? navigator.pop() : navigator.removeRoute(route);
   }
 }

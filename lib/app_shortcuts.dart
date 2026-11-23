@@ -81,16 +81,14 @@ Future<Uint8List> shortcutIcon(IconData icon, double pixelRatio) async {
   return bytes!.buffer.asUint8List();
 }
 
-// 账号应用里推入快捷入口要去的页面：等会话恢复好（离开启动页）、先回到首页（今天或登录页，返回就回到那里，也不和已经开着的同一个工具叠两份），
-// 再推入；已经停在首页才推，所以路由每次变化都要再调一次。
+// 账号应用里推入快捷入口要去的页面：等会话恢复好（离开启动页），回到首页（今天或登录页，返回就回到那里，也不和已经开着的同一个工具叠两份）再推入；
+// 没恢复好时路由每次变化都要再调一次。不在首页时回首页与推入在同一帧里做，只走一次转场（原来那页直接被新页面推开），
+// 不先退回首页、等它退完再推（两段转场，11-23 全应用切换走查；go 的门禁是同步的，同一帧里接着 push 就推在首页上）。
 void openShortcut(GoRouter router, ValueNotifier<String?> pending, {required String home}) {
   final location = pending.value;
   final path = router.routerDelegate.currentConfiguration.uri.path;
   if (location == null || path == '/boot' || path.isEmpty) return;
-  if (path != home) {
-    router.go(home);
-    return;
-  }
   pending.value = null;
+  if (path != home) router.go(home);
   router.push(location);
 }
