@@ -72,17 +72,19 @@ ZhuliException zhuliRejection(String path, Map<String, Object?> body) {
   final text = body['msg'] is String ? (body['msg']! as String).trim() : '';
   // 错误码只记英文的那种（中文文案可能带手机号之类，不进日志）。
   campusLog('[Zhuli] action=rejected path=$path code=${RegExp(r'^[a-z_]{1,48}$').hasMatch(code) ? code : 'text'}');
-  if (code == 'login_timeout') return const ZhuliException(ZhuliFailure.sessionExpired, '登录过期了，请重新登录');
+  if (code == 'login_timeout') return const ZhuliException(ZhuliFailure.sessionExpired, '登录过期了，请重新登录', code: 'login_timeout');
+  // 在住理官方 App 或别的设备上登录同一个账号，住理会换掉这个账号的 session_secret，手上这份会话签的请求一律回 api_sign_error
+  // （11-24 用户真机诊断包：官方 App 一键登录后回到本应用，四个首页请求全是它）。同会话过期，重登一次再重放；重登后还是它才照写给用户看。
+  if (code == 'api_sign_error') return const ZhuliException(ZhuliFailure.sessionExpired, '请求校验没通过，稍后再试', code: 'api_sign_error');
   // 登录时住理要图形验证码（原 App account 页认这三种）。
   if (const {'本次登录需要进行验证', 'CAPTCHA_REQUIRED', '验证码输入错误'}.contains(text) || const {'本次登录需要进行验证', 'CAPTCHA_REQUIRED', '验证码输入错误'}.contains(code)) {
     return ZhuliException(ZhuliFailure.captchaRequired, text == '验证码输入错误' || code == '验证码输入错误' ? '验证码不对，换一张再输' : '请输入图形验证码');
   }
   final message = text.isNotEmpty ? text : switch (code) {
-    'api_sign_error' => '请求校验没通过，稍后再试',
     'device_not_exists' => '设备不存在',
     '' => '住理生活没有办成，稍后再试',
     _ when !RegExp(r'^[a-z_]+$').hasMatch(code) => code,
     _ => '住理生活没有办成（$code）',
   };
-  return ZhuliException(ZhuliFailure.rejected, message);
+  return ZhuliException(ZhuliFailure.rejected, message, code: code);
 }

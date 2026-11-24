@@ -127,7 +127,15 @@ class ZhuliClient {
   // 待支付的消费单（有就不让开，同原 App）。
   Future<int> pendingOrders(ZhuliSession session) async => zhuliRows(await _call(session, '/webapi/v1/staff/query_pending_order', {'order_status': 'need_pay'})).length;
 
-  Future<ZhuliLastRecord?> lastRecord(ZhuliSession session) async => decodeZhuliLastRecord(await _call(session, '/webapi/v1/consume/get_staff_last_record', {'staff_id': session.userId}));
+  // 从没用过水的账号住理回 error_record_not_exist（11-24 用户真机诊断包，首页因此整页报错），就是没有最近一单。
+  Future<ZhuliLastRecord?> lastRecord(ZhuliSession session) async {
+    try {
+      return decodeZhuliLastRecord(await _call(session, '/webapi/v1/consume/get_staff_last_record', {'staff_id': session.userId}));
+    } on ZhuliException catch (error) {
+      if (error.code == 'error_record_not_exist') return null;
+      rethrow;
+    }
+  }
 
   // 云端开水：先唤醒设备（原 App 带同一组参数、结果不看），再下单；洗浴不发金额与用量（服务端按规则算）。
   Future<ZhuliOrderStart> startCloud(ZhuliSession session, ZhuliDevice device) async {

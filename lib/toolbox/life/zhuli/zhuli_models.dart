@@ -9,7 +9,7 @@ enum ZhuliFailure {
   timeout,
   // 回复不是认得的格式（改版时最先坏在这里）。
   invalidResponse,
-  // 会话过期（login_timeout）：服务层自动重登一次再重放。
+  // 会话过期（login_timeout），或会话的签名密钥被别处的登录换掉了（api_sign_error）：服务层自动重登一次再重放。
   sessionExpired,
   // 住理要图形验证码（本次登录需要进行验证）：只能请用户在登录页输。
   captchaRequired,
@@ -22,9 +22,11 @@ enum ZhuliFailure {
 }
 
 class ZhuliException implements Exception {
-  const ZhuliException(this.failure, this.message);
+  const ZhuliException(this.failure, this.message, {this.code = ''});
   final ZhuliFailure failure;
   final String message;
+  // 住理回的错误码（err_msg，如 error_record_not_exist），没有时为空；个别接口按它认「没有数据」这类不算失败的情况。
+  final String code;
   @override
   String toString() => 'ZhuliException($failure)';
 }
