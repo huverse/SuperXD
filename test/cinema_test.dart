@@ -743,7 +743,9 @@ void main() {
       expect(Uri.parse(requests.last.url.queryParameters['u']!).queryParameters['ids'], '7');
       expect(roads.single.episodes.single.url, 'https://alpha.example.com/v/1.m3u8', reason: '相对地址按原地址补全，不按转发地址');
       forwardError = 'timeout';
+      final logs = captureDiagnostics();
       expect((await service.search('超时').last).failures.single.message, '合成资源超时');
+      expect(logs.where((line) => line.contains('rule=alpha result=failed_timeout stage=forward')), hasLength(1), reason: '转发那头取片源超时，日志分得出来（11-24 取证）');
       forwardError = 'target';
       expect((await service.search('拒绝').last).failures.single.message, '合成资源转发不可用（HTTP 403）');
       await service.close();

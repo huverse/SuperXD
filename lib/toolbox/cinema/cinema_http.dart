@@ -29,9 +29,11 @@ const cinemaRedirectLimit = 5;
 const cinemaRefusedStatuses = {401, 403, 407, 429, 451};
 
 class CinemaHttpException implements Exception {
-  const CinemaHttpException(this.message, {this.status, this.refused = false, this.challenge = false});
+  const CinemaHttpException(this.message, {this.status, this.refused = false, this.challenge = false, this.stage});
   final String message;
   final int? status;
+  // 超时卡在哪一步，只进开发者模式的日志：CampusHttpTimeout 的 stage，或 forward（境外转发那头取片源超时）。
+  final String? stage;
   // 片源自己拒绝了这次请求（cinemaRefusedStatuses 或人机验证）；转发服务自己出的错不算。
   final bool refused;
   // 片源回的是 Cloudflare 人机验证页（日志单独记 failed_challenge）。
@@ -81,7 +83,8 @@ bool cinemaPublicUrl(Uri uri) {
 
 class CinemaHttp {
   // 测试注入的客户端两路共用（MockClient 不经真的连接，只靠每一跳的地址核对）。
-  CinemaHttp({http.Client? client}) : _http = CampusHttp('cinema', client: client), _media = client == null ? CampusHttp.publicOnly('cinema') : CampusHttp('cinema', client: client);
+  // 接口请求按主机记新连接（CampusHttp.traced）：11-24 用户手机上有的源时好时坏、卡满 15 秒，用户选先取证，超时的日志写清卡在哪一步。
+  CinemaHttp({http.Client? client}) : _http = client == null ? CampusHttp.traced('cinema') : CampusHttp('cinema', client: client), _media = client == null ? CampusHttp.publicOnly('cinema') : CampusHttp('cinema', client: client);
   // 接口（签名规则包里写的站点、境外转发、中转）与本机代理替第三方地址取东西的（只连公网）。
   final CampusHttp _http, _media;
 
@@ -100,8 +103,8 @@ class CinemaHttp {
         body: request.body,
         cancel: cancel,
       );
-    } on TimeoutException {
-      throw const CinemaHttpException('超时');
+    } on TimeoutException catch (error) {
+      throw CinemaHttpException('超时', stage: error is CampusHttpTimeout ? error.stage : null);
     } on CampusHttpTooLarge {
       throw const CinemaHttpException('回复太大');
     } on http.RequestAbortedException {
@@ -113,7 +116,7 @@ class CinemaHttp {
     final forwardError = forward == null ? null : response.headers['x-forward-error'];
     if (forwardError != null) {
       throw switch (forwardError) {
-        'timeout' => const CinemaHttpException('超时'),
+        'timeout' => const CinemaHttpException('超时', stage: 'forward'),
         'too_large' => const CinemaHttpException('回复太大'),
         'unreachable' => const CinemaHttpException('连不上'),
         _ => CinemaHttpException('转发不可用（HTTP ${response.statusCode}）', status: response.statusCode),

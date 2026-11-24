@@ -298,8 +298,8 @@ class CinemaService implements ToolboxService {
   // 先看最近的搜索结果（fresh 不看）；同一个源同一个词正在搜就一起等（CinemaShared，各处可以单独不等了，都不等了才中断）。
   Future<_Arrival> _searchOne(CinemaPackage package, CinemaRule rule, String keyword, Future<void>? cancel, {required bool fresh, required Duration waited, required Stopwatch started}) async {
     final key = '${package.version}\u0000${rule.id}\u0000${rule.version}\u0000${cinemaFold(keyword)}';
-    void note(String result, {List<CinemaHit>? hits}) {
-      if (campusDiagnostics) campusLog('[Cinema] action=search_source rule=${rule.id} result=$result waitMs=${waited.inMilliseconds} ms=${started.elapsedMilliseconds} hits=${hits?.length ?? '-'}');
+    void note(String result, {List<CinemaHit>? hits, String? stage}) {
+      if (campusDiagnostics) campusLog('[Cinema] action=search_source rule=${rule.id} result=$result${stage == null ? '' : ' stage=$stage'} waitMs=${waited.inMilliseconds} ms=${started.elapsedMilliseconds} hits=${hits?.length ?? '-'}');
     }
 
     final cached = fresh ? null : _searchCache.read(key, _now());
@@ -328,7 +328,7 @@ class CinemaService implements ToolboxService {
       note(hits.isEmpty ? 'empty' : 'ok', hits: hits);
       return _Arrival(rule, hits, null, at);
     } on CinemaHttpException catch (error) {
-      note(error.challenge ? 'failed_challenge' : error.status == null ? 'failed_${_failureKind(error.message)}' : 'failed_http_${error.status}');
+      note(error.challenge ? 'failed_challenge' : error.status == null ? 'failed_${_failureKind(error.message)}' : 'failed_http_${error.status}', stage: error.stage);
       return _Arrival(rule, null, CinemaFailure(ruleId: rule.id, name: rule.name, message: '${rule.name}${error.message}', kind: _failureGroup(error)), null);
     } on CinemaRuleException catch (error) {
       note('failed_${_failureKind(error.message)}');
