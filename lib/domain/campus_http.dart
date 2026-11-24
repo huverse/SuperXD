@@ -7,9 +7,9 @@ import 'package:http/io_client.dart';
 
 import 'package:superxd/domain/campus_log.dart';
 
-// 请求超时（timeout 或 idleTimeout 到点）。stage 写卡在哪一步：body 是响应头到了、正文没读完；没收到响应头时，
-// CampusHttp.traced 分得出 reused（这个主机没开新连接，请求发在连接池里的旧连接上）、connect（为它开的新连接还没连上，含域名解析与 TLS）
-// 与 response（新连接连上了、对方没回）；没记连接的写 waiting。同一主机同时有几个请求时按主机计数，只是大致的判断。
+// CampusHttp.traced 的请求超时（timeout 或 idleTimeout 到点）；别的内核照旧抛 TimeoutException（各模块日志里的 errorType 不变）。
+// stage 写卡在哪一步：body 是响应头到了、正文没读完；没收到响应头时分 reused（这个主机没开新连接，请求发在连接池里的旧连接上）、
+// connect（为它开的新连接还没连上，含域名解析与 TLS）与 response（新连接连上了、对方没回）。同一主机同时有几个请求时按主机计数，只是大致的判断。
 class CampusHttpTimeout extends TimeoutException {
   CampusHttpTimeout(Duration timeout, this.stage) : super('请求超时', timeout);
   final String stage;
@@ -93,10 +93,8 @@ class CampusHttp {
   final _ConnectTrace? _trace;
 
   // 超时时卡在哪一步（见 CampusHttpTimeout）：before 是请求开始时这个主机的连接计数，status 是收到的响应状态码（没收到为空）。
-  String _stage(String host, ({int started, int finished})? before, int? status) {
+  String _stage(_ConnectTrace trace, String host, ({int started, int finished}) before, int? status) {
     if (status != null) return 'body';
-    final trace = _trace;
-    if (trace == null || before == null) return 'waiting';
     final now = trace.of(host);
     if (now.started == before.started) return 'reused';
     return now.finished < now.started ? 'connect' : 'response';
@@ -175,7 +173,10 @@ class CampusHttp {
       final reason = aborted;
       campusRequestLog(module, method, logUri ?? uri, status: status, elapsed: watch.elapsed, error: reason ?? (error is CampusHttpTooLarge ? 'too_large' : '${error.runtimeType}'));
       // 在这里抛（不沿用计时器里的堆栈），堆栈才带得上调用方的那一串 await。
-      if (reason == _timeout) throw CampusHttpTimeout(timeout, _stage(uri.host, before, status));
+      if (reason == _timeout) {
+        final trace = _trace;
+        throw trace == null || before == null ? TimeoutException('请求超时', timeout) : CampusHttpTimeout(timeout, _stage(trace, uri.host, before, status));
+      }
       if (reason == _cancelled) throw http.RequestAbortedException(uri);
       // 竞速断开了 await 链：原堆栈只到出错的地方，接上这里的调用方那一串，日志里才看得出是哪个模块的哪次请求。
       Error.throwWithStackTrace(error, StackTrace.fromString('$stack<asynchronous suspension>\n${StackTrace.current}'));

@@ -232,7 +232,7 @@ void main() {
   });
 
   // 11-24 电影院取证（用户手机上有的源时好时坏、卡满 15 秒，用户选「先取证」）：超时写清卡在哪一步，四种都用本机服务器真的造出来。
-  test('记连接的内核：超时分得清新连接连上了不回、复用旧连接、正文没读完、新连接没连上；不记连接的写 waiting；请求记录照旧写 timeout', () async {
+  test('记连接的内核：超时分得清新连接连上了不回、复用旧连接、正文没读完、新连接没连上；不记连接的照旧抛 TimeoutException（日志的 errorType 不变）；请求记录照旧写 timeout', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     server.listen((request) async {
       switch (request.uri.path) {
@@ -275,9 +275,10 @@ void main() {
       expect(await stage(kernel, '$base/hang'), 'reused', reason: '上一个请求留下的空闲连接被拿来用了，没开新连接');
       expect(await stage(kernel, '$base/partial'), 'body', reason: '响应头到了，正文没读完');
       expect(await stage(kernel, 'https://127.0.0.1:${tcp.port}/x'), 'connect', reason: 'TLS 握手一直没完成');
+      // 11-24 CI：私信中转等模块的日志写 errorType=${error.runtimeType}，不记连接的内核要照旧是 TimeoutException。
       final plain = CampusHttp('plain', client: MockClient((_) => Completer<http.Response>().future));
       addTearDown(plain.close);
-      expect(await stage(plain, '$base/hang'), 'waiting', reason: '不记连接的分不出');
+      await expectLater(plain.send('GET', Uri.parse('$base/hang'), timeout: const Duration(milliseconds: 300), limit: 1024), throwsA(predicate((error) => error.runtimeType == TimeoutException)));
     }, _RealHttp());
     expect(logs.where((line) => line.contains('module=demo') && line.endsWith('error=timeout')), hasLength(4));
   });
