@@ -50,7 +50,7 @@
   - campus_field_table.dart：详情里的「标签 值」两列行 CampusFieldTable（左列次要色按最宽标签对齐，值可选中复制，空值的行不画）；课程详情与成绩详情共用。
   - campus_prose.dart：按行排版的长说明 CampusProse：「1. 正文」编号悬挂缩进，「登录：正文」冒号前的段内小标题半粗，以冒号结尾的整行是小节标题；协议、隐私政策、首次同意弹窗与学习通同意说明共用，文字原样显示。
   - campus_animated_list.dart：列表增删的过渡（[人工决策] 在文件头，时长 campusListDuration，要等过渡走完再定位的调用方用它）：CampusAnimatedColumn 按 key 比对前后子项，新的展开淡入、去掉的原地收起；CampusAppear 给按需建的长列表里新到的一项展开；CampusAnimatedSliverList 是按需建的长列表（SliverList.builder）的增删过渡，同 CampusAnimatedColumn 的规则，只有正在进出的条目有动画控制器（好友列表用，11-18）。第一次显示不动画、减少动画时直接换，只用于没有玻璃的内容区列表。过渡不改条目的横向排布：条目始终铺满列表宽度，按内容收窄的条目（会话卡片）照旧靠左或靠右，不被居中。CampusMoveScope 与 CampusMove 是条目换位置的过渡（同 iOS 表格的 moveRow、RecyclerView 的移动动画，11-23 编辑常用用）：经 move 改数据，各项从改之前看上去的位置滑到新位置、新出现的淡入，present 为假的留在树里、高度为零、淡出；位置按滚动内容算，中途滚动不跑偏；只给竖向列表、没有玻璃的内容区。
-  - dot_separated_text.dart：「甲 · 乙」式说明行 DotSeparatedText：按「 · 」分项放进 Wrap 换行（separator 给「，」时按句分，挑战的预告与钥匙行用），不把词拆成孤字，点前是不换行空格（一项自己折行时「·」不单独成行），一项本身比一行长时均衡折行并占满这一行（11-14 挑战预告折出「? 列，」后加），读屏读整句；page 层、百宝箱与游乐场共用。
+  - dot_separated_text.dart：「甲 · 乙」式说明行 DotSeparatedText：按「 · 」分项放进 Wrap 换行（separator 给「，」时按句分，挑战的预告与钥匙行用），不把词拆成孤字，点前是不换行空格（一项自己折行时「·」不单独成行），一项本身比一行长时均衡折行并占满这一行（11-14 挑战预告折出「? 列，」后加），读屏读整句；page 层、百宝箱与游乐场共用；style 可不给，沿用外层的默认样式（列表副标题、按钮标签）。campusDottedText 给拿到字符串的共用组件用（提示条、弹窗正文、菜单项、加载提示）：没有「 · 」照原来的写法，有的按行拆开、带「 · 」的行按项换行（11-24 用户要求全应用一律按项换行）；资料表的值另包 SelectionArea 照样能复制。
   - campus_typesetting.dart：排版口径（10-27 iPhone 系统字体下时刻被裁后加）：campusTextPainter、campusTextWidth 按 Text 实际排版的口径量文字（合并默认样式的字距、系统粗体文本时加粗、字号缩放、语言），凡按文字尺寸决定布局的都用它，不自己 new TextPainter；小图标对齐一段文字的第一行用 campusLineInset（按实际行高量，不写死行高倍数）；BalancedText 是短句均衡换行（同 CSS text-wrap: balance，行数不变取最窄宽度，只管四行以内，支持外层 IntrinsicHeight），课名、教室、短提示与弹窗正文用它避免末行剩一两个字；expandWhenWrapped 让折了行的仍占满给的宽度（Wrap 里的一项，不让下一项挤到它右边）。
   - scroll_anchor.dart：滚动锚定 CampusAnchoredScrollController：hold 之后，整页重新排版（字号过渡、换字体）时在滚动区排版的同一帧里校正滚动位置，锚点停在原来的屏幕位置；过了最短时长还要等到一次不用校正、内容尺寸不再变的排版才放开（慢设备上过渡的最后一帧会晚到），最晚 settleLimit；手指一按或代码滚动就放开，到顶或到底校正不了的部分照常移动。界面页的字号与字体选项在用。
   - status_bar_scroll.dart：iOS 点状态栏回顶 CampusStatusBarScroll（组合根套在 MaterialApp.builder 里）：系统经 WidgetsBindingObserver.handleStatusBarTap 交来点按，分支页的滚动区挂在各自路由上、壳层 Scaffold 收不到，所以记住最近拖过的竖向滚动区，把它滚回开头（倒序列表是视觉上的顶端）；它不在最上层路由或分支不可见时不动。scrollToTop 给 iOS 再点当前底栏项时用。
@@ -68,7 +68,7 @@
 - 背景只画一份：新页面不单独铺背景，也不给整页包遮罩（离屏遮罩会让玻璃取不到外层背景）；例外只有两处背景副本：账号应用入场的 360ms，以及页面推在弹窗、弹层上时的进出转场期间。
 - 页面、弹窗和转场的时长以 campus_transitions.dart 为准，不在页面里另设。本层不写业务文案，也不做业务判断。
 - 改视觉之前先读本目录的人工决策注释，以及自动记忆里被否决的方案（切日胶囊、云雾、字体压缩、玻璃滚动边缘），不要重提。
-- 排版：按文字宽度定宽或决定排法的地方一律经 campus_typesetting.dart 量（测量口径与 Text 不一致时末字会被裁掉，iOS 粗体文本下最明显）；会在窄处折行的短句用 BalancedText，「甲 · 乙」用 DotSeparatedText；新页面在 360dp 加 1.3 倍、411dp 标准两种条件下看过 Maple 与宋体再交。
+- 排版：按文字宽度定宽或决定排法的地方一律经 campus_typesetting.dart 量（测量口径与 Text 不一致时末字会被裁掉，iOS 粗体文本下最明显）；会在窄处折行的短句用 BalancedText，「甲 · 乙」用 DotSeparatedText（直接写进 Text 的由 code_conventions_test.dart 守护，只显示一行的写明 maxLines: 1）；新页面在 360dp 加 1.3 倍、411dp 标准两种条件下看过 Maple 与宋体再交。
 - 自绘图案不在 paint 里循环逐个画小图形（Impeller 没有栅格缓存，每帧都要重新提交）：小点拼成一组 drawRawPoints、虚线拼成一条路径，一次画完（10-27 iPhone 卡顿日志后改的颗粒与空档虚线）。
 - 不用 toImageSync 画大半透明的离屏贴图：10-27 vivo V2408A（骁龙、2K 屏）上颗粒拼贴让每张卡片整排冒出绿黑虚线（推测没画到的像素拿到的是脏内存，细节在 FrostTexture 的注释）。云雾贴图先铺满底色，不受影响；红包粒子的贴图集（page/festival/reward_kit.dart）改成在 CPU 上算好像素再上传。只有云雾贴图能用 toImageSync，由 code_conventions_test.dart 守护。
 
@@ -79,7 +79,7 @@
 - 动效与转场：campus_motion_test.dart、transition_sync_test.dart（含 iOS 推入与任意位置右滑返回）、account_lifecycle_test.dart（入场与转场中间帧）。
 - 提示条：campus_glass_test.dart（玻璃胶囊、锚点上方、点一下收起与留白点穿、下滑横划与快甩划走、按着暂停计时、投影不裁剪、被新弹层或页面盖住就收起、读屏不自动收起、弹层里浮最上层、hideCampusToast 收起）、shell_layout_test.dart（停在两端底栏上方）。
 - 通用组件：theme_components_test.dart（长说明排版、列表增删过渡（含按需建的列表只建看得见的行、首尾行裁成卡片圆角）、滚动锚定、底部弹层挂根导航器、点状态栏回顶、iOS 拖动收起键盘）；typesetting_test.dart（测量与 Text 同口径含粗体文本与字距、均衡换行、分段控件按字分宽、说明行的点不单独成行、说明行一项比一行长时均衡折行并占满这一行）。
-- 规范守护：code_conventions_test.dart（不直接用 MaterialPageRoute、lib/theme 以外不直接用 Material 的筹码、加载圆环与下拉刷新（短视频结果页的下载百分比圈暂留）、toImageSync 只用于云雾贴图、内嵌网页拖动归网页、setState 不返回 Future、只有图标的 IconButton 带 tooltip、⋯菜单破坏性项标警示色、有滚动区的页面包滚动边缘渐隐、页面滚动区不包 SafeArea 的底边、顶栏右侧操作用玻璃圆钮〔地图选点页例外，见测试注释〕）。
+- 规范守护：code_conventions_test.dart（不直接用 MaterialPageRoute、lib/theme 以外不直接用 Material 的筹码、加载圆环与下拉刷新（短视频结果页的下载百分比圈暂留）、toImageSync 只用于云雾贴图、内嵌网页拖动归网页、setState 不返回 Future、只有图标的 IconButton 带 tooltip、⋯菜单破坏性项标警示色、有滚动区的页面包滚动边缘渐隐、页面滚动区不包 SafeArea 的底边、顶栏右侧操作用玻璃圆钮〔地图选点页例外，见测试注释〕、「甲 · 乙」不直接交给 Text）。
 
 # 人工决策检索
 

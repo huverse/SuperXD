@@ -17,6 +17,7 @@ import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 
 // 一个引用说成句子里的几种成分（题面只存结构）：谓语「养猫」「是甲」、主语「养猫的」「甲」、宾语「养猫的人」「甲」。
 String _predicate(LogicGridPuzzle puzzle, LogicGridRef ref) {
@@ -279,7 +280,7 @@ class _LogicGridPageState extends State<LogicGridPage> with TickerProviderStateM
         padding: const EdgeInsets.fromLTRB(20, 12, 8, 20),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
           Row(children: [
-            Expanded(child: Text('${logicGridPeople[person]} · ${group.pool.name}', style: Theme.of(context).textTheme.titleLarge)),
+            Expanded(child: DotSeparatedText('${logicGridPeople[person]} · ${group.pool.name}', style: Theme.of(context).textTheme.titleLarge)),
             IconButton(tooltip: '关闭', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.close)),
           ]),
           const SizedBox(height: 8),

@@ -33,6 +33,7 @@ import 'package:superxd/theme/campus_theme.dart';
 
 import 'fake_relay.dart';
 import 'fixture_campus_gateway.dart';
+import 'text_fit_support.dart';
 import 'share_card_test.dart' show sampleSchedule;
 
 late Directory temporary;
@@ -493,7 +494,7 @@ void main() {
       final share = ScheduleShare(term: term, courses: [owned, course('X1', '高等数学', 6), course('X2', '大学英语', 7)], bells: const []);
       final gateway = await openPage(tester, share);
       final before = (await mine(tester, gateway)).courses;
-      expect(find.text('小明有你没有 · 2 门'), findsOneWidget);
+      expect(findDotted('小明有你没有 · 2 门'), findsOneWidget);
       expect(tester.widget<FilledButton>(find.ancestor(of: find.text('应用改动'), matching: find.byType(FilledButton))).onPressed, isNull, reason: '什么都没勾时不能应用');
       await tester.tap(find.text('高等数学'));
       await tester.pump();
@@ -522,7 +523,7 @@ void main() {
       // TA的课表少了最后一门，其余一样。
       final share = ScheduleShare(term: term, courses: [moved, ...courses.skip(1).take(courses.length - 2)], bells: const []);
       final gateway = await openPage(tester, share);
-      expect(find.text('有改动 · 1 门'), findsOneWidget);
+      expect(findDotted('有改动 · 1 门'), findsOneWidget);
       expect(find.text('同一个教学班'), findsOneWidget);
       expect(find.text('合成新教室'), findsOneWidget);
       expect(find.text('应用 2 项改动'), findsOneWidget, reason: '同一个教学班的改动默认都勾上');

@@ -294,6 +294,50 @@ void main() {
     }
     expect(offenders, isEmpty);
   });
+
+  // 11-24 用户要求「甲 · 乙」式的说明行全应用一律按项换行（theme 的 DotSeparatedText），不再整句交给 Text 由系统折行（电影院选集页折出过孤字「源」）。
+  // 查直接写在 Text、SelectableText、BalancedText 里的「 · 」；写明只显示一行（maxLines: 1）的不会折行，不算。
+  // 拼好再交给共用组件的由组件自己按项换行（提示条、弹窗正文、菜单项、资料表、加载提示，见 theme 的 campusDottedText），这里不查。
+  test('「甲 · 乙」式的说明行按项换行，不直接交给 Text', () {
+    final offenders = <String>[];
+    for (final file in [for (final directory in ['lib/page', 'lib/playground', 'lib/toolbox']) ...Directory(directory).listSync(recursive: true)].whereType<File>().where((file) => file.path.endsWith('.dart') && !file.path.endsWith('legal_page.dart'))) {
+      final source = file.readAsLinesSync().map((line) => line.trimLeft().startsWith('//') ? '' : line).join('\n');
+      for (final match in ' · '.allMatches(source)) {
+        final call = _enclosingCall(source, match.start);
+        if (call != null && const {'Text', 'SelectableText', 'BalancedText'}.contains(call.name) && !RegExp(r'maxLines:\s*1\b').hasMatch(call.arguments)) {
+          offenders.add('${file.path}:${'\n'.allMatches(source.substring(0, match.start)).length + 1} ${call.name}');
+        }
+      }
+    }
+    expect(offenders, isEmpty);
+  });
+}
+
+// 往回找包着这个位置的调用（跳过 join、where、replaceAll、map 这类拼字符串的），返回调用名与整段参数；不在任何调用里返回空。
+({String name, String arguments})? _enclosingCall(String source, int position) {
+  var depth = 0;
+  for (var at = position - 1; at >= 0; at--) {
+    final char = source[at];
+    if (char == ')' || char == ']' || char == '}') {
+      depth++;
+    } else if (char == '[' || char == '{') {
+      if (depth > 0) depth--;
+    } else if (char == '(') {
+      if (depth > 0) {
+        depth--;
+        continue;
+      }
+      final name = RegExp(r'([A-Za-z_][\w.]*)\s*$').firstMatch(source.substring(0, at))?.group(1);
+      if (name == null || const {'join', 'where', 'replaceAll', 'map'}.contains(name.split('.').last)) continue;
+      var level = 0, end = at;
+      for (; end < source.length; end++) {
+        if ('([{'.contains(source[end])) level++;
+        if (')]}'.contains(source[end]) && --level == 0) break;
+      }
+      return (name: name, arguments: source.substring(at, end + 1));
+    }
+  }
+  return null;
 }
 
 // 取出 Dart 源码里的字符串字面量（起始行、字面文字）：插值不计入文字（插值里嵌套的字面量另算一条），相邻字面量连成一条，原始字符串（正则）跳过，注释不看。

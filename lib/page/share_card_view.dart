@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 
 // 私信里的分享卡片：标题行（图标 + 类型）、内容摘要、一个操作按钮。新增卡片类型在这里加一个分支。
 class ShareCardView extends StatelessWidget {
@@ -33,7 +34,7 @@ class ShareCardView extends StatelessWidget {
         const SizedBox(height: 8),
         Text(term.label.isEmpty ? term.key : term.label, style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 4),
-        Text('${courses.length} 门课${termStartDate == null ? '' : ' · ${int.parse(termStartDate.substring(5, 7))}月${int.parse(termStartDate.substring(8))}日开学'}', style: secondary),
+        DotSeparatedText('${courses.length} 门课${termStartDate == null ? '' : ' · ${int.parse(termStartDate.substring(5, 7))}月${int.parse(termStartDate.substring(8))}日开学'}', style: secondary),
         Padding(
           padding: const EdgeInsets.only(top: 12),
           child: Wrap(spacing: 8, runSpacing: 8, children: [

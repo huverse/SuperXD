@@ -1804,13 +1804,13 @@ void main() {
       await settleUntil(tester, () => find.byType(TextField).evaluate().isNotEmpty);
       Future<void> search() async {
         await tester.tap(find.text('搜索'));
-        await settleUntil(tester, () => find.text('2020 · 预告片').evaluate().isNotEmpty);
+        await settleUntil(tester, () => findDotted('2020 · 预告片').evaluate().isNotEmpty);
         await settleUntil(tester, () => find.textContaining('还在搜').evaluate().isEmpty && find.text('搜索').evaluate().isNotEmpty);
       }
 
       await tester.enterText(find.byType(TextField), '合成');
       await search();
-      expect(find.text('2020 · 科幻片'), findsOneWidget);
+      expect(findDotted('2020 · 科幻片'), findsOneWidget);
       expect(find.text('合成电影'), findsNWidgets(2), reason: '正片与预告片各一条');
       expect(requests, 1);
       await tester.enterText(find.byType(TextField), '');

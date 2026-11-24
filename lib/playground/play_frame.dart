@@ -500,7 +500,7 @@ class _PlayFrameState extends State<PlayFrame> with WidgetsBindingObserver {
               Row(mainAxisSize: MainAxisSize.min, children: [
                 PlayTierDot(session.tier),
                 const SizedBox(width: 8),
-                Text('${challenge.name} · ${session.tier.label}', style: Theme.of(context).textTheme.titleSmall),
+                DotSeparatedText('${challenge.name} · ${session.tier.label}', style: Theme.of(context).textTheme.titleSmall),
               ]),
             DotSeparatedText(status, style: statusStyle),
             // 刚加的罚时原地写在留好的位置（读屏随即播报），停一会儿收起；用时本身已经含罚时。

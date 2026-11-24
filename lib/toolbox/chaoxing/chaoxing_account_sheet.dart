@@ -228,7 +228,7 @@ class _ChaoxingAccountSheetState extends State<_ChaoxingAccountSheet> {
             if (_main != null || _others.length > 1)
               Padding(
                 padding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
-                child: Text([if (_main != null) '其他账号', if (_others.length > 1) '按住右侧把手拖动排序'].join(' · '), style: secondary),
+                child: DotSeparatedText([if (_main != null) '其他账号', if (_others.length > 1) '按住右侧把手拖动排序'].join(' · '), style: secondary),
               ),
             Flexible(
               child: ReorderableListView.builder(

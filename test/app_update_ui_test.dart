@@ -9,6 +9,7 @@ import 'package:superxd/page/about_page.dart';
 import 'package:superxd/page/app_update_dialog.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'app_update_fakes.dart';
+import 'text_fit_support.dart';
 
 void main() {
   Future<List<Uri>> openDialog(WidgetTester tester, UpdateFixture fixture) async {
@@ -33,7 +34,7 @@ void main() {
     await fixture.updates.check();
     await openDialog(tester, fixture);
     expect(find.text('发现新版本'), findsOneWidget);
-    expect(find.text('版本 1.0.0-alpha.5 · 安装包 120 MB'), findsOneWidget);
+    expect(findDotted('版本 1.0.0-alpha.5 · 安装包 120 MB'), findsOneWidget);
     expect(find.text('修了一些问题'), findsOneWidget);
     // 三个按钮竖排，主操作在最上、跳过在最下。
     final update = tester.getCenter(find.text('更新')).dy, later = tester.getCenter(find.text('稍后')).dy, skip = tester.getCenter(find.text('跳过这个版本')).dy;
@@ -74,7 +75,8 @@ void main() {
     await fixture.updates.check();
     await openDialog(tester, fixture);
     expect(find.text('需要更新'), findsOneWidget);
-    expect(find.text('版本 1.0.0-alpha.5 · 安装包 120 MB\n当前版本已停用，更新后才能使用'), findsOneWidget);
+    expect(findDotted('版本 1.0.0-alpha.5 · 安装包 120 MB'), findsOneWidget);
+    expect(find.text('当前版本已停用，更新后才能使用'), findsOneWidget);
     expect(find.text('稍后'), findsNothing);
     expect(find.text('跳过这个版本'), findsNothing);
     await tester.tapAt(const Offset(8, 8));

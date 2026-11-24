@@ -559,7 +559,7 @@ class _ExpressPageState extends State<ExpressPage> {
                 children: [
                   Padding(padding: const EdgeInsets.only(right: 6), child: CampusIcon(CampusIcons.phone, size: 18, color: palette.onSurfaceVariant)),
                   Expanded(
-                    child: Text(
+                    child: DotSeparatedText(
                       tail.isEmpty ? '尾号未知 · ${parcels.length} 件' : '尾号 $tail · ${parcels.length} 件',
                       style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: palette.onSurface),
                     ),

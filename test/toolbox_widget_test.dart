@@ -23,6 +23,7 @@ import 'package:superxd/toolbox/short_video/media_resource.dart';
 import 'package:superxd/toolbox/short_video/parse_result.dart';
 import 'package:superxd/toolbox/short_video/media_result_page.dart';
 
+import 'text_fit_support.dart';
 import 'toolbox_test_support.dart';
 
 // 等到正好一个：推入页面的转场期间新旧两页都在屏上，会先找到两个。转场计时会扣掉首帧到次帧的真实耗时
@@ -134,7 +135,7 @@ void main() {
     );
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: MediaResultPage(service: fixture.shortVideo, runtime: fixture.runtime, outcome: ParseOutcome(result, attempts: const []))));
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text('原画 · 1.2 MB · 0:13 · 1080×1920'), findsOneWidget);
+    expect(findDotted('原画 · 1.2 MB · 0:13 · 1080×1920'), findsOneWidget);
     expect(find.textContaining(' MB'), findsOneWidget, reason: '备用那项来源没给信息，不多一行');
     await tester.pumpWidget(const SizedBox());
   });
@@ -239,10 +240,10 @@ void main() {
     await tester.tap(find.byTooltip('返回'));
     await waitForWidget(tester, find.text('最近解析'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('视频 · BugPK · '), findsOneWidget);
+    expect(findDotted('视频 · BugPK · ', containing: true), findsOneWidget);
     await tester.tap(find.text('设置'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('最近一次成功 · '), findsOneWidget);
+    expect(findDotted('最近一次成功 · ', containing: true), findsOneWidget);
     await tester.tap(find.byTooltip('关闭'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('合成视频'));
@@ -428,7 +429,7 @@ void main() {
     );
     await tester.pump();
     expect(find.text('进行中 1'), findsOneWidget);
-    expect(find.text('已保存 0/12 · 进行中 11 · 未完成 1'), findsOneWidget);
+    expect(findDotted('已保存 0/12 · 进行中 11 · 未完成 1'), findsOneWidget);
     expect(find.text('图片 1'), findsNothing);
     await tester.tap(find.byTooltip('更多操作'));
     await tester.pump(const Duration(milliseconds: 500));
@@ -568,7 +569,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('全部下载'), findsOneWidget);
     await tester.tap(find.text('全部下载'));
-    await waitForWidget(tester, find.text('已保存 0/3 · 进行中 3'));
+    await waitForWidget(tester, findDotted('已保存 0/3 · 进行中 3'));
     await waitUntil(tester, () => fixture.transfer.enqueueCount == 2);
     expect(find.text('全部下载'), findsNothing);
     final failed = fixture.manager
@@ -581,7 +582,7 @@ void main() {
       await fixture.waitFor(failed.id, ToolboxDownloadState.failed);
     });
     await tester.pump();
-    expect(find.text('已保存 0/3 · 进行中 2 · 未完成 1'), findsOneWidget);
+    expect(findDotted('已保存 0/3 · 进行中 2 · 未完成 1'), findsOneWidget);
     expect(find.text('下载其余1张'), findsOneWidget);
     await tester.scrollUntilVisible(find.byTooltip('重新下载第2张'), 200);
     expect(find.byTooltip('取消下载第1张'), findsOneWidget);

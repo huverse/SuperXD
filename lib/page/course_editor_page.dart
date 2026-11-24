@@ -288,7 +288,7 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
               ),
             ),
             const SizedBox(height: 20),
-            Text(
+            DotSeparatedText(
               '上课时段 · ${_slots.length}',
               style: Theme.of(context).textTheme.titleLarge,
             ),

@@ -204,7 +204,7 @@ class _AcademicPageState extends State<AcademicPage> {
               contentPadding: rowPadding,
               leading: const CampusIcon(CampusIcons.sync),
               title: const Text('同步'),
-              subtitle: _syncing ? Text(_progress?.label ?? '正在同步', style: secondary) : null,
+              subtitle: _syncing ? DotSeparatedText(_progress?.label ?? '正在同步', style: secondary) : null,
               trailing: _syncing ? const CampusLoader(curve: CampusCurve.lissajous, size: 24) : null,
               onTap: _syncing ? null : _start,
             ),

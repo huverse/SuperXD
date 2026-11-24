@@ -24,6 +24,7 @@ import 'package:superxd/toolbox/toolbox_catalog.dart';
 import 'package:superxd/toolbox/toolbox_page.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
+import 'text_fit_support.dart';
 import 'toolbox_test_support.dart';
 
 // 住理生活第一轮（人工决策见 lib/toolbox/life/zhuli/zhuli_service.dart 文件头）：协议、数据、会话与页面。数据全是合成的。
@@ -443,20 +444,20 @@ void main() {
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ZhuliOrdersPage(service: service, phone: _phone)));
       await _settle(tester);
-      expect(find.text('洗浴 · 合成房间'), findsNWidgets(20));
+      expect(findDotted('洗浴 · 合成房间'), findsNWidgets(20));
       final first = fake.requests.lastWhere((uri) => uri.path == '/webapi/v1/consume/list_record_by_staffid').queryParameters;
       final start = DateTime.parse('${first['start']!.replaceFirst(' ', 'T')}+08:00'), end = DateTime.parse('${first['end']!.replaceFirst(' ', 'T')}+08:00');
       expect(end.difference(start).inDays, 30);
       await tester.tap(find.text('加载更多'));
       await _settle(tester);
-      expect(find.text('洗浴 · 合成房间'), findsNWidgets(25));
+      expect(findDotted('洗浴 · 合成房间'), findsNWidgets(25));
       expect(find.text('加载更多'), findsNothing);
       expect(fake.requests.lastWhere((uri) => uri.path == '/webapi/v1/consume/list_record_by_staffid').queryParameters['end'], fake.consume[19]['create_at']);
 
-      await tester.tap(find.text('洗浴 · 合成房间').first);
+      await tester.tap(findDotted('洗浴 · 合成房间').first);
       await _settle(tester);
       expect(find.text('消费详情'), findsOneWidget);
-      expect(find.text('2.34 升 · 21 秒'), findsOneWidget);
+      expect(findDotted('2.34 升 · 21 秒'), findsOneWidget);
       expect(find.text('¥5.00'), findsOneWidget);
       expect(find.text('券 ¥0.14'), findsOneWidget);
       await tester.tapAt(const Offset(10, 10));

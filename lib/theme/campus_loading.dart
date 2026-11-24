@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_typesetting.dart';
@@ -237,14 +238,13 @@ class _CampusLoadingState extends State<CampusLoading> {
       color: widget.color ?? CampusPalette.of(context).primary,
       progress: widget.animating ? null : .18,
     );
-    final text = Text(
+    final labelStyle = TextStyle(fontSize: 14, color: widget.color ?? CampusPalette.of(context).onSurfaceVariant, height: 1.5);
+    // 「正在同步作息 · 学期名」这类按项换行（campusDottedText），没有「 · 」的照旧。
+    final text = campusDottedText(
       label,
-      textAlign: widget.inline ? TextAlign.start : TextAlign.center,
-      style: TextStyle(
-        fontSize: 14,
-        color: widget.color ?? CampusPalette.of(context).onSurfaceVariant,
-        height: 1.5,
-      ),
+      style: labelStyle,
+      align: widget.inline ? CrossAxisAlignment.start : CrossAxisAlignment.center,
+      plain: (line) => Text(line, textAlign: widget.inline ? TextAlign.start : TextAlign.center, style: labelStyle),
     );
     // 整页样式自己居中：直接放进页面主体也在正中（以前要调用方套 Center，漏套就落到左上角）；
     // 放在列表或 Column 里时只在横向居中，高度仍随内容。行内样式由所在的行排版，不另居中。

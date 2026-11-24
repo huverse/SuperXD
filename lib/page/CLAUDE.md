@@ -92,7 +92,7 @@
 - 今天页只读课表，编辑入口只在课表页；课表页的有课卡与空档只在长按时展开，今天页单击有课卡看详情。
 - 弹窗统一走 showCampusDialog 系列：确认用 showCampusConfirm，提示用 showCampusNotice，耗时操作用 showCampusWaiting。setState 回调不得返回 Future。
 - 切日、底栏拖动等手势：拖动中只预览不提交，正常松手和系统取消分别处理；方向或手势类改动先对照 today_page.dart、today_day_navigation.dart 的人工决策，以及记忆里被否决的视觉方案。
-- 「甲 · 乙」式说明行一律用 theme 的 DotSeparatedText，避免窄处与大字号下折出孤字。
+- 「甲 · 乙」式说明行一律用 theme 的 DotSeparatedText，避免窄处与大字号下折出孤字（11-24 全应用扫过一遍；直接写进 Text 的由 code_conventions_test.dart 守护，只显示一行的写明 maxLines: 1）。
 - 面向用户的节次、学分与时刻只用 domain 的 periodLabel、creditLabel 与 formatCampusRelative，页面不自己拼「第x–x节」或带秒的时间。
 - schedule_calendar.dart 的 semesterDays、weekDates 只有测试在用，删除前先改测试。
 

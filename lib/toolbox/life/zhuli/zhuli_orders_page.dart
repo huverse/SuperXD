@@ -166,7 +166,7 @@ class _ZhuliOrdersPageState extends State<ZhuliOrdersPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title),
+                  DotSeparatedText(title),
                   DotSeparatedText('${zhuliShownTime(time)} · $status', style: secondary),
                 ],
               ),

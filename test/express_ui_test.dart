@@ -35,6 +35,7 @@ import 'package:superxd/toolbox/toolbox_catalog.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
+import 'text_fit_support.dart';
 import 'toolbox_test_support.dart';
 
 // 默认已读过昵称与取件号（不触发打开页面时的补读）；补读与读不到的情形在各自的用例里另建会话。
@@ -1044,10 +1045,10 @@ void main() {
     await tester.tap(find.text('驿站快递'));
     await tester.pumpAndSettle();
     expect(tracks.toSet(), {'SX0000000001', 'SX0000000002', 'SX0000000003'});
-    double top(String text) => tester.getRect(find.text(text)).top;
-    expect(find.text('尾号 1234 · 1 件'), findsOneWidget);
-    expect(find.text('尾号 5678 · 1 件'), findsOneWidget);
-    expect(find.text('尾号未知 · 1 件'), findsOneWidget);
+    double top(String text) => tester.getRect(text.contains(' · ') ? findDotted(text) : find.text(text)).top;
+    expect(findDotted('尾号 1234 · 1 件'), findsOneWidget);
+    expect(findDotted('尾号 5678 · 1 件'), findsOneWidget);
+    expect(findDotted('尾号未知 · 1 件'), findsOneWidget);
     expect(top('尾号 1234 · 1 件'), lessThan(top('取件码 B2-1-0102')));
     expect(top('取件码 B2-1-0102'), lessThan(top('尾号 5678 · 1 件')));
     expect(top('尾号 5678 · 1 件'), lessThan(top('取件码 6-1-0101')));
@@ -1097,7 +1098,7 @@ void main() {
     await tester.tap(find.text('驿站快递'));
     await tester.pumpAndSettle();
     expect(tracks, isEmpty, reason: '重开页面后已存的尾号不再补查');
-    expect(find.text('尾号 5678 · 1 件'), findsOneWidget);
+    expect(findDotted('尾号 5678 · 1 件'), findsOneWidget);
     expect(await vault.ownerTails(), {'1|SX0000000002': '5678'});
     await tester.pumpWidget(const SizedBox());
   });
@@ -1123,7 +1124,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('驿站快递'));
     await tester.pumpAndSettle();
-    expect(find.text('尾号 5678 · 1 件'), findsOneWidget);
+    expect(findDotted('尾号 5678 · 1 件'), findsOneWidget);
     await tester.tap(find.widgetWithText(OutlinedButton, '物流'));
     await tester.pumpAndSettle();
     expect(find.text('物流详情'), findsOneWidget);
@@ -1160,7 +1161,7 @@ void main() {
     await tester.tap(find.text('驿站快递'));
     await tester.pumpAndSettle();
     expect(tracks, ['/api/express/dsd/trackbox/shipping/track'], reason: '旧版存下的空尾号不算查到过');
-    expect(find.text('尾号未知 · 1 件'), findsOneWidget);
+    expect(findDotted('尾号未知 · 1 件'), findsOneWidget);
     expect(await vault.ownerTails(), isEmpty, reason: '没给尾号的不存本机');
 
     tracks.clear();
@@ -1168,7 +1169,7 @@ void main() {
     await tester.tap(find.text('驿站快递'));
     await tester.pumpAndSettle();
     expect(tracks, hasLength(1), reason: '下次查驿站再查');
-    expect(find.text('尾号 4321 · 1 件'), findsOneWidget);
+    expect(findDotted('尾号 4321 · 1 件'), findsOneWidget);
     expect(await vault.ownerTails(), {'1|SX0000000005': '4321'});
     await tester.pumpWidget(const SizedBox());
   });
@@ -1205,7 +1206,7 @@ void main() {
     await tester.pumpAndSettle();
     // 查驿站后的自动补查碰到它不弹验证页，归尾号未知。
     expect(_FakeVerifyPage.opened, isEmpty);
-    expect(find.text('尾号未知 · 1 件'), findsOneWidget);
+    expect(findDotted('尾号未知 · 1 件'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(OutlinedButton, '物流'));
     await tester.pumpAndSettle();
@@ -1245,7 +1246,7 @@ void main() {
     await tester.tap(find.text('驿站快递'));
     await tester.pumpAndSettle();
     expect(tracks, hasLength(5), reason: '第一批 5 件都要求验证，第二批不再发');
-    expect(find.text('尾号未知 · 7 件'), findsOneWidget);
+    expect(findDotted('尾号未知 · 7 件'), findsOneWidget);
     expect(find.text('拼多多要求先完成安全验证'), findsNothing, reason: '自动补查不打扰');
     await tester.pumpWidget(const SizedBox());
   });

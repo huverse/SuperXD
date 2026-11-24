@@ -294,7 +294,7 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
           Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
             Text(text(value), style: TextStyle(fontSize: 40, fontWeight: FontWeight.w600, height: 1.15, color: failing ? palette.danger : palette.onSurface, fontFeatures: const [FontFeature.tabularFigures()])),
             const SizedBox(width: 8),
-            Flexible(child: Text('${_original ? '总评' : '有效成绩'}${failing ? ' · 不及格' : ''}', style: secondary)),
+            Flexible(child: DotSeparatedText('${_original ? '总评' : '有效成绩'}${failing ? ' · 不及格' : ''}', style: secondary)),
           ]),
           const SizedBox(height: 12),
           Padding(padding: const EdgeInsets.only(right: 12), child: CampusFieldTable(rows: [
@@ -582,7 +582,7 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
                 const CampusIcon(CampusIcons.next),
               ],
             ),
-            Text(
+            DotSeparatedText(
               overview.error ??
                   (!overview.cached
                       ? '尚未同步'
@@ -645,7 +645,7 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
             for (final row in _view!.summaries)
               Padding(
                 padding: const EdgeInsets.all(12),
-                child: Text(
+                child: DotSeparatedText(
                   '${row.category} · 已获学分 ${grades.gradeText(row.earnedCredit)} · 绩点 ${grades.gradeText(row.gpa)} · 平均分 ${grades.gradeText(row.averageScore)} · 加权平均分 ${grades.gradeText(row.weightedAverage)}',
                 ),
               ),

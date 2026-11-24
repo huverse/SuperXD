@@ -23,6 +23,7 @@ import 'package:superxd/toolbox/toolbox_runtime.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_url.dart';
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 
 class ShortVideoPage extends StatefulWidget {
   const ShortVideoPage({
@@ -252,7 +253,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
                         CampusSwitchTile(
                           contentPadding: EdgeInsets.zero,
                           title: Text('${source.source.name} 参与自动解析'),
-                          subtitle: Text(switch (controller.coordinator.statuses[source.source.id]) {
+                          subtitle: DotSeparatedText(switch (controller.coordinator.statuses[source.source.id]) {
                             null => '本次运行尚未解析',
                             final status => '${status.success ? '最近一次成功' : '最近一次未完成'} · ${formatCampusRelative(status.checkedAt.toUtc().toIso8601String())}',
                           }),
