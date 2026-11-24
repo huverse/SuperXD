@@ -122,9 +122,9 @@ class _ZhuliPageState extends State<ZhuliPage> {
       context,
       title: '使用住理生活',
       // 长文案：第三方账号的同意说明，写清发给谁、存什么。
-      message: '用你本人的住理生活账号登录：手机号和密码直接发给住理生活（whxinna.com），密码只存在本机的系统安全存储，用来在会话过期时自动重新登录。\n\n'
-          '余额、优惠券与订单即查即用，不在本机保存。在这里登录后，别处的住理生活可能要重新登录。\n\n'
-          '住理生活是第三方服务，与本应用无关。请遵守它的服务条款，只用本人的账号。',
+      message: '手机号和密码直接发给住理生活（whxinna.com）；密码存在本机的系统安全存储，会话过期时用来自动重新登录。余额、优惠券和订单不在本机保存。\n\n'
+          '在这里登录后，住理生活官方 App 可能要重新登录，反过来也一样。\n\n'
+          '住理生活是第三方服务，与本应用无关。只用本人的账号，并遵守它的服务条款。',
       action: '同意并登录',
     );
     if (agreed) await widget.runtime.store.grantConsent(ZhuliService.serviceId, ZhuliService.consentVersion);

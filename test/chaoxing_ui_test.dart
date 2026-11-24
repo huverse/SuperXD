@@ -2013,9 +2013,11 @@ void main() {
     await tester.tap(find.text('打开'));
     await tester.pump();
     await waitUntil(tester, () => find.text('学习通签到的说明更新了').evaluate().isNotEmpty);
-    // 第 5 版写明在本机读本应用课表，不再说「与教务账号无关」。
-    expect(find.textContaining('在本机读取本应用里当前教务账号的课表'), findsOneWidget);
+    // 第 5 版起写明在本机读本应用课表，不再说「与教务账号无关」；第 6 版地图写网页版高德与系统定位，不再说高德 SDK。
+    expect(find.textContaining('在本机读本应用里当前教务账号的课表'), findsOneWidget);
     expect(find.textContaining('本功能与教务账号无关'), findsNothing);
+    expect(find.textContaining('网页版高德地图'), findsOneWidget);
+    expect(find.textContaining('高德 SDK'), findsNothing);
     await tester.tap(find.widgetWithText(TextButton, '取消'));
     await tester.pump();
     await waitUntil(tester, () => find.byType(ChaoxingPage).evaluate().isEmpty);
