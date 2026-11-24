@@ -230,6 +230,12 @@ void main() {
       expect(decide('pinduoduo://x', main: false), NavigationDecision.prevent);
     });
 
+    // 11-24 真机：拼多多重新发布 mdkd 页后包装模块从 89320 变成 9406，写死编号的注入取不到生成器，绑定手机号报「风控令牌生成失败」。
+    test('anti_content 注入按内容找生成器的包装模块，不写死模块编号与导出名；找不到时写原因', () {
+      expect(antiContentCapture, allOf(contains('n.m'), contains('"messagePackSync"'), contains('"SERVER_TIME_URL"'), contains('__sxdGenError')));
+      expect(RegExp(r'\bn\((\d+)\)').allMatches(antiContentCapture).map((match) => match[1]).toSet(), {'990099'}, reason: '只有注入的 chunk 自己的编号是固定的，官方模块一律按内容找');
+    });
+
     test('认不出的返回抛 invalidResponse', () {
       expect(() => expressJson('<html>not json</html>'), throwsA(isA<ExpressFailure>().having((failure) => failure.code, 'code', ExpressFailureCode.invalidResponse)));
     });

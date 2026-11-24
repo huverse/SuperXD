@@ -528,6 +528,25 @@ void main() {
       semantics.dispose();
     });
 
+    // 11-24 用户报「我的」滑不动、另外三个底栏页可以：内容不满一屏时 SingleChildScrollView 默认拖不动，要同 ListView 一样始终可拖、回弹。
+    testWidgets('「我的」页内容不满一屏也能拖动回弹', (tester) async {
+      final session = AppSession(_Accounts());
+      addTearDown(session.dispose);
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), scrollBehavior: const CampusScrollBehavior(), home: Scaffold(body: MinePage(session: session))));
+      await tester.pumpAndSettle();
+      final position = tester.state<ScrollableState>(find.descendant(of: find.byType(MinePage), matching: find.byType(Scrollable)).first).position;
+      expect(position.maxScrollExtent, 0, reason: '内容放得下，才测得出这种情况');
+      final gesture = await tester.startGesture(tester.getCenter(find.text('界面')));
+      // 第一步越过拖动识别的阈值，第二步才是列表跟着走的那段。
+      await gesture.moveBy(const Offset(0, 30));
+      await gesture.moveBy(const Offset(0, 90));
+      await tester.pump();
+      expect(position.pixels, lessThan(0), reason: '按住往下拖，列表跟着手指走');
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(position.pixels, 0, reason: '松手弹回');
+    });
+
     testWidgets('应用账号页最上面一组：有信才有「开发者的话」、有奖品才有「我的红包」（没登录、仅本机也在）；都没有时整组不画', (tester) async {
       final notes = DeveloperNotes(build: 1, feed: _NoteFeed(), memory: FileDeveloperNoteMemory.memory());
       final through = formatCampusDate(campusInstant().add(const Duration(days: 3)));

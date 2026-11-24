@@ -131,15 +131,24 @@ class _ZhuliPageState extends State<ZhuliPage> {
     return agreed;
   }
 
+  // 登录、切换或退出账号之后：换成新的账号状态重画（退出了最后一个账号就回登录表单），还在路上的旧账号结果作废（_generation）。
+  // 11-24 用户视频：以前只改字段不重画，退出后页面停在旧账号的报错页，⋯ 再点时当前账号已经没了、什么也不发生，像卡住。
   Future<void> _signedIn(String phone) async {
-    _state = await _service.state();
-    _session = null;
-    _profile = null;
-    _coupons = null;
-    _config = null;
-    _last = null;
-    _recent = const [];
-    if (mounted) await _load();
+    final state = await _service.state();
+    if (!mounted) return;
+    setState(() {
+      _generation++;
+      _state = state;
+      _session = null;
+      _profile = null;
+      _coupons = null;
+      _config = null;
+      _last = null;
+      _recent = const [];
+      _error = null;
+      _relogin = null;
+    });
+    await _load();
   }
 
   // 去一台设备的洗浴页，回来刷新余额与进行中的单。

@@ -18,7 +18,7 @@ abstract interface class PddAntiContent {
   WebViewController? get webViewController;
 }
 
-// 隐藏 WebView 实现：加载官方 mdkd 页，注入官方 chunk 把反爬 SDK（模块 89320→28828/25039）的生成器捕获到 window.__sxdGen，再调它取 anti_content。
+// 隐藏 WebView 实现：加载官方 mdkd 页，注入官方 chunk 把反爬 SDK 的生成器（包装模块，见 antiContentCapture）捕获到 window.__sxdGen，再调它取 anti_content。
 // 10-22 真机（OPPO）查清生成器丢失的主因：这个隐藏页没有登录态，加载完几秒后会自己跳去 login.html、再试图拉起拼多多 App，
 // 一跳走 window 全局（含 __sxdGen）就没了——每次生成都要先等满 8 秒、再重载重试，约 10 秒，偶尔两次都失败。
 // （10-20 记的「被弹层盖住后 webpack 失效」多半也是它。）所以只许主框架停在官方 mdkd 页，跳走的导航一律拦下；
@@ -87,11 +87,10 @@ class WebViewAntiContent implements PddAntiContent {
       const Duration(seconds: 25),
       onTimeout: () => throw const ExpressFailure(ExpressFailureCode.network, '风控页加载超时，请检查网络'),
     );
-    await _controller.runJavaScript(
-      'window.__sxdGen=null;'
-      'try{self.webpackChunk_N_E.push([[990099],{990099:function(t,e,n){'
-      'window.__sxdGen=function(){return n(89320).a()}}},function(n){n(990099)}])}catch(e){}',
-    );
+    await _controller.runJavaScript(antiContentCapture);
+    // 没捕获到时记下卡在哪（module 是找不到包装模块、export 是它没导出函数，别的是 JS 报错），拼多多改版时一看就知道。
+    final missing = _asString(await _controller.runJavaScriptReturningResult('window.__sxdGenError'));
+    if (missing.isNotEmpty) campusLog('[Express] action=anti_setup errorType=${missing.length > 80 ? missing.substring(0, 80) : missing}');
   }
 
   // 调一次生成器取 anti_content；拿到返回，超时或报错返回 null（交给上层重载重试）。
@@ -129,6 +128,21 @@ class WebViewAntiContent implements PddAntiContent {
     return text;
   }
 }
+
+// 把官方反爬 SDK 的生成器捕获到 window.__sxdGen 的注入脚本（首次 push 一个 chunk，拿到 webpack 的 require）。
+// 不写死模块编号：拼多多每次重新发布 mdkd 页都可能变，11-24 用户真机诊断包里从 89320 变成了 9406，按旧编号取报
+// 「Cannot read properties of undefined (reading 'call')」、绑定手机号报「风控令牌生成失败」。改在 webpack 的模块表（require.m）里按内容找
+// 包装模块：同时含 messagePackSync（SDK 的生成方法）与 SERVER_TIME_URL（它先取服务器时间）的那一个，两版都只有它一个；导出名也不写死（现在是 a），
+// 取它导出的函数。找不到时 window.__sxdGenError 写原因、__sxdGen 留空，交给重载重试与日志。
+const antiContentCapture = 'window.__sxdGen=null;window.__sxdGenError="";'
+    'try{self.webpackChunk_N_E.push([[990099],{990099:function(t,e,n){'
+    'var id=null;for(var k in n.m){var s=String(n.m[k]);if(s.indexOf("messagePackSync")>=0&&s.indexOf("SERVER_TIME_URL")>=0){id=k;break}}'
+    'if(id===null){window.__sxdGenError="module";return}'
+    'var x=n(id),f=typeof x.a==="function"?x.a:null;'
+    'if(!f){for(var p in x){if(typeof x[p]==="function"){f=x[p];break}}}'
+    'if(!f){window.__sxdGenError="export";return}'
+    'window.__sxdGen=function(){return f()}'
+    '}},function(n){n(990099)}])}catch(e){window.__sxdGenError=String(e)}';
 
 // 隐藏页的导航规则（见 WebViewAntiContent 类注释）：主框架只许停在官方 mdkd 页，跳登录页、拉起 App 的外部 scheme 一律拦下；子框架只放行网页地址。
 NavigationDecision antiPageNavigation(NavigationRequest request) {

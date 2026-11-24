@@ -231,6 +231,58 @@ void main() {
     expect(peer('8.8.8.8'), isTrue);
   });
 
+  // 11-24 电影院取证（用户手机上有的源时好时坏、卡满 15 秒，用户选「先取证」）：超时写清卡在哪一步，四种都用本机服务器真的造出来。
+  test('记连接的内核：超时分得清新连接连上了不回、复用旧连接、正文没读完、新连接没连上；不记连接的照旧抛 TimeoutException（日志的 errorType 不变）；请求记录照旧写 timeout', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    server.listen((request) async {
+      switch (request.uri.path) {
+        case '/quick':
+          request.response.write('ok');
+          await request.response.close();
+        case '/partial':
+          request.response.contentLength = 100;
+          request.response.write('x');
+          await request.response.flush();
+        // /hang 一直不回。
+      }
+    });
+    addTearDown(() => server.close(force: true));
+    // 只接 TCP、不做 TLS 握手：https 的新连接一直连不上。
+    final tcp = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+    final held = <Socket>[];
+    tcp.listen(held.add);
+    addTearDown(() async {
+      for (final socket in held) {
+        socket.destroy();
+      }
+      await tcp.close();
+    });
+    await HttpOverrides.runWithHttpOverrides(() async {
+      Future<String> stage(CampusHttp kernel, String url) async {
+        try {
+          await kernel.send('GET', Uri.parse(url), timeout: const Duration(milliseconds: 600), limit: 1024);
+        } on CampusHttpTimeout catch (error) {
+          return error.stage;
+        }
+        fail('$url 没有超时');
+      }
+
+      final kernel = CampusHttp.traced('demo');
+      addTearDown(kernel.close);
+      final base = 'http://127.0.0.1:${server.port}';
+      expect(await stage(kernel, '$base/hang'), 'response', reason: '为它新开了连接、连上了，对方不回');
+      expect((await kernel.send('GET', Uri.parse('$base/quick'), timeout: const Duration(seconds: 5), limit: 1024)).body, 'ok');
+      expect(await stage(kernel, '$base/hang'), 'reused', reason: '上一个请求留下的空闲连接被拿来用了，没开新连接');
+      expect(await stage(kernel, '$base/partial'), 'body', reason: '响应头到了，正文没读完');
+      expect(await stage(kernel, 'https://127.0.0.1:${tcp.port}/x'), 'connect', reason: 'TLS 握手一直没完成');
+      // 11-24 CI：私信中转等模块的日志写 errorType=${error.runtimeType}，不记连接的内核要照旧是 TimeoutException。
+      final plain = CampusHttp('plain', client: MockClient((_) => Completer<http.Response>().future));
+      addTearDown(plain.close);
+      await expectLater(plain.send('GET', Uri.parse('$base/hang'), timeout: const Duration(milliseconds: 300), limit: 1024), throwsA(predicate((error) => error.runtimeType == TimeoutException)));
+    }, _RealHttp());
+    expect(logs.where((line) => line.contains('module=demo') && line.endsWith('error=timeout')), hasLength(4));
+  });
+
   // 11-22 Codex 复核 P1（电影院的本机代理替第三方清单取东西）：按连上的真实地址核对，写成域名、解析到本机的也挡得住。
   test('只连公网：连到本机（直接写地址、或域名解析到本机）就断开并抛 CampusHttpPrivateAddress，对方一个请求都没收到', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);

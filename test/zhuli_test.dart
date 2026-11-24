@@ -37,6 +37,10 @@ class _FakeZhuli {
   var sessionCounter = 0;
   // 当前有效的身份码（换了就让旧的回 login_timeout）。
   final valid = <String>{};
+  // 别处（官方 App）登录过、签名密钥被换掉的身份码：带它的请求回 api_sign_error。
+  final replaced = <String>{};
+  // 这个账号从没用过水：查最近一单回 error_record_not_exist。
+  var noRecord = false;
   var captchaNext = false;
   String? captchaExpected;
   var balance = '17.4900';
@@ -61,13 +65,15 @@ class _FakeZhuli {
         '/webapi/users/resetpwd' => query['code'] == '2468' ? ok({}) : fail(null, '验证码错误'),
         _ => fail('not_found'),
       };
+    } else if (replaced.contains(query['identitycode'])) {
+      reply = fail('api_sign_error');
     } else if (!valid.contains(query['identitycode'])) {
       reply = fail('login_timeout');
     } else {
       reply = switch (request.url.path) {
         '/webapi/v1/staff/get_user_detail_by_id' => ok({'id': 'U1', 'balance': balance, 'frozen_balance': 0.0, 'total_balance': 17.49, 'cash_coupon_count': 1}),
         '/webapi/v1/app_setting/get_config' => ok({'consume_order_display_cut_enable': 1, 'consume_order_display_cut_days': 30}),
-        '/webapi/v1/consume/get_staff_last_record' => ok(null),
+        '/webapi/v1/consume/get_staff_last_record' => noRecord ? fail('error_record_not_exist') : ok(null),
         '/webapi/v1/cash_coupon/list_staff_cash_coupon_app' => ok(query['is_blance'] == '1'
             ? {'rows': [{'id': 'Q1', 'cash_coupon_name': '合成券', 'balance': 176.35, 'total_money': 280.0, 'use_limit': 'bath', 'use_order': 0, 'start_at': '2026-09-30 11:37:49', 'expire_at': '2028-09-19 11:37:49', 'status': null, 'is_blance': null}], 'total_count': 1}
             : {'rows': <Object>[], 'total_count': 0}),
@@ -100,6 +106,12 @@ class _FakeZhuli {
 
   // 让现有的会话全部过期（下一次业务请求回 login_timeout）。
   void expireAll() => valid.clear();
+
+  // 在官方 App 上登录了同一个账号：住理换掉签名密钥，手上的会话签的请求都回 api_sign_error（11-24 真机诊断包）。
+  void signInElsewhere() {
+    replaced.addAll(valid);
+    valid.clear();
+  }
 
   int count(String path) => requests.where((uri) => uri.path == path).length;
 }
@@ -176,7 +188,10 @@ void main() {
       expect((wrong.failure, wrong.message), (ZhuliFailure.captchaRequired, '验证码不对，换一张再输'));
       final rejected = await call({'result': false, 'msg': '密码错误，请重新输入'});
       expect((rejected.failure, rejected.message), (ZhuliFailure.rejected, '密码错误，请重新输入'));
-      expect((await call({'result': false, 'err_msg': 'api_sign_error'})).message, '请求校验没通过，稍后再试');
+      final sign = await call({'result': false, 'err_msg': 'api_sign_error'});
+      expect((sign.failure, sign.message), (ZhuliFailure.sessionExpired, '请求校验没通过，稍后再试'), reason: '别处登录换掉了签名密钥，同会话过期去重登');
+      final missing = await call({'result': false, 'err_msg': 'error_record_not_exist'});
+      expect((missing.failure, missing.code), (ZhuliFailure.rejected, 'error_record_not_exist'), reason: '错误码带出来，个别接口按它认「没有数据」');
       expect((await call('不是 JSON')).failure, ZhuliFailure.invalidResponse);
       expect((await call({'result': true}, status: 502)).failure, ZhuliFailure.network);
       // data 不是 base64 时照原 App 原样交回，格式对不对由各接口的 decode* 判断。
@@ -248,6 +263,18 @@ void main() {
       final state = decodeZhuliVault(jsonEncode({'device': 'D', 'active': _phone, 'accounts': [{'phone': _phone, 'password': _password}, {'phone': 1}]}));
       expect((state.device, state.accounts.length, state.current!.phone), ('D', 1, _phone));
       expect(decodeZhuliVault(null).device, isNot(decodeZhuliVault(null).device));
+    });
+
+    test('在官方 App 登录过同一个账号（api_sign_error）：自动重登一次再重放；从没用过水的账号最近一单是空（error_record_not_exist）', () async {
+      final fake = _FakeZhuli();
+      final service = _service(fake);
+      await service.signIn(_phone, _password);
+      fake.signInElsewhere();
+      final logins = fake.count('/webapi/users/login');
+      expect((await service.run(_phone, service.client.profile)).balance, 1749);
+      expect(fake.count('/webapi/users/login'), logins + 1);
+      fake.noRecord = true;
+      expect(await service.run(_phone, service.client.lastRecord), isNull);
     });
 
     test('券余额把未使用的券加起来（只读服务端给的余额，不推算抵扣）', () async {
@@ -356,6 +383,35 @@ void main() {
       await _settle(tester);
       expect(find.text('138****0001'), findsOneWidget);
       expect((await tester.runAsync(service.state))!.accounts.map((account) => account.phone), [_phone]);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    // 11-24 用户视频：在官方 App 登录后回来是「请求校验没通过」，这时退出账号页面停在旧画面、怎么点都没反应。
+    testWidgets('在官方 App 登录过再回来：自动重登、首页照常；退出唯一的账号回到登录表单', (tester) async {
+      await tester.runAsync(() => service.signIn(_phone, _password));
+      fake.signInElsewhere();
+      await open(tester);
+      expect(find.text('¥17.49'), findsOneWidget);
+      expect(find.text('请求校验没通过，稍后再试'), findsNothing);
+      await tester.tap(find.byTooltip('账号'));
+      await _settle(tester);
+      await tester.tap(find.text('退出这个账号'));
+      await _settle(tester);
+      await tester.tap(find.widgetWithText(FilledButton, '退出'));
+      await _settle(tester);
+      expect(find.text('138****0001'), findsNothing);
+      expect(find.text('住理生活手机号'), findsOneWidget, reason: '没有账号了，回到登录表单');
+      expect((await tester.runAsync(service.state))!.accounts, isEmpty);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    // 11-24 用户截图：有的账号一登录就是「住理生活没有办成（error_record_not_exist）」。
+    testWidgets('从没用过水的账号（最近一单回 error_record_not_exist）：首页照常显示', (tester) async {
+      fake.noRecord = true;
+      await tester.runAsync(() => service.signIn(_phone, _password));
+      await open(tester);
+      expect(find.text('¥17.49'), findsOneWidget);
+      expect(find.textContaining('error_record_not_exist'), findsNothing);
       await tester.pumpWidget(const SizedBox());
     });
 

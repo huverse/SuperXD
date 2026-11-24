@@ -7,6 +7,31 @@ import 'package:http/io_client.dart';
 
 import 'package:superxd/domain/campus_log.dart';
 
+// CampusHttp.traced 的请求超时（timeout 或 idleTimeout 到点）；别的内核照旧抛 TimeoutException（各模块日志里的 errorType 不变）。
+// stage 写卡在哪一步：body 是响应头到了、正文没读完；没收到响应头时分 reused（这个主机没开新连接，请求发在连接池里的旧连接上）、
+// connect（为它开的新连接还没连上，含域名解析与 TLS）与 response（新连接连上了、对方没回）。同一主机同时有几个请求时按主机计数，只是大致的判断。
+class CampusHttpTimeout extends TimeoutException {
+  CampusHttpTimeout(Duration timeout, this.stage) : super('请求超时', timeout);
+  final String stage;
+}
+
+// 按主机记开过几条新连接、结束（连上或失败）了几条；主机最多记 64 个，多了丢最早的（电影院的接口主机只有十几个）。
+class _ConnectTrace {
+  final _counts = <String, ({int started, int finished})>{};
+
+  ({int started, int finished}) of(String host) => _counts[host] ?? (started: 0, finished: 0);
+
+  void start(String host) => _put(host, (started: of(host).started + 1, finished: of(host).finished));
+
+  void finish(String host) => _put(host, (started: of(host).started, finished: of(host).finished + 1));
+
+  void _put(String host, ({int started, int finished}) value) {
+    _counts.remove(host);
+    _counts[host] = value;
+    if (_counts.length > 64) _counts.remove(_counts.keys.first);
+  }
+}
+
 // 响应体读到上限还没读完（或声明的长度就超了）：已停止读取并中断连接，不把它整个读进内存。
 class CampusHttpTooLarge implements Exception {
   const CampusHttpTooLarge(this.limit);
@@ -31,18 +56,33 @@ class CampusHttpTooLarge implements Exception {
 // 一份 CampusHttp 对应一个模块（请求记录里的 module），底层 http.Client 可注入（测试用 MockClient），close 时关掉。
 // publicOnly 只连公网地址：替第三方给的地址发请求时用（电影院的本机代理取清单与密钥），连上之后、发出请求之前核对对方的真实地址，
 // 是本机、内网、链路本地这类（campusPublicPeer 为假，代理软件的 fake-ip 段放行）就断开并抛 CampusHttpPrivateAddress；按连上的地址认，域名解析成 127.0.0.1 也挡得住。
+// traced 另按主机记新连接（11-24 电影院取证，用户选「先取证」）：超时时写清卡在哪一步（见 CampusHttpTimeout），
+// 分得出是复用了连接池里已经断掉的旧连接、新连接没建起来（含域名解析与 TLS），还是连上了对方不回。
 class CampusHttp {
-  CampusHttp(this.module, {http.Client? client}) : _client = client ?? http.Client();
-  CampusHttp.publicOnly(this.module) : _client = IOClient(HttpClient()..connectionFactory = _publicConnection);
+  CampusHttp(this.module, {http.Client? client}) : _client = client ?? http.Client(), _trace = null;
+  CampusHttp.publicOnly(this.module) : _client = IOClient(HttpClient()..connectionFactory = ((url, proxyHost, proxyPort) => _connect(url, proxyHost, proxyPort, publicOnly: true))), _trace = null;
+  CampusHttp._traced(this.module, _ConnectTrace trace) : _client = IOClient(HttpClient()..connectionFactory = ((url, proxyHost, proxyPort) => _connect(url, proxyHost, proxyPort, trace: trace))), _trace = trace;
+  factory CampusHttp.traced(String module) => CampusHttp._traced(module, _ConnectTrace());
 
-  static Future<ConnectionTask<Socket>> _publicConnection(Uri url, String? proxyHost, int? proxyPort) async {
+  static Future<ConnectionTask<Socket>> _connect(Uri url, String? proxyHost, int? proxyPort, {bool publicOnly = false, _ConnectTrace? trace}) async {
     final host = proxyHost ?? url.host, port = proxyPort ?? (url.hasPort ? url.port : (url.isScheme('https') ? 443 : 80));
-    final task = url.isScheme('https') && proxyHost == null ? await SecureSocket.startConnect(host, port) : await Socket.startConnect(host, port);
+    trace?.start(url.host);
+    final ConnectionTask<Socket> task;
+    try {
+      task = url.isScheme('https') && proxyHost == null ? await SecureSocket.startConnect(host, port) : await Socket.startConnect(host, port);
+    } catch (_) {
+      trace?.finish(url.host);
+      rethrow;
+    }
     return ConnectionTask.fromSocket(
       task.socket.then((socket) {
-        if (campusPublicPeer(socket.remoteAddress)) return socket;
+        trace?.finish(url.host);
+        if (!publicOnly || campusPublicPeer(socket.remoteAddress)) return socket;
         socket.destroy();
         throw CampusHttpPrivateAddress(url.host);
+      }, onError: (Object error, StackTrace stack) {
+        trace?.finish(url.host);
+        Error.throwWithStackTrace(error, stack);
       }),
       task.cancel,
     );
@@ -50,6 +90,15 @@ class CampusHttp {
 
   final String module;
   final http.Client _client;
+  final _ConnectTrace? _trace;
+
+  // 超时时卡在哪一步（见 CampusHttpTimeout）：before 是请求开始时这个主机的连接计数，status 是收到的响应状态码（没收到为空）。
+  String _stage(_ConnectTrace trace, String host, ({int started, int finished}) before, int? status) {
+    if (status != null) return 'body';
+    final now = trace.of(host);
+    if (now.started == before.started) return 'reused';
+    return now.finished < now.started ? 'connect' : 'response';
+  }
 
   // headers 先写，再写请求体：body 按 http.Request.body 的规则写（UTF-8，Content-Type 缺 charset 时补上），bodyBytes 原样写、不动请求头；
   // multipart 是表单文件上传；bodyStream 是边读边发的请求体（如文件流），声明 length、不分块，不整个读进内存。
@@ -108,6 +157,7 @@ class CampusHttp {
     active();
     if (cancel != null) unawaited(cancel.then((_) => abort(_cancelled), onError: (Object _) => abort(_cancelled)));
     final watch = Stopwatch()..start();
+    final before = _trace?.of(uri.host);
     int? status;
     try {
       final response = await Future.any([
@@ -123,7 +173,10 @@ class CampusHttp {
       final reason = aborted;
       campusRequestLog(module, method, logUri ?? uri, status: status, elapsed: watch.elapsed, error: reason ?? (error is CampusHttpTooLarge ? 'too_large' : '${error.runtimeType}'));
       // 在这里抛（不沿用计时器里的堆栈），堆栈才带得上调用方的那一串 await。
-      if (reason == _timeout) throw TimeoutException('请求超时', timeout);
+      if (reason == _timeout) {
+        final trace = _trace;
+        throw trace == null || before == null ? TimeoutException('请求超时', timeout) : CampusHttpTimeout(timeout, _stage(trace, uri.host, before, status));
+      }
       if (reason == _cancelled) throw http.RequestAbortedException(uri);
       // 竞速断开了 await 链：原堆栈只到出错的地方，接上这里的调用方那一串，日志里才看得出是哪个模块的哪次请求。
       Error.throwWithStackTrace(error, StackTrace.fromString('$stack<asynchronous suspension>\n${StackTrace.current}'));

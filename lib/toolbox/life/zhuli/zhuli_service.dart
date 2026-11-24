@@ -64,7 +64,7 @@ class ZhuliService implements ToolboxService {
     _sessions.remove(phone);
   }
 
-  // 带着这个账号的会话做一次请求：还没有会话先用记着的密码登录；会话过期（login_timeout）自动重登一次再重放这一次
+  // 带着这个账号的会话做一次请求：还没有会话先用记着的密码登录；会话过期（login_timeout，或别处登录换掉了签名密钥回 api_sign_error）自动重登一次再重放这一次
   // （跨模块不变量 9 允许的「会话自动恢复后的一次重放」）。重登时住理要图形验证码、或密码不对了，抛给页面请用户重新登录。
   Future<T> run<T>(String phone, Future<T> Function(ZhuliSession session) action) async {
     final session = _sessions[phone] ?? await _relogin(phone);
@@ -73,7 +73,7 @@ class ZhuliService implements ToolboxService {
     } on ZhuliException catch (error) {
       if (error.failure != ZhuliFailure.sessionExpired) rethrow;
       if (identical(_sessions[phone], session)) _sessions.remove(phone);
-      campusLog('[Zhuli] action=relogin reason=expired');
+      campusLog('[Zhuli] action=relogin reason=${error.code}');
       return action(_sessions[phone] ?? await _relogin(phone));
     }
   }
