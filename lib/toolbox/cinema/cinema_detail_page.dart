@@ -13,6 +13,7 @@ import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/toolbox/cinema/cinema_consent.dart';
 import 'package:superxd/toolbox/cinema/cinema_episodes.dart';
@@ -190,9 +191,10 @@ class _CinemaDetailPageState extends State<CinemaDetailPage> {
                           children: [
                             Text(title.name, key: _heading, style: text.titleLarge),
                             const SizedBox(height: CampusGap.tight),
-                            Text(
+                            // 按「 · 」分项换行，「2 个源」这类一项不拆开（11-24 用户报折出孤字「源」）。
+                            DotSeparatedText(
                               [if (title.year.isNotEmpty) title.year, if (title.category.isNotEmpty) title.category, if (title.remarks.isNotEmpty) title.remarks, '${title.sources.length} 个源'].join(' · '),
-                              style: text.bodyMedium?.copyWith(color: palette.onSurfaceVariant),
+                              style: text.bodyMedium!.copyWith(color: palette.onSurfaceVariant),
                             ),
                             if (target != null) ...[
                               const SizedBox(height: CampusGap.medium),
