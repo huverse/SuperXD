@@ -25,55 +25,56 @@ void main() {
     final scrollable = find.byType(Scrollable).first;
     // 按文档顺序往下滚。
     for (final (title, fragment) in [
+      ('一、处理者与服务器', '你同意本政策之前，应用不会自动联网'),
+      ('一、处理者与服务器', '服务器能看到你的 IP 地址，只用来限流'),
+      ('二、教务账号、课表与成绩', '教务系统只有 HTTP 明文连接'),
       // 11-15 应用账号改为自己的账号体系（人工决策见 domain/app_account.dart）：服务器只存哈希、不提供人工找回，都要写明。
-      ('一、教务账号、课表与成绩', '服务器只保存用它们算出的不可逆哈希'),
-      ('一、教务账号、课表与成绩', '开发者不提供人工找回'),
-      ('二、私信', '按 IP 地址计数限流'),
+      ('三、应用账号', '服务器只保存它们的不可逆哈希'),
+      ('三、应用账号', '开发者不提供人工找回'),
+      ('三、应用账号', '查出大致属地（不保存 IP）'),
       // 11-14 私信跟着应用账号（人工决策见 social/social_service.dart）：服务器能看出账号之间的好友关系、换手机时公钥由服务器转交，都要写明。
-      ('二、私信', '因此服务器知道哪些应用账号互为好友'),
-      ('二、私信', '新手机的好友名单和好友的公钥由服务器给出'),
-      ('四、百宝箱：学习通签到', '打开位置签到时申请定位权限（仅使用期间）'),
-      ('四、百宝箱：学习通签到', '当前位置不发给高德'),
-      ('四、百宝箱：学习通签到', '本机不保存签到记录与群消息'),
-      ('五、百宝箱：快递（拼多多）', '会让你其他设备上的拼多多下线'),
-      ('五、百宝箱：快递（拼多多）', '身份码是取件凭证，不写入文件，也不进日志'),
-      // 11-20 电影院（人工决策见 lib/page/legal_page.dart 的 11-20 12:15:42 那条）：片名与播放页地址同意后才发给第三方，视频不经开发者的服务器。
-      ('六、百宝箱：电影院', '你同意后才把你输入的片名直接发给这些站点'),
-      ('六、百宝箱：电影院', '视频本身由播放器直接从第三方服务器取，不经开发者的服务器'),
-      ('七、百宝箱：住理生活', '手机号与密码存进系统安全存储（已排除云备份与设备迁移），用来在会话过期时自动重新登录'),
-      ('七、百宝箱：住理生活', '余额、券与订单只在页面上显示，不在本机保存'),
-      ('七、百宝箱：住理生活', '没用上的 20 秒后断开，开水、关水做完就断开'),
-      ('七、百宝箱：住理生活', '按住理生活账号分开存在本机，不上传'),
-      ('七、百宝箱：住理生活', '付款信息只在你与支付宝之间，开发者拿不到'),
-      ('八、检查更新、开发者的话与安装', '只向开发者的自建中转服务器发送应用的构建渠道（如 Alpha）与处理器架构'),
-      ('八、检查更新、开发者的话与安装', '获取开发者写的「开发者的话」，请求不附带任何信息'),
-      ('九、节日活动与抽奖', '参加抽奖要登录应用账号'),
-      ('九、节日活动与抽奖', '应用账号要建立满 7 天'),
-      ('九、节日活动与抽奖', '同一个应用账号同一次活动只抽一次，换手机、重装后重新登录都不能再抽'),
-      ('九、节日活动与抽奖', '注销应用账号不提前删除'),
-      ('十、本机存储、备份与日志', '另在本机留一份约 1MB 的错误记录'),
-      ('十、本机存储、备份与日志', '最多保留 7 天、20MB，关闭开发者模式即删除'),
-      ('十、本机存储、备份与日志', '不会自动上传，只在你点「导出日志」时打包保存到 Download/SuperXD'),
-      ('十、本机存储、备份与日志', '只有你点了并在确认框里确认后才发送，每次都要确认，从不自动上传'),
-      ('十、本机存储、备份与日志', '服务器保存 30 天后自动删除；上传成功会给你一个诊断编号，要提前删除，凭编号按第十三节联系开发者'),
-      ('十一、你的权利', '撤回同意'),
-      ('十二、未成年人', '未满 14 周岁'),
-      ('十三、政策更新与联系', '私下联系开发者：QQ 209320162，邮箱 vbhcchhvvvhh@gmail.com'),
+      ('四、私信', '所以服务器知道哪些应用账号互为好友'),
+      ('四、私信', '新手机的好友名单和公钥由服务器给出'),
+      ('七、百宝箱：学习通签到', '打开位置签到时申请定位权限（仅使用期间）'),
+      ('七、百宝箱：学习通签到', '在本机换算，不发给高德'),
+      ('七、百宝箱：学习通签到', '本机不存签到记录和群消息'),
+      ('八、百宝箱：快递（拼多多）', '会让你其他设备上的拼多多下线'),
+      ('八、百宝箱：快递（拼多多）', '身份码是取件凭证，不写入文件，也不进日志'),
+      // 11-20 电影院（人工决策见 lib/page/legal_page.dart 的 11-20 12:15:42 那条）：片名同意后才发给第三方、境外转发写明、视频不经开发者的服务器。
+      ('九、百宝箱：电影院', '你同意后才把片名直接发给它们'),
+      ('九、百宝箱：电影院', '片名和你的 IP 地址会传到境外'),
+      ('九、百宝箱：电影院', '视频本身由播放器直接从第三方服务器取，不经开发者的服务器'),
+      ('十、百宝箱：住理生活', '手机号和密码存在系统安全存储，会话过期时用来自动重新登录'),
+      ('十、百宝箱：住理生活', '余额、券和订单只在页面上显示，不保存'),
+      ('十、百宝箱：住理生活', '打开洗浴页和点「关水」时先连上，20 秒没用就断开'),
+      ('十、百宝箱：住理生活', '付款信息开发者拿不到'),
+      ('十一、更新、开发者的话与匿名回报', '只发构建渠道和处理器架构'),
+      ('十一、更新、开发者的话与匿名回报', '不带账号、设备编号和错误内容'),
+      ('十二、节日活动与红包', '要登录建立满 7 天的应用账号'),
+      ('十二、节日活动与红包', '同一个应用账号同一次活动只抽一次，换手机、重装后重新登录都不能再抽'),
+      ('十三、本机存储、日志与诊断包', '本机留一份约 1MB 的错误记录'),
+      ('十三、本机存储、日志与诊断包', '只在你点「导出日志」时存到 Download/SuperXD'),
+      ('十三、本机存储、日志与诊断包', '只有你点「上传诊断包」并确认后才发送'),
+      ('十四、你的选择与权利', '撤回同意'),
+      ('十四、你的选择与权利', '这时应用账号、经服务器的私信、挑战与积分、解锁和节日抽奖都不联网'),
+      ('十五、未成年人', '未满 14 周岁'),
+      ('十六、政策更新与联系方式', '私下联系开发者：QQ 209320162，邮箱 vbhcchhvvvhh@gmail.com'),
       ('附录一 第三方 SDK 与服务', 'https://lbs.amap.com/pages/privacy/'),
       ('附录一 第三方 SDK 与服务', '当前位置由手机系统定位提供、不经高德'),
-      ('附录一 第三方 SDK 与服务', 'zxing-cpp 条码识别（开源，经插件 flutter_zxing 集成）'),
-      ('附录一 第三方 SDK 与服务', '识别在本机完成、不联网'),
+      ('附录一 第三方 SDK 与服务', 'zxing-cpp（开源，经 flutter_zxing 集成）'),
+      ('附录一 第三方 SDK 与服务', '在本机识别、不联网'),
       ('附录一 第三方 SDK 与服务', 'com.hihonor.mcs:ads-identifier'),
       ('附录一 第三方 SDK 与服务', 'https://opendocs.alipay.com/common/02kiq3'),
       ('附录一 第三方 SDK 与服务', '本应用不申请电话权限，IMEI、IMSI 这类它拿不到'),
-      ('附录一 第三方 SDK 与服务', '拼多多（pinduoduo.com、yangkeduo.com'),
-      ('附录二 系统权限', '相机：扫码（加好友、课堂签到二维码、代签码、住理生活的洗浴设备码）时识别在本机完成'),
-      ('附录二 系统权限', '在住理生活里给只有蓝牙的洗浴设备开水关水时也申请'),
-      ('附录二 系统权限', '位置：打开学习通位置签到时申请'),
-      ('附录二 系统权限', 'Wi-Fi 状态：随支付宝 SDK 带入'),
-      ('附录三 保存期限', '课表编辑历史：每学期最多 100 版'),
-      ('附录三 保存期限', '开发者模式日志最多 7 天、20MB'),
-      ('附录三 保存期限', '诊断包：你确认上传的加密日志包，30 天后删除'),
+      ('附录一 第三方 SDK 与服务', '拼多多（pinduoduo.com、yangkeduo.com）'),
+      ('附录二 系统权限', '相机：扫码（加好友、签到二维码、代签码、住理生活的设备码）'),
+      ('附录二 系统权限', '位置：学习通位置签到，仅使用期间'),
+      ('附录二 系统权限', '安卓 11 上扫描蓝牙'),
+      ('附录二 系统权限', 'Wi-Fi 状态与厂商标识服务'),
+      ('附录三 保存期限', '课表：每学期最多 100 个历史版本'),
+      ('附录三 保存期限', '开发者模式日志 7 天、20MB'),
+      ('附录三 保存期限', '注销应用账号不提前删除抽签结果'),
+      ('附录三 保存期限', '诊断包 30 天后删除'),
     ]) {
       await tester.scrollUntilVisible(find.text(title), 300, scrollable: scrollable);
       await tester.pumpAndSettle();
@@ -83,7 +84,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('用户协议窄屏大字深浅色可读，写明非官方、开源许可、私信规范、快递与应用更新', (tester) async {
+  testWidgets('用户协议窄屏大字深浅色可读，写明非官方、开源许可、私信规范、百宝箱各工具与应用更新', (tester) async {
     await tester.binding.setSurfaceSize(const Size(320, 640));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     for (final theme in [ThemeData.light(), ThemeData.dark()]) {
@@ -105,17 +106,15 @@ void main() {
       expect(find.textContaining('不是学校官方应用'), findsOneWidget);
       await tester.scrollUntilVisible(find.text('二、开源许可'), 300, scrollable: scrollable);
       expect(find.textContaining('GNU GPL v3.0'), findsOneWidget);
-      await tester.scrollUntilVisible(find.text('四、私信使用规范'), 300, scrollable: scrollable);
+      await tester.scrollUntilVisible(find.text('四、私信'), 300, scrollable: scrollable);
       expect(find.textContaining('开发者无法查看'), findsOneWidget);
-      await tester.scrollUntilVisible(find.text('五、百宝箱与作品版权'), 300, scrollable: scrollable);
+      await tester.scrollUntilVisible(find.text('五、百宝箱'), 300, scrollable: scrollable);
       expect(find.textContaining('开发者不提供、不存放任何影视内容'), findsOneWidget);
-      await tester.scrollUntilVisible(find.text('七、快递'), 300, scrollable: scrollable);
       expect(find.textContaining('遵守拼多多的服务条款'), findsOneWidget);
-      await tester.scrollUntilVisible(find.text('八、住理生活'), 300, scrollable: scrollable);
       expect(find.textContaining('遵守住理生活的服务条款'), findsOneWidget);
-      await tester.scrollUntilVisible(find.text('九、应用更新'), 300, scrollable: scrollable);
+      await tester.scrollUntilVisible(find.text('六、应用更新'), 300, scrollable: scrollable);
       expect(find.textContaining('可能要求先更新再继续使用'), findsOneWidget);
-      await tester.scrollUntilVisible(find.text('十、节日活动与奖励'), 300, scrollable: scrollable);
+      await tester.scrollUntilVisible(find.text('七、节日活动与红包'), 300, scrollable: scrollable);
       expect(find.textContaining('不是商业抽奖'), findsOneWidget);
       expect(find.textContaining('每个应用账号每次活动只能抽一次'), findsOneWidget);
       expect(find.textContaining('待替换'), findsNothing);
