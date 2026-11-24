@@ -19,6 +19,7 @@ import 'package:superxd/toolbox/short_video/short_video_service.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 
 class MediaResultPage extends StatefulWidget {
   const MediaResultPage({
@@ -276,7 +277,7 @@ class _MediaResultPageState extends State<MediaResultPage> {
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   if (remaining.length < images.length)
-                    Text(
+                    DotSeparatedText(
                       [
                         '已保存 $saved/${images.length}',
                         if (active > 0) '进行中 $active',
@@ -411,7 +412,7 @@ class _MediaResultPageState extends State<MediaResultPage> {
                                     child: Text(result.author),
                                   ),
                                 const SizedBox(height: 8),
-                                Text(
+                                DotSeparatedText(
                                   '来源：${widget.service.coordinator.providers[result.providerId]!.source.name}${widget.outcome.fromCache ? ' · 最近缓存' : ''}',
                                   style: TextStyle(
                                     color: CampusPalette.of(context)
@@ -475,7 +476,7 @@ class _MediaResultPageState extends State<MediaResultPage> {
                                     if (_details(media) case final details?)
                                       Padding(
                                         padding: const EdgeInsets.only(top: 4),
-                                        child: Text(
+                                        child: DotSeparatedText(
                                           details,
                                           style: TextStyle(color: CampusPalette.of(context).onSurfaceVariant),
                                         ),

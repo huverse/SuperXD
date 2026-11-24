@@ -199,7 +199,7 @@ class _SyncMergePageState extends State<SyncMergePage> {
     Widget section(String title, {String? note}) => Padding(
       padding: const EdgeInsets.fromLTRB(4, 20, 4, 8),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(title, style: textTheme.titleMedium),
+        DotSeparatedText(title, style: textTheme.titleMedium),
         if (note != null) Padding(padding: const EdgeInsets.only(top: 2), child: Text(note, style: secondary)),
       ]),
     );

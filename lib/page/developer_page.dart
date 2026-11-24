@@ -25,6 +25,7 @@ import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 
 // 导出日志包的结果：安卓存进 Download/SuperXD，iOS 弹系统分享面板（取消也算没完成）。
 String _exportedText(String? filename) => filename == null ? '导出没完成，请重试' : defaultTargetPlatform == TargetPlatform.iOS ? '已导出：$filename' : '已保存到 Download/SuperXD：$filename';
@@ -244,7 +245,7 @@ class _DeveloperPageState extends State<DeveloperPage> {
                   OutlinedButton.icon(
                     onPressed: () => showFestivalReward(context, title: '节日快乐', prize: FestivalPrize(occasion: 'preview', kind: kind, content: content, note: '预览用的合成奖品', wonAt: DateTime.now().toUtc())),
                     icon: const CampusIcon(CampusIcons.gift),
-                    label: Text(label),
+                    label: DotSeparatedText(label),
                   ),
               ]),
             ])),
@@ -353,7 +354,7 @@ class _DeveloperLogPageState extends State<DeveloperLogPage> {
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text(record.count > 1 ? '共 ${record.count} 次 · 最近 ${_time(record.time)}' : _time(record.time), style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant)),
+                        DotSeparatedText(record.count > 1 ? '共 ${record.count} 次 · 最近 ${_time(record.time)}' : _time(record.time), style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant)),
                         open
                             ? SelectableText(record.text, style: TextStyle(fontSize: 14, fontFamily: 'monospace', color: colors.onSurface))
                             : Text(record.text, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontFamily: 'monospace', color: colors.onSurface)),

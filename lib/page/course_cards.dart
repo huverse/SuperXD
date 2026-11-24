@@ -100,7 +100,7 @@ Future<void> showCourseDetail(BuildContext context, {required PeriodSpan span, r
           Expanded(child: Padding(padding: const EdgeInsets.only(top: 10), child: BalancedText(course.courseName, style: Theme.of(context).textTheme.titleLarge))),
           IconButton(tooltip: '关闭', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.close)),
         ]),
-        Text('${periodLabel(span.start, span.end)}${time == null ? '' : ' · ${time.label}'}', style: secondary),
+        DotSeparatedText('${periodLabel(span.start, span.end)}${time == null ? '' : ' · ${time.label}'}', style: secondary),
         const SizedBox(height: 16),
         Padding(padding: const EdgeInsets.only(right: 12), child: CampusFieldTable(rows: [
           ('地点', span.meeting!.place),
@@ -563,7 +563,7 @@ class _EmptySlot extends StatelessWidget {
                   for (final part in title) Text(part, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, height: 1.3, color: palette.onSurfaceVariant, fontFeatures: figures)),
                 ])),
                 const SizedBox(height: 2),
-                Text(detail, style: secondary),
+                DotSeparatedText(detail, style: secondary),
               ])),
             ])),
           ),

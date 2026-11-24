@@ -8,6 +8,7 @@ import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/toolbox/toolbox_image.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 
 // 电影院列表的一行：左边海报（经百宝箱的小网络图，只认公网 https，取不到画占位）、右边片名与说明行。
 // 用整行卡片不用海报墙网格：网格的格子高度固定，大字号时片名会被裁掉。
@@ -40,7 +41,7 @@ class CinemaPosterRow extends StatelessWidget {
                 for (final line in lines)
                   if (line.isNotEmpty) ...[
                     const SizedBox(height: CampusGap.tight),
-                    Text(line, style: text.bodyMedium?.copyWith(color: palette.onSurfaceVariant), maxLines: 2, overflow: TextOverflow.ellipsis),
+                    DotSeparatedText(line, style: text.bodyMedium?.copyWith(color: palette.onSurfaceVariant)),
                   ],
               ],
             ),

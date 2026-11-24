@@ -34,6 +34,7 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_tag_sheet.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_vault.dart';
 
 import 'chaoxing_fake_server.dart';
+import 'text_fit_support.dart';
 
 // 2026-10-08 审查整改的回归：删账号与后台刷新的竞态、会话关闭、切账号代次、自动重登的错误口径、
 // 手势与签到码输入的重复提交。
@@ -831,7 +832,7 @@ void main() {
     expect(find.text('主账号'), findsOneWidget);
     expect(find.text('代签账号'), findsNWidgets(2));
     expect(find.textContaining('本人'), findsNothing);
-    expect(find.text('其他账号 · 按住右侧把手拖动排序'), findsOneWidget);
+    expect(findDotted('其他账号 · 按住右侧把手拖动排序'), findsOneWidget);
     // 主账号那行没有拖动把手，其余三个各一个。
     final handles = find.byWidgetPredicate((widget) => widget is CampusIcon && widget.icon == CampusIcons.dragHandle);
     expect(handles, findsNWidgets(3));

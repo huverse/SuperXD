@@ -190,7 +190,7 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
             for (var index = 0; index < slots.length; index++)
               SimpleDialogOption(
                 onPressed: () => Navigator.pop(context, index),
-                child: Text(slotLabel(slots[index])),
+                child: DotSeparatedText(slotLabel(slots[index])),
               ),
           ],
         ),

@@ -7,6 +7,7 @@ import 'package:superxd/theme/campus_glass_surface.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/theme/native_glass.dart';
@@ -256,7 +257,7 @@ class _MenuRow<T> extends StatelessWidget {
                   CampusIcon(icon, size: 20, color: item.destructive ? palette.danger : palette.primary),
                   const SizedBox(width: 12),
                 ],
-                Expanded(child: Text(item.label, style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: item.destructive ? palette.danger : selected ? palette.primary : palette.onSurface))),
+                Expanded(child: campusDottedText(item.label, style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: item.destructive ? palette.danger : selected ? palette.primary : palette.onSurface), plain: (line) => Text(line, style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: item.destructive ? palette.danger : selected ? palette.primary : palette.onSurface)))),
                 // 选中项只着选中色（浅激活色底、主色文字，见 CampusPalette.selectedFill）；对号只在高对比度下画（人工决策见 campus_glass_controls.dart 的 CampusGlassChip）。
                 if (selected && MediaQuery.highContrastOf(context)) ...[
                   const SizedBox(width: 12),

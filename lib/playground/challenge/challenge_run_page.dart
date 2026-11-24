@@ -165,7 +165,8 @@ class _ChallengeRunPageState extends State<ChallengeRunPage> with WidgetsBinding
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(tooltip: '返回', onPressed: () => Navigator.maybePop(context), icon: const CampusIcon(CampusIcons.back)),
-        title: Text('${run.label} · ${run.title}'),
+        // 顶栏标题只占一行、放不下省略（同 AppBar 的默认），不按项换行（换到第二行会被顶栏裁掉）。
+        title: Text('${run.label} · ${run.title}', maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
           CampusGlassCircleButton(label: '玩法', size: 44, onPressed: () => showCampusNotice(context, _rules, title: '挑战的玩法'), icon: const CampusIcon(CampusIcons.info)),
           if (run.running) ...[

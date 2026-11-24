@@ -171,7 +171,7 @@ class _ChallengeHomeState extends State<ChallengeHome> {
             CampusIcon(CampusIcons.points, size: 28, color: palette.primary),
             const SizedBox(width: 20),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(['积分 ${_points?.balance ?? 0}', if (_points case final points? when pointsLevelShown(points)) 'Lv${points.level}'].join(' · '), style: Theme.of(context).textTheme.titleMedium),
+              DotSeparatedText(['积分 ${_points?.balance ?? 0}', if (_points case final points? when pointsLevelShown(points)) 'Lv${points.level}'].join(' · '), style: Theme.of(context).textTheme.titleMedium),
               if ((_points?.expiring ?? 0) > 0) Text('30 天内 ${_points!.expiring} 分到期', style: secondary),
             ])),
             CampusIcon(CampusIcons.next, color: palette.onSurfaceVariant),
@@ -196,7 +196,7 @@ class _ChallengeHomeState extends State<ChallengeHome> {
               ChallengeShape(tiers: challenge.tiers, edges: challenge.edges),
               const SizedBox(width: 16),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('${challenge.label} · ${challenge.title}', style: Theme.of(context).textTheme.titleMedium),
+                DotSeparatedText('${challenge.label} · ${challenge.title}', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 2),
                 DotSeparatedText(
                   [

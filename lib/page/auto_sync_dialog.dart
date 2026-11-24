@@ -182,7 +182,7 @@ class _AutoSyncDialogState extends State<_AutoSyncDialog> {
                             : (value) => _save(setting.copyWith(contents: value == true ? {...setting.contents, content} : ({...setting.contents}..remove(content)))),
                       ),
                     const SizedBox(height: 8),
-                    // 后台自动重登（用户 11-09 允许）在开关处说清楚，同隐私政策第一节。
+                    // 后台自动重登（用户 11-09 允许）在开关处说清楚，同隐私政策第二节。
                     Text('开着记住账号时，登录过期会自动重新登录一次。', style: note),
                     ..._status(view!.status, note),
                   ],

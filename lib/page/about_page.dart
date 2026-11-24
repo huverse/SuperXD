@@ -94,7 +94,7 @@ class _AboutPageState extends State<AboutPage> {
     final agreed = await showCampusConfirm(
       context,
       title: '开启开发者模式',
-      // 长文案：开启前写明本机日志记什么、存多久（隐私政策第十节）。
+      // 长文案：开启前写明本机日志记什么、存多久（隐私政策第十三节）。
       message: '运行日志（页面切换、请求接口与耗时、卡顿与内存）写进本机，最多 7 天、20MB，不自动上传；不记密码、Cookie、链接与请求内容。',
       action: '开启',
     );

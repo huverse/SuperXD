@@ -181,8 +181,9 @@ class _PointsPageState extends State<PointsPage> {
                     for (final entry in _entries)
                       Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Row(children: [
                         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text(entry.note.isNotEmpty ? entry.note : _kindLabel(entry.kind), style: Theme.of(context).textTheme.bodyLarge),
-                          Text('${_kindLabel(entry.kind)} · ${formatCampusRelative(entry.at.toIso8601String())}', style: secondary),
+                          // 备注是服务器给的挑战名（「普通 · 八连环」），同样按项换行。
+                          DotSeparatedText(entry.note.isNotEmpty ? entry.note : _kindLabel(entry.kind), style: Theme.of(context).textTheme.bodyLarge),
+                          DotSeparatedText('${_kindLabel(entry.kind)} · ${formatCampusRelative(entry.at.toIso8601String())}', style: secondary),
                         ])),
                         const SizedBox(width: 12),
                         Text(entry.amount > 0 ? '+${entry.amount}' : '${entry.amount}', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: entry.amount > 0 ? palette.onSurface : palette.onSurfaceVariant)),

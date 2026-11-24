@@ -12,6 +12,7 @@ import 'package:superxd/theme/campus_background.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_glass_surface.dart';
 import 'package:superxd/theme/campus_motion.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/theme/native_glass.dart';
@@ -875,7 +876,7 @@ Widget _toastCapsule(CampusPalette palette, String message, {required String? ac
   child: Padding(
     padding: EdgeInsets.fromLTRB(16, action == null ? 14 : 0, action == null ? 16 : 4, action == null ? 14 : 0),
     child: Row(children: [
-      Expanded(child: Text(message, style: TextStyle(color: palette.onSurface, fontSize: 14))),
+      Expanded(child: campusDottedText(message, style: TextStyle(color: palette.onSurface, fontSize: 14), plain: (line) => Text(line, style: TextStyle(color: palette.onSurface, fontSize: 14)))),
       if (action != null) TextButton(onPressed: onAction, child: Text(action)),
     ]),
   ),
@@ -1111,7 +1112,7 @@ Future<void> showCampusNotice(BuildContext context, String message, {String? tit
     context: context,
     builder: (context) => CampusGlassDialog(
       title: title == null ? null : Text(title),
-      content: SingleChildScrollView(child: BalancedText(message)),
+      content: SingleChildScrollView(child: campusDottedText(message, plain: BalancedText.new)),
       actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('知道了'))],
     ),
   );
@@ -1127,7 +1128,7 @@ Future<bool> showCampusConfirm(BuildContext context, {required String title, req
   barrierDismissible: barrierDismissible,
   builder: (context) => CampusGlassDialog(
     title: Text(title),
-    content: SingleChildScrollView(child: BalancedText(message)),
+    content: SingleChildScrollView(child: campusDottedText(message, plain: BalancedText.new)),
     actions: [
       TextButton(onPressed: () => Navigator.pop(context, false), child: Text(cancel)),
       FilledButton(style: destructive ? campusDestructive : null, onPressed: () => Navigator.pop(context, true), child: Text(action)),

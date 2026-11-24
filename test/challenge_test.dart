@@ -412,7 +412,7 @@ void main() {
       // 推入的页先离屏建一帧（给 Hero 量位置），再推进转场。
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
-      expect(find.text('A 关 · 入门'), findsOneWidget);
+      expect(findDotted('A 关 · 入门'), findsOneWidget);
       expect(find.textContaining('还有 4:5'), findsOneWidget);
       await tester.tap(find.bySemanticsLabel('更多操作'));
       await tester.pump(const Duration(milliseconds: 500));
@@ -861,7 +861,7 @@ void main() {
       expect(find.textContaining('30 天内 50 分到期'), findsOneWidget);
       expect(find.text('Lv1'), findsOneWidget);
       expect(find.text('离 Lv2 还差 1800 分'), findsOneWidget);
-      expect(find.text('普通 · 八连环'), findsOneWidget);
+      expect(findDotted('普通 · 八连环'), findsOneWidget);
       expect(find.text('+186'), findsOneWidget);
       await tester.tap(find.text('更早的'));
       await tester.pumpAndSettle();
@@ -895,8 +895,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('挑战'));
       await tester.pumpAndSettle();
-      expect(find.text('积分 86 · Lv1'), findsOneWidget);
-      expect(find.text('加赛 · 十二连环'), findsOneWidget);
+      expect(findDotted('积分 86 · Lv1'), findsOneWidget);
+      expect(findDotted('加赛 · 十二连环'), findsOneWidget);
       expect(_line('12 关 · 限时 60 分钟 · 门票 300 分 · 还剩 2 天'), findsOneWidget);
       expect(find.text('积分不够付门票'), findsOneWidget);
       expect(find.text('开始'), findsOneWidget);
@@ -938,7 +938,7 @@ void main() {
       hub.emit();
       await tester.pumpAndSettle();
       expect(find.text('积分 86'), findsOneWidget);
-      expect(find.text('入门 · 六连环'), findsOneWidget);
+      expect(findDotted('入门 · 六连环'), findsOneWidget);
       expect(_line('6 关 · 限时 15 分钟 · 还剩 2 天'), findsOneWidget);
       expect(hub.games, {for (final game in playgroundCatalog) if (game.challengeable) '${game.id}@${challengeRules[game.id]!.puzzleVersion}'}, reason: '报给服务器的是「游戏@题面写法版本」');
       await tester.tap(find.text('开始'));

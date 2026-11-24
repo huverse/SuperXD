@@ -28,6 +28,7 @@ import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 
 import 'fixture_campus_gateway.dart';
+import 'text_fit_support.dart';
 
 const term = TermRef(xn: '2026', xq: '0', label: '2026–2027第一学期');
 const bells = [
@@ -186,7 +187,7 @@ void main() {
     expect(find.text('早八没课哦~'), findsOneWidget);
     expect(tester.getTopLeft(find.text('08:00')).dy, lessThan(tester.getTopLeft(find.text('09:40')).dy));
     final long = await gapHeight([const PeriodSpan(start: 1, end: 4), ...periodSpans([course(5, 6)]).where((span) => !span.empty)]);
-    expect(find.text('3小时40分 · 第1–4节'), findsOneWidget);
+    expect(findDotted('3小时40分 · 第1–4节'), findsOneWidget);
     expect(long, greaterThan(short));
     expect(tester.takeException(), isNull);
   });
@@ -349,7 +350,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('安排已有课程'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('课程 · 老师'));
+    await tester.tap(findDotted('课程 · 老师'));
     await tester.pumpAndSettle();
     expect(find.text('编辑课程'), findsOneWidget);
     // 预填的本周时段带上这门课的老师（时段卡整卡是一个按钮，读屏读整句）。
@@ -432,7 +433,7 @@ void main() {
     expect(find.text('10:00'), findsOneWidget);
     expect(tester.getTopLeft(find.text('10:00')).dx, lessThan(tester.getTopLeft(find.textContaining('第3–4节')).dx));
     // 空档沿用卡片三列网格：开始时刻与卡片时刻列左对齐，内容与课名同起点，写空闲时长与节次。
-    expect(find.text('1小时40分 · 第1–2节'), findsOneWidget);
+    expect(findDotted('1小时40分 · 第1–2节'), findsOneWidget);
     expect(tester.getTopLeft(find.text('08:00')).dx, tester.getTopLeft(find.text('10:00')).dx);
     expect(tester.getTopLeft(find.text('早八没课哦~')).dx, tester.getTopLeft(find.text('高等数学')).dx);
     expect(find.textContaining('作息时间未设置', findRichText: true), findsNWidgets(2));
@@ -808,7 +809,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(gateway.savedStart, '2026-08-31');
     // 成功只出提示条、不弹要点“知道了”的弹窗，也不再附周次算法的长说明。
-    expect(find.text('开学日已保存 · 第1周从 8月31日 开始'), findsOneWidget);
+    expect(findDotted('开学日已保存 · 第1周从 8月31日 开始'), findsOneWidget);
     expect(find.text('知道了'), findsNothing);
     expect(find.textContaining('所在周的周一'), findsNothing);
     expect(tester.takeException(), isNull);
@@ -841,7 +842,7 @@ void main() {
     await tester.tap(find.text('编辑'));
     await tester.pumpAndSettle();
     expect(gateway.savedStart, '2026-09-07');
-    expect(find.text('开学日已保存 · 第1周从 9月7日 开始'), findsOneWidget);
+    expect(findDotted('开学日已保存 · 第1周从 9月7日 开始'), findsOneWidget);
     expect(tester.takeException(), isNull);
   }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 

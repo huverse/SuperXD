@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:superxd/theme/dot_separated_text.dart';
+
 // 排版体检：扫当前屏上所有可见文字，找被裁的字、孤字与单独成行的标点。
 // 种类：clip-width（单行文字比格子宽被裁）、clip-lines（超出行数被截掉且没有省略号）、clip-height（比格子高）、
 // parent-clip（被祖先的裁切框切掉一部分，滚动视口除外）、lone-punct（一行只有标点）、orphan（多字的句子里一行只剩一个汉字，括号整体换行除外）、
@@ -91,3 +93,7 @@ List<TextIssue> scanTexts(WidgetTester tester) {
   }
   return issues;
 }
+
+// 按项换行的「甲 · 乙」（theme 的 DotSeparatedText）每一项是单独一段文字，find.text 按整句找不到，要找这个组件（11-24 全应用改成按项换行）。
+// containing 为真时整句里含这一段就算。
+Finder findDotted(String text, {bool containing = false}) => find.byWidgetPredicate((widget) => widget is DotSeparatedText && (containing ? widget.text.contains(text) : widget.text == text), description: '按项换行的「$text」');

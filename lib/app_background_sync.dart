@@ -142,7 +142,7 @@ Future<void> _runHeadless(DateTime deadline) async {
   campusLog = logs.tee(debugPrint);
   final claim = HeadlessClaim();
   try {
-    // 记住了账号的，会话过期时照常用存着的密码重新登录一次再重放（用户 11-09 允许后台自动重登，隐私政策第一节写明）。
+    // 记住了账号的，会话过期时照常用存着的密码重新登录一次再重放（用户 11-09 允许后台自动重登，隐私政策第二节写明）。
     await headlessAutoSync(deadline, support: support, claim: claim, openGateway: () async {
       final store = await AccountStore.open();
       _release = store.release;

@@ -7,6 +7,7 @@ import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 
 // 安装包大小：10MB 以下保留一位小数。
 String appPackageSize(int bytes) => '${(bytes / 1048576).toStringAsFixed(bytes < 10 * 1048576 ? 1 : 0)} MB';
@@ -113,7 +114,7 @@ class _AppUpdateDialog extends StatelessWidget {
       title: Text(forced ? '需要更新' : '发现新版本'),
       content: SingleChildScrollView(
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          if (summary.isNotEmpty) Text(summary.join('\n'), style: secondary),
+          if (summary.isNotEmpty) campusDottedText(summary.join('\n'), style: secondary, plain: (line) => Text(line, style: secondary)),
           if (release.notes.isNotEmpty) ...[const SizedBox(height: 12), Text(release.notes)],
           if (status != null) ...[const SizedBox(height: 16), status],
         ]),

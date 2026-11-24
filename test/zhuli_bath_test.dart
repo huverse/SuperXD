@@ -26,6 +26,7 @@ import 'package:superxd/toolbox/toolbox_catalog.dart';
 import 'package:superxd/toolbox/toolbox_module.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
+import 'text_fit_support.dart';
 import 'toolbox_test_support.dart';
 
 // 住理生活第二轮：洗浴（人工决策见 lib/toolbox/life/zhuli/zhuli_service.dart 文件头）。设备、楼栋与蓝牙帧全是合成的。
@@ -526,7 +527,7 @@ void main() {
       await tester.pump(const Duration(seconds: 3));
       await _settle(tester);
       expect(find.text('水已开'), findsOneWidget);
-      expect(find.text('1.02 升 · ¥0.07'), findsOneWidget);
+      expect(findDotted('1.02 升 · ¥0.07'), findsOneWidget);
       await tester.tap(find.text('关水'));
       await _settle(tester);
       await tester.tap(find.text('关水').last);
@@ -547,11 +548,11 @@ void main() {
       await tester.tap(find.text('开水'));
       await _settle(tester);
       expect(find.text('附近没找到这台设备，靠近一点再试'), findsOneWidget);
-      expect(find.text('换到设备号 101 · 云端/蓝牙'), findsOneWidget, reason: '同房间只剩 101，自己不列；同名设备靠设备号分清');
-      await tester.tap(find.text('换到设备号 101 · 云端/蓝牙'));
+      expect(findDotted('换到设备号 101 · 云端/蓝牙'), findsOneWidget, reason: '同房间只剩 101，自己不列；同名设备靠设备号分清');
+      await tester.tap(findDotted('换到设备号 101 · 云端/蓝牙'));
       await _settle(tester);
       expect(find.byWidgetPredicate((widget) => _dotted(widget, '设备号 101 · 空闲')), findsOneWidget);
-      expect(find.text('换到设备号 101 · 云端/蓝牙'), findsNothing);
+      expect(findDotted('换到设备号 101 · 云端/蓝牙'), findsNothing);
       await tester.pumpWidget(const SizedBox());
     });
 

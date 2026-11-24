@@ -9,6 +9,7 @@ import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/toolbox/short_video/parse_source.dart';
 import 'package:superxd/toolbox/short_video/short_video_store.dart';
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 
 // 首页最近解析与历史页共用：点击整行重开解析结果，只展示本机保存的链接、标题、类型和来源。
 class ParseHistoryTile extends StatelessWidget {
@@ -36,7 +37,7 @@ class ParseHistoryTile extends StatelessWidget {
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
       ),
-      subtitle: Text(
+      subtitle: DotSeparatedText(
         '${gallery ? '图集' : '视频'} · ${providers[providerId]?.source.name ?? providerId} · ${formatCampusRelative(DateTime.fromMillisecondsSinceEpoch(row['created_at'] as int, isUtc: true).toIso8601String())}',
       ),
       trailing: trailing ?? const CampusIcon(CampusIcons.next),

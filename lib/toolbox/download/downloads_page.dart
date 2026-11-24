@@ -12,6 +12,7 @@ import 'package:superxd/toolbox/download/download_status.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 
 // 一个工具的下载管理：只列 toolId 的任务。reopenLabel 不为空时，带工具附加信息（origin）的失败任务给一个按钮，
 // 点了把任务交回给调用方去重做（如短视频的重新解析）；下载管理本身不懂怎么重做。
@@ -253,7 +254,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
                         style: textTheme.titleMedium,
                       ),
                       const SizedBox(height: 2),
-                      Text(
+                      DotSeparatedText(
                         '${single ? _kindLabel(first.kind) : '${items.length} 项'} · ${formatCampusRelative(first.createdAt.toIso8601String())}',
                         style: textTheme.bodySmall,
                       ),
@@ -301,7 +302,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
                 children: [
                   if (!single) ...[
                     const SizedBox(height: 12),
-                    Text(
+                    DotSeparatedText(
                       [
                         '已保存 $saved/${items.length}',
                         if (active > 0) '进行中 $active',

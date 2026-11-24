@@ -6,9 +6,10 @@ import 'package:superxd/theme/campus_typesetting.dart';
 // separator 给“，”时按句换行，逗号挂在前一句末尾（挑战的预告与钥匙行：「第 ? / 列」曾被拆到两行）。
 // 一项本身比一行长时均衡折行并占满这一行（BalancedText），不在末尾留孤字（11-14「第 1 行的锁定皇后在第 ? / 列，」）。
 class DotSeparatedText extends StatelessWidget {
-  const DotSeparatedText(this.text, {super.key, required this.style, this.separator = ' · '});
+  const DotSeparatedText(this.text, {super.key, this.style, this.separator = ' · '});
   final String text;
-  final TextStyle style;
+  // 为空时沿用外层的 DefaultTextStyle（列表副标题这类由组件给样式的地方）。
+  final TextStyle? style;
   final String separator;
 
   static final _term = RegExp(r'^(.+学年)(第.+学期)$');
@@ -30,4 +31,16 @@ class DotSeparatedText extends StatelessWidget {
     }
     return Semantics(label: text, excludeSemantics: true, child: Wrap(children: [for (final item in items) BalancedText(item, style: style, expandWhenWrapped: true)]));
   }
+}
+
+// 共用组件拿到的一段字（提示条、弹窗正文、加载提示、菜单项）：没有「 · 」原样交给 plain（各组件原来的写法，样子不变）；
+// 有的话按行拆开，带「 · 」的行按项换行，其余行仍照 plain，读屏读整段（11-24 用户要求「甲 · 乙」全应用一律按项换行）。
+Widget campusDottedText(String text, {TextStyle? style, required Widget Function(String line) plain, CrossAxisAlignment align = CrossAxisAlignment.start}) {
+  if (!text.contains(' · ')) return plain(text);
+  if (!text.contains('\n')) return DotSeparatedText(text, style: style);
+  return Semantics(
+    label: text,
+    excludeSemantics: true,
+    child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: align, children: [for (final line in text.split('\n')) line.contains(' · ') ? DotSeparatedText(line, style: style) : plain(line)]),
+  );
 }

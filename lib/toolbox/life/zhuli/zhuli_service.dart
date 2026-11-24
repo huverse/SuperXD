@@ -35,7 +35,9 @@ class ZhuliService implements ToolboxService {
   // 子模块 id：路由（/toolbox/life/zhuli）、服务与同意记录共用，发出后不改。
   static const serviceId = 'life.zhuli';
   // 第一次登录前的同意说明的版本，说明有实质变化就加一档。
-  static const consentVersion = 'zhuli-1';
+  // [人工决策-2026-11-24 13:24:06] zhuli-2：用户要求面向用户的文字一起重写得简洁（见 lib/page/legal_page.dart 同一时刻那条），
+  // 补写在这里登录与官方 App 会互相要求重新登录（11-24 修复后两边都会自动重登），升一档。
+  static const consentVersion = 'zhuli-2';
 
   static Future<ZhuliService> open(ToolboxServiceContext context) async => ZhuliService(vault: SecureZhuliVault(), devices: ZhuliDeviceStore.file(File('${context.base.path}/zhuli_devices.json')));
 

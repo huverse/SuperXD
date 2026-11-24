@@ -33,7 +33,8 @@ import 'package:superxd/toolbox/toolbox_runtime.dart';
 
 // 首次使用拼多多这个来源要单独征得同意；说明版本变了就加一档，旧同意失效、再次征询。
 // pdd-2：登录改成在应用里输手机号与验证码（[人工决策] 见 express_models.dart 的登录常量），用户选升一档，同意过的下次登录前再问一次。
-const expressConsentVersion = 'pdd-2';
+// [人工决策-2026-11-24 13:24:06] pdd-3：用户要求面向用户的文字一起重写得简洁（见 lib/page/legal_page.dart 同一时刻那条），内容不变、只改写法，升一档。
+const expressConsentVersion = 'pdd-3';
 
 class ExpressPage extends StatefulWidget {
   const ExpressPage({super.key, required this.runtime, this.openIdentity = false});
@@ -83,9 +84,9 @@ class _ExpressPageState extends State<ExpressPage> {
       context,
       title: '使用拼多多快递',
       // 长文案：拼多多登录的同意说明。
-      message: '用你本人拼多多账号的手机号和短信验证码登录，应用把它们直接发给拼多多、不保存；登录态只保存在本机安全存储，仅用于查询你的快递与生成取件身份码。\n\n'
-          '拼多多同一账号不支持多设备同时在线：在这里登录后，你其他设备上的拼多多会被挤下线。建议用小号登录，再用「绑定手机号」把大号的手机号绑进来，就能用小号的身份码取大号的快递。\n\n'
-          '身份码是取件凭证、短时有效，请勿分享或截图外传。请遵守拼多多的服务条款，仅用于本人已授权的账号。',
+      message: '手机号和短信验证码直接发给拼多多，不保存；登录后的会话存在本机的系统安全存储，只用来查快递和生成身份码。\n\n'
+          '拼多多同一账号不能多台设备同时在线，在这里登录会让你其他设备上的拼多多下线。可以用小号登录，再用「绑定手机号」绑上大号的手机号，用小号的身份码取大号的快递。\n\n'
+          '身份码是取件凭证，不要分享或截图外传。只用于你本人已授权的账号，并遵守拼多多的服务条款。',
       action: '同意并登录',
     );
     if (!agreed) return false;
@@ -558,7 +559,7 @@ class _ExpressPageState extends State<ExpressPage> {
                 children: [
                   Padding(padding: const EdgeInsets.only(right: 6), child: CampusIcon(CampusIcons.phone, size: 18, color: palette.onSurfaceVariant)),
                   Expanded(
-                    child: Text(
+                    child: DotSeparatedText(
                       tail.isEmpty ? '尾号未知 · ${parcels.length} 件' : '尾号 $tail · ${parcels.length} 件',
                       style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: palette.onSurface),
                     ),

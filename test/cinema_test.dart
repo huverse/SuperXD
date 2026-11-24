@@ -44,6 +44,7 @@ import 'package:superxd/toolbox/toolbox_page.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 import 'package:video_player_platform_interface/video_player_platform_interface.dart';
 
+import 'text_fit_support.dart';
 import 'toolbox_test_support.dart';
 
 // 电影院（人工决策见 lib/toolbox/cinema/cinema_service.dart 文件头）：规则包的校验、规则引擎（搜索与苹果 CMS 选集）、播放清单改写、
@@ -1760,6 +1761,35 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
+    // 11-24 用户报：选集页标题下「2 个源」折行，单独剩一个「源」。按「 · 」分项换行（DotSeparatedText），一项不拆开。
+    testWidgets('选集页：标题下的年份、分类、备注与几个源按项换行，各种屏宽与大字号下都不折出孤字', (tester) async {
+      final client = MockClient((request) async => reply(macCmsList([{'vod_id': 1, 'vod_name': '合成剧', 'vod_play_from': 'mp4', 'vod_play_url': r'第1集$https://media.example.com/1.mp4'}]), 200));
+      final (_, service) = await openCinemaForPage(tester, client: client);
+      await tester.runAsync(() async {
+        await service.rules();
+        await service.grantRules(service.package!.rules);
+      });
+      final title = CinemaTitle(key: 'meta', name: '合成剧', year: '2026', category: '科幻片', cover: '', remarks: '更新至第12集')
+        ..addSource(const CinemaSourceRef(ruleId: 'alpha', source: '1', name: '合成剧', remarks: ''))
+        ..addSource(const CinemaSourceRef(ruleId: 'beta', source: '1', name: '合成剧', remarks: ''));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final orphans = <String>[];
+      for (final scale in [1.0, 1.3]) {
+        for (var width = 320.0; width <= 430; width += 6) {
+          await tester.binding.setSurfaceSize(Size(width, 800));
+          await tester.pumpWidget(MaterialApp(
+            theme: campusTheme(),
+            builder: (context, child) => MediaQuery(data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(scale)), child: child!),
+            home: CinemaDetailPage(service: service, title: title),
+          ));
+          await settleUntil(tester, () => find.text('第1集').evaluate().isNotEmpty);
+          orphans.addAll([for (final issue in scanTexts(tester)) if (issue.kind == 'orphan' && issue.text.contains('个源')) '$width×$scale $issue']);
+        }
+      }
+      expect(orphans, isEmpty);
+      await tester.pumpWidget(const SizedBox());
+    });
+
     // 人工决策见 cinema_models.dart 的 cinemaTitleKey 与 cinema_service.dart 的 searchCacheLifetime（11-21 总交接第 6.6、7.4 节）。
     testWidgets('首页：搜索结果写分类、预告片单独一条；离开结果再搜同一个词用最近的结果，结果显示着时再按搜索是重新搜', (tester) async {
       var requests = 0;
@@ -1774,13 +1804,13 @@ void main() {
       await settleUntil(tester, () => find.byType(TextField).evaluate().isNotEmpty);
       Future<void> search() async {
         await tester.tap(find.text('搜索'));
-        await settleUntil(tester, () => find.text('2020 · 预告片').evaluate().isNotEmpty);
+        await settleUntil(tester, () => findDotted('2020 · 预告片').evaluate().isNotEmpty);
         await settleUntil(tester, () => find.textContaining('还在搜').evaluate().isEmpty && find.text('搜索').evaluate().isNotEmpty);
       }
 
       await tester.enterText(find.byType(TextField), '合成');
       await search();
-      expect(find.text('2020 · 科幻片'), findsOneWidget);
+      expect(findDotted('2020 · 科幻片'), findsOneWidget);
       expect(find.text('合成电影'), findsNWidgets(2), reason: '正片与预告片各一条');
       expect(requests, 1);
       await tester.enterText(find.byType(TextField), '');
