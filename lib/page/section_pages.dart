@@ -69,7 +69,8 @@ class MinePage extends StatelessWidget {
     return Column(
       children: [
         const SectionTitleBar(title: '我的'),
-        Expanded(child: CampusScrollFade(bottom: inset, child: SingleChildScrollView(padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + inset), child: Center(child: ConstrainedBox(
+        // 内容不满一屏也能拖动回弹（同另外三个底栏页的 ListView；SingleChildScrollView 默认内容放得下就拖不动，11-24 用户报「我的」滑不动）。
+        Expanded(child: CampusScrollFade(bottom: inset, child: SingleChildScrollView(physics: const AlwaysScrollableScrollPhysics(), padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + inset), child: Center(child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 760), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             // 头像卡进入教务账号页（同 iOS Apple ID），教务账号的操作都在那里；卡上只写姓名，学号与班级在账号页，见 account_page.dart 的人工决策。
             // 直接读当前会话：姓名要等同步课表才知道（之前显示学号），网关学到后会通知，这里跟着刷新。
