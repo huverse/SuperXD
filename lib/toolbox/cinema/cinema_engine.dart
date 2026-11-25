@@ -171,7 +171,8 @@ class CinemaMpvEngine implements CinemaEngine {
   Widget view({required BoxFit fit, double? ratio}) {
     final video = _video;
     if (video == null) return const ColoredBox(color: Colors.black);
-    return Video(controller: video, controls: NoVideoControls, fit: fit, aspectRatio: ratio, fill: Colors.black);
+    // 屏幕常亮由播放页统一管（两个内核一样，人工决策见 cinema_player_page.dart 的 _syncAwake），不用 Video 自带的那份。
+    return Video(controller: video, controls: NoVideoControls, fit: fit, aspectRatio: ratio, fill: Colors.black, wakelock: false);
   }
 
   @override

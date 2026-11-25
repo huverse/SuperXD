@@ -25,6 +25,10 @@ import 'package:superxd/toolbox/cinema/cinema_poster.dart';
 // - 接着看的给「从头播放」；播完有下一集时倒数 cinemaAutoNext 自动连播，可取消。
 // [人工决策-2026-11-21 17:24:56] 删掉「跳过片头」（用户要求直接删除）：原来片头 5 分钟内一直显示，每点一次从当前位置往后跳 80 秒，能连着点、也不记住，
 // 片源又没有片头片尾的时间数据，固定 80 秒常跳多或跳少，用户嫌鸡肋；没选「记住每部剧的片头片尾」与「只修按钮」。要跳过片头用左右滑或进度条。
+// [人工决策-2026-11-25 22:00:34] 续播的「从头播放」改短、能关（用户嫌停太久又关不掉、影响观影，要求参考主流流媒体应用，按最佳实践定）：
+// 出画后只停 cinemaResumeHint（原 8 秒），旁边一颗「关闭」随时收起；点画面收起控件、或拖进度条与左右滑跳转了也一并收起（已经自己挑了位置）；
+// 按钮只写「从头播放」（看到哪下栏已经写了），竖屏时它在就不放中间的播放暂停（画面矮会叠在一起）。
+// 同爱奇艺、腾讯视频、B 站续播时左下角几秒就走的那条提示；Netflix、YouTube 续播不弹提示，从头看放在详情页。
 
 // 画面比例（同 Kazumi）：ratio 不为空时按这个比例铺满给定区域（拉伸到这个比例）。
 enum CinemaFit {
@@ -45,6 +49,8 @@ const cinemaLongPressSpeed = 2.0;
 // 播放中控件自动收起的时间（11-21 用户嫌原来 4 秒太久，同主流视频 App 约 3 秒）。
 const cinemaControlsHide = Duration(seconds: 3);
 const cinemaAutoNext = Duration(seconds: 5);
+// 续播的「从头播放」出画后停多久（人工决策见文件头 11-25 那条）。
+const cinemaResumeHint = Duration(seconds: 5);
 // 左右滑满一屏宽跳多少（Kazumi 是 180000 毫秒）。
 const _seekPerScreen = Duration(minutes: 3);
 
@@ -136,9 +142,10 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
 
   CinemaEngine get _player => widget.player;
 
-  // 一切跳转都经这里：先告诉播放页（onSeek 要在命令之前开始计时），再交给播放器。播完在倒数时跳转是回去接着看，倒数作废。
+  // 一切跳转都经这里：先告诉播放页（onSeek 要在命令之前开始计时），再交给播放器。播完在倒数时跳转是回去接着看，倒数作废；自己挑了位置，「从头播放」也收起。
   Future<void> _seek(Duration target) async {
     _cancelCountdown();
+    _dismissResume();
     widget.onSeek?.call(target);
     await _player.seek(target);
   }
@@ -185,7 +192,7 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
     }
   }
 
-  // 接着看的给「从头播放」：开播后停 8 秒（首屏缓冲常要十几秒，打开中不计时）。
+  // 接着看的给「从头播放」：出画后停 cinemaResumeHint（首屏缓冲常要十几秒，打开中不计时）。
   void _showResume() {
     _resumeTimer?.cancel();
     final from = widget.resumedFrom;
@@ -196,9 +203,12 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
   void _expireResume() {
     if (!_resumeShown) return;
     _resumeTimer?.cancel();
-    _resumeTimer = Timer(const Duration(seconds: 8), () {
-      if (mounted) setState(() => _resumeShown = false);
-    });
+    _resumeTimer = Timer(cinemaResumeHint, _dismissResume);
+  }
+
+  void _dismissResume() {
+    _resumeTimer?.cancel();
+    if (_resumeShown && mounted) setState(() => _resumeShown = false);
   }
 
   void _scheduleHide() {
@@ -219,6 +229,7 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
     if (_visible) {
       _hide?.cancel();
       setState(() => _visible = false);
+      _dismissResume();
     } else {
       _show();
     }
@@ -351,8 +362,11 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     final shown = _visible && !_locked;
-    // 画面中间同一时刻只放一样东西：加载动画、报错、拖动或调节的提示、连播倒数、侧边面板都没有时才放播放暂停。
-    final centerFree = !widget.busy && widget.error == null && _seekTo == null && _adjust == null && _countdown == null && _panel == null;
+    // 续播的「从头播放」：出错时不给（居中的报错卡片会和它叠在一起，也没有在播的可以从头），续播的源坏了时常见。
+    final resumeHint = _resumeShown && !_locked && widget.error == null;
+    // 画面中间同一时刻只放一样东西：加载动画、报错、拖动或调节的提示、连播倒数、侧边面板都没有时才放播放暂停；
+    // 竖屏画面矮，「从头播放」会压在中间那颗上，它在时中间不放（下栏有同一颗）。
+    final centerFree = !widget.busy && widget.error == null && _seekTo == null && _adjust == null && _countdown == null && _panel == null && !(resumeHint && !widget.fullscreen);
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth, height = constraints.maxHeight;
@@ -441,18 +455,25 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
                   ),
                 ),
               ),
-            // 出错时不给（居中的报错卡片会和它叠在一起，也没有在播的可以从头）：续播的源坏了时常见。
-            if (_resumeShown && !_locked && widget.error == null)
+            // 只写「从头播放」：接着看到哪下栏的时刻已经写了，原来连着「已从 2:13:42 继续」，竖屏 360 宽放不下、省略号正好吃掉「从头播放」。
+            if (resumeHint)
               Positioned(
                 left: CampusGap.large,
+                right: CampusGap.large,
                 bottom: widget.fullscreen ? 104 : 56,
-                child: _PillButton(
-                  icon: CampusIcons.undo,
-                  label: '已从 ${formatCinemaDuration(widget.resumedFrom!)} 继续 · 从头播放',
-                  onPressed: () {
-                    unawaited(_seek(Duration.zero));
-                    setState(() => _resumeShown = false);
-                  },
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(child: _PillButton(icon: CampusIcons.undo, label: '从头播放', onPressed: () => unawaited(_seek(Duration.zero)))),
+                      const SizedBox(width: CampusGap.tight),
+                      DecoratedBox(
+                        decoration: const BoxDecoration(color: Colors.black45, shape: BoxShape.circle),
+                        child: IconButton(tooltip: '关闭', visualDensity: VisualDensity.compact, onPressed: _dismissResume, icon: const CampusIcon(CampusIcons.close, color: Colors.white, size: CampusFontSize.body)),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             if (_countdown case final seconds?)
