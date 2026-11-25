@@ -340,12 +340,13 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
       // 滚动区一直铺到屏幕底边（同 iOS 列表滚到 Home 指示条下面），底部安全区留在各列表的末尾，不在指示条上方截成一条直线。
       body: SafeArea(bottom: false, top: false, child: Column(children: [
         // 返回图标对齐 16、标题从 56 起，同 AppBar（见 campus_theme.dart 的顶栏人工决策）。
-        CampusTopBar(child: SizedBox(height: 56 * scale, child: LayoutBuilder(builder: (context, constraints) {
+        // 至少 56 高、标题放不下时按实际的高长，不按字号倍数放大（同 section_pages.dart 的 SectionTitleBar）。
+        CampusTopBar(child: ConstrainedBox(constraints: const BoxConstraints(minHeight: 56), child: LayoutBuilder(builder: (context, constraints) {
           final years = _selection.yearOverview && _selection.year.isNotEmpty ? '${_selection.year}–${int.parse(_selection.year)+1}' : null;
           final titleStyle = Theme.of(context).textTheme.titleLarge;
           // 窄屏、大字号下标题放不下时「今天」只留图标（同右边两个圆钮），不把「课表」挤折行、不截掉第几周。
           final compact = !scheduleTitleFits(context, constraints.maxWidth, title: years ?? '课表');
-          return Row(children: [
+          return Padding(padding: const EdgeInsets.symmetric(vertical: 4), child: Row(children: [
           const SizedBox(width: 4),
           IconButton(tooltip: '返回', onPressed: _back, icon: const CampusIcon(CampusIcons.back)),
           const SizedBox(width: 4),
@@ -362,7 +363,7 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
           const SizedBox(width: 4),
           Builder(builder: (anchor) => CampusGlassCircleButton(label: '更多操作', size: 44, onPressed: _loading || _term == null && widget.reminders == null ? null : () => _more(anchor), icon: const CampusIcon(CampusIcons.manage))),
           const SizedBox(width: 8),
-          ]);
+          ]));
         }))),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: CampusSegmented<ScheduleRange>(
           values: ScheduleRange.values, selected: _selection.range, onSelected: _selectRange,

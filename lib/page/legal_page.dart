@@ -537,28 +537,32 @@ class LegalPage extends StatelessWidget {
         body: Column(
           children: [
             CampusTopBar(
-              child: SizedBox(
-                height: 56 * MediaQuery.textScalerOf(context).scale(14) / 14,
+              // 至少 56 高、标题放不下时按实际的高长，不按字号倍数放大（同 section_pages.dart 的 SectionTitleBar）。
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 56),
                 // 返回图标对齐 16、标题从 56 起，同 AppBar（见 campus_theme.dart 的顶栏人工决策）。
-                child: Row(
-                  children: [
-                    const SizedBox(width: 4),
-                    IconButton(
-                      tooltip: '返回',
-                      onPressed: () => context.pop(),
-                      icon: CampusIcon(
-                        CampusIcons.back,
-                        color: colors.onSurface,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 4),
+                      IconButton(
+                        tooltip: '返回',
+                        onPressed: () => context.pop(),
+                        icon: CampusIcon(
+                          CampusIcons.back,
+                          color: colors.onSurface,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        privacy ? '隐私政策' : '用户协议',
-                        style: Theme.of(context).textTheme.titleLarge,
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          privacy ? '隐私政策' : '用户协议',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),

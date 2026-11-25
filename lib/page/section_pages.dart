@@ -138,16 +138,20 @@ class SectionTitleBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 至少 56 高（同 AppBar），字号大到标题一行放不下时按标题实际的高长；不再按 56 × 字号倍数，圆钮与留白不跟着放大（见 shell_page.dart 底栏 11-25 的人工决策）。
     return CampusTopBar(
-      child: SizedBox(
-        height: 56 * MediaQuery.textScalerOf(context).scale(14) / 14,
-        child: Row(children: [
-          Expanded(child: Padding(
-            padding: const EdgeInsets.only(left: 16),
-            child: Text(title, style: Theme.of(context).textTheme.headlineMedium),
-          )),
-          if (trailing != null) Padding(padding: const EdgeInsets.only(right: 12), child: trailing),
-        ]),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 56),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(children: [
+            Expanded(child: Padding(
+              padding: const EdgeInsets.only(left: 16),
+              child: Text(title, style: Theme.of(context).textTheme.headlineMedium),
+            )),
+            if (trailing != null) Padding(padding: const EdgeInsets.only(right: 12), child: trailing),
+          ]),
+        ),
       ),
     );
   }

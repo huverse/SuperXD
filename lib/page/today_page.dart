@@ -520,8 +520,8 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
           spans: spans,
           bells: _bells,
           date: day,
-          // 看别的日子时给“今天”胶囊让位：胶囊触区随字号增高，再留 8dp 间隙，滚到底时最后一节课完整露出。
-          bottomInset: day == _today ? 0 : 8 + 48 * MediaQuery.textScalerOf(context).scale(14) / 14,
+          // 看别的日子时给“今天”胶囊让位：胶囊的实际高度再留 8dp 间隙，滚到底时最后一节课完整露出。
+          bottomInset: day == _today ? 0 : 8 + _returnHeight(context),
           obscuredBottom: obscured,
           physics: const ClampingScrollPhysics(
             parent: AlwaysScrollableScrollPhysics(),
@@ -569,8 +569,8 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
         // 窄屏、大字号下「10月19日 周一」一行放不下时（以前被截成「周」），星期换到第二行、和离今天多远写在一起（「周二 · 明天」），最多两行。
         child: ExcludeSemantics(child: Center(child: LayoutBuilder(builder: (context, constraints) {
           // 日期就是这页的标题（顶栏去掉了「今天」大字），一号标题字半粗；离今天多远写在下面一行。
-          final primary = TextStyle(fontSize: CampusFontSize.cardTitle, fontWeight: FontWeight.w600, color: CampusPalette.of(context).onSurface);
-          final secondary = TextStyle(fontSize: CampusFontSize.secondary, height: 1.2, color: CampusPalette.of(context).onSurfaceVariant);
+          final primary = _datePrimary.copyWith(color: CampusPalette.of(context).onSurface);
+          final secondary = _dateSecondary.copyWith(color: CampusPalette.of(context).onSurfaceVariant);
           final full = '$year${date.month}月${date.day}日 $weekday';
           final fits = campusTextWidth(context, full, style: primary) <= constraints.maxWidth;
           final second = fits ? relative : [weekday, ?relative].join(' · ');
@@ -582,11 +582,31 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
     );
   }
 
+  // 顶栏高：至少 56（同 AppBar）；日期两行（看别的日子时第二行写明天、几天前）按当前字号与字体量出来放得下为准，今天与别的日子同一个高、切日不跳。
+  // 不再按 56 × 字号倍数：两侧圆钮固定 44，跟着放大只多出留白（见 shell_page.dart 底栏 11-25 的人工决策）。
+  double _topBarHeight(BuildContext context) {
+    final primary = campusTextPainter(context, '12月31日', style: _datePrimary, maxLines: 1);
+    final secondary = campusTextPainter(context, '周三 · 明天', style: _dateSecondary, maxLines: 1);
+    final height = math.max(56.0, primary.height + secondary.height + 8);
+    primary.dispose();
+    secondary.dispose();
+    return height.ceilToDouble();
+  }
+
+  // 回今天胶囊占的高：主题的 FilledButton（触区至少 48，上下内边距加一行字），按这一行在当前字号下的实际高度算；
+  // 以前是 48 × 字号倍数，触区与内边距跟着放大，大字号下列表末尾多空出一截。
+  double _returnHeight(BuildContext context) {
+    final style = Theme.of(context).filledButtonTheme.style!;
+    final line = campusTextPainter(context, '今天', style: style.textStyle!.resolve(const {}), maxLines: 1);
+    final height = math.max(48.0, style.padding!.resolve(const {})!.vertical + line.height);
+    line.dispose();
+    return height;
+  }
+
   Widget _layout(BuildContext context, Widget date, Widget body, bool previewing) {
-    final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
     return Column(children: [
       CampusTopBar(child: SizedBox(
-        height: 56 * scale,
+        height: _topBarHeight(context),
         child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4), child: Builder(builder: (context) {
           final drawer = CampusSideDrawer.maybeOf(context);
           // [人工决策-2026-11-23 18:29:13] 顶栏两侧玻璃圆钮、日期居中（用户 11-23 选定，同 Claude、Google 日历）：左边拉出侧栏（见 side_drawer.dart），右边同步；
@@ -989,6 +1009,10 @@ class _TimeTrackPainter extends CustomPainter {
   @override
   bool shouldRepaint(_TimeTrackPainter oldDelegate) => oldDelegate.value != value || oldDelegate.ripple != ripple || oldDelegate.track != track || oldDelegate.fill != fill || oldDelegate.knob != knob;
 }
+
+// 顶栏日期的两行：日期（这页的标题）与离今天多远；_dateHeader 画、_topBarHeight 量，同一份样式。
+const _datePrimary = TextStyle(fontSize: CampusFontSize.cardTitle, fontWeight: FontWeight.w600);
+const _dateSecondary = TextStyle(fontSize: CampusFontSize.secondary, height: 1.2);
 
 // 回今天胶囊：导航层玻璃胶囊（箭头加“今天”），隐藏时不可点、不进读屏；显隐用玻璃显形加 12dp 上浮，减少动画时直接切换。
 class _TodayReturn extends StatelessWidget {
