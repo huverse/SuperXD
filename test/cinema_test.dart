@@ -12,6 +12,8 @@ import 'package:http/testing.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite/sqflite.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:wakelock_plus_platform_interface/wakelock_plus_platform_interface.dart';
 
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/feature_flags.dart';
@@ -2076,6 +2078,59 @@ void main() {
       await tester.pump(const Duration(seconds: 10));
       await player.dispose();
     });
+
+    // 人工决策见 cinema_player_controls.dart 文件头 11-25 那条（用户嫌停太久、又关不掉）。
+    testWidgets('续播的「从头播放」：出画后停 5 秒自己收起；点「关闭」、点画面收起控件、跳转了都立即收起', (tester) async {
+      final engine = _FakeEngine(CinemaEngineKind.system)..frame(const Duration(minutes: 30, seconds: 25));
+      final seeks = <Duration>[];
+      Future<void> show() async {
+        await tester.pumpWidget(const SizedBox());
+        await tester.pumpWidget(MaterialApp(
+          theme: campusTheme(),
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.topCenter,
+              child: SizedBox(
+                width: 400,
+                height: 225,
+                child: CinemaPlayerControls(player: engine, title: '合成', subtitle: '第01集', fullscreen: false, busy: false, fit: CinemaFit.automatic, onFit: (_) {}, onBack: () {}, onFullscreen: () {}, resumedFrom: const Duration(minutes: 30, seconds: 20), onSeek: seeks.add),
+              ),
+            ),
+          ),
+        ));
+        await tester.pump();
+      }
+
+      final hint = find.textContaining('从头播放');
+      await show();
+      await tester.pump(cinemaResumeHint - const Duration(milliseconds: 100));
+      expect(hint, findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(hint, findsNothing, reason: '停满就自己收起');
+
+      await show();
+      expect(find.byTooltip('暂停'), findsOneWidget, reason: '竖屏画面矮，它在时中间不放播放暂停，只留下栏那颗');
+      await tester.tap(find.byTooltip('关闭'));
+      await tester.pump();
+      expect((hint.evaluate().isEmpty, find.byTooltip('暂停').evaluate().length), (true, 2));
+
+      await show();
+      await tester.tapAt(const Offset(200, 72));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(hint, findsNothing, reason: '点画面收起控件时一并收起');
+
+      await show();
+      await tester.dragFrom(const Offset(300, 100), const Offset(-120, 0));
+      await tester.pump();
+      expect((seeks.length, hint.evaluate().isEmpty), (1, true), reason: '自己挑了位置');
+
+      await show();
+      await tester.tap(hint);
+      await tester.pump();
+      expect((seeks.last, hint.evaluate().isEmpty), (Duration.zero, true));
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 10));
+    });
   });
 
   // 人工决策见 cinema_engine.dart 文件头（11-21 真机对照后用户选安卓默认 ExoPlayer，允许自己换，打不开的退回 mpv）。
@@ -2222,6 +2277,59 @@ void main() {
       expect(tester.widget<CinemaSettingRow<CinemaEngineKind>>(find.byType(CinemaSettingRow<CinemaEngineKind>)).onChanged, isNotNull);
       await tester.pumpWidget(const SizedBox());
       await tester.pump(const Duration(seconds: 11));
+    });
+
+    // 人工决策见 cinema_player_page.dart 的 _syncAwake（用户报看片时按系统的屏幕超时熄屏：安卓默认的系统播放器不像 mpv 的 Video 自带常亮）。
+    testWidgets('播放页：打开中与播放中屏幕常亮（两个内核一样），暂停、出错与离开放开', (tester) async {
+      final awake = _FakeWakelock();
+      final original = wakelockPlusPlatformInstance;
+      wakelockPlusPlatformInstance = awake;
+      addTearDown(() => wakelockPlusPlatformInstance = original);
+      final created = <_FakeEngine>[];
+      debugCinemaEngineFactory = (kind) {
+        final engine = _FakeEngine(kind);
+        created.add(engine);
+        return engine;
+      };
+      addTearDown(() => debugCinemaEngineFactory = null);
+      final (_, service) = await openCinemaForPage(tester);
+      await tester.runAsync(service.rules);
+      final title = CinemaTitle(key: 'film', name: '合成电影', year: '2026', cover: '', remarks: '')..addSource(const CinemaSourceRef(ruleId: 'alpha', source: '1', name: '合成电影', remarks: ''));
+      const roads = [CinemaRoad(name: 'mp4', episodes: [CinemaEpisode(name: '正片', url: 'https://media.example.com/1.mp4')])];
+      Future<_FakeEngine> open() async {
+        await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: CinemaPlayerPage.title(service: service, title: title, source: title.sources.single, road: 0, episode: 0, roads: roads)));
+        await settleUntil(tester, () => created.isNotEmpty && created.last.opens.isNotEmpty);
+        return created.last;
+      }
+
+      Future<void> leave() async {
+        await tester.pumpWidget(const SizedBox());
+        await settleUntil(tester, () => false);
+        await tester.pump(const Duration(seconds: 11));
+      }
+
+      var engine = await open();
+      expect(awake.on, isTrue, reason: '打开中（首屏缓冲常要十几秒）');
+      engine.frame(const Duration(milliseconds: 400));
+      await tester.pump();
+      engine.play(false);
+      await tester.pump();
+      expect(awake.on, isFalse, reason: '暂停了照系统的超时熄屏');
+      engine.play(true);
+      await tester.pump();
+      expect(awake.on, isTrue);
+      await leave();
+      expect(awake.on, isFalse, reason: '离开');
+
+      engine = await open();
+      engine.frame(const Duration(milliseconds: 400));
+      await tester.pump();
+      expect(awake.on, isTrue);
+      engine.fail('合成的错误');
+      await tester.pump();
+      expect(awake.on, isFalse, reason: '出错');
+      await leave();
+      expect(awake.toggles, [true, false, true, false, true, false], reason: '开关只在变了时发，不重复');
     });
 
     // 11-22 Codex 复核 P1：续播时规则包已给这个源换了接口主机或加了境外转发，播放页照样把请求发给新地址。
@@ -2565,7 +2673,13 @@ class _FakeEngine implements CinemaEngine {
   // 播完了（或撤销播完）、播起来了。
   void complete(bool done) => _completions.add(done);
 
-  void play(bool playing) => _playings.add(playing);
+  void play(bool playing) {
+    _state = CinemaEngineState(position: _state.position, duration: _state.duration, playing: playing, width: _state.width, height: _state.height);
+    _playings.add(playing);
+  }
+
+  // 播放器报错。
+  void fail(String message) => _errors.add(message);
 
   // 出画并走到 position。
   void frame(Duration position) {
@@ -2599,6 +2713,16 @@ class _FakeEngine implements CinemaEngine {
 
   @override
   Future<void> dispose() async => disposed = true;
+}
+
+// 测试用的屏幕常亮：记下每次开关。
+class _FakeWakelock extends WakelockPlusPlatformInterface {
+  final toggles = <bool>[];
+  bool get on => toggles.lastOrNull ?? false;
+  @override
+  Future<void> toggle({required bool enable}) async => toggles.add(enable);
+  @override
+  Future<bool> get enabled async => on;
 }
 
 // 假的系统播放器平台（video_player 的平台接口）：打开即给出已初始化，play 等 playGate 才回来，记下 dispose 了哪些。

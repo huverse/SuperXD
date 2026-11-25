@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
@@ -133,6 +134,8 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
   (int, Duration)? _cutFrom;
   // 本机记下的这部片的源有几个（片源只增不减，多了才再记，见 _save）。
   var _savedSources = 0;
+  // 现在是否让屏幕常亮（见 _syncAwake）。
+  var _awake = false;
 
   bool get _titleMode => widget.title != null;
 
@@ -150,6 +153,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
     // 每 10 秒记一次看到哪；暂停了等 1 秒合并着记，切到后台立即记（之后可能被系统杀掉）。
     _saves = CinemaSaveSchedule(_save);
     _attach();
+    _syncAwake();
     _lifecycle = AppLifecycleListener(onHide: () => unawaited(_saves.now()));
     _sourceChanges = widget.title?.changes.listen((_) => _onSources());
     unawaited(_open(start: widget.start));
@@ -213,6 +217,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
       }))
       ..add(_engine.stream.playing.listen((playing) {
         if (!playing) _saves.soon();
+        if (mounted) _syncAwake();
       }));
   }
 
@@ -278,9 +283,22 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
   void setState(VoidCallback fn) {
     super.setState(fn);
     _syncGate();
+    _syncAwake();
   }
 
   void _syncGate() => (_opening || _stalled) && _error == null ? ToolboxImageGate.hold(this) : ToolboxImageGate.release(this);
+
+  // [人工决策-2026-11-25 22:00:34] 屏幕常亮归播放页一处管（用户报看片时按系统的屏幕超时熄屏，要求参考主流流媒体应用，按最佳实践定）：
+  // 打开中与播放中（没出错）常亮，暂停、播完、出错与离开放开、照系统超时熄屏，同 YouTube、Netflix、B 站与安卓播放器的 keepScreenOn。
+  // 原来只有 mpv 的 Video 自带常亮，11-21 起安卓默认的系统播放器（video_player）不管，所以熄屏；mpv 的那份已关掉（wakelock: false），免得两处互相放开。
+  void _syncAwake() {
+    final awake = _error == null && (_opening || _engine.state.playing);
+    if (awake == _awake) return;
+    _awake = awake;
+    _toggleAwake(awake);
+  }
+
+  static void _toggleAwake(bool awake) => unawaited(WakelockPlus.toggle(enable: awake).catchError((Object error, StackTrace stack) => campusLog('[CinemaPlayer] action=wakelock errorType=${error.runtimeType}\n$stack')));
 
   void _measure() {
     final width = _engine.state.width, height = _engine.state.height;
@@ -618,6 +636,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
   @override
   void dispose() {
     ToolboxImageGate.release(this);
+    if (_awake) _toggleAwake(false);
     unawaited(_sourceChanges?.cancel());
     _findCancel.complete();
     _abandon();
