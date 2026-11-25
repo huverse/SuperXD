@@ -35,6 +35,18 @@ double campusLineInset(BuildContext context, double iconSize, {TextStyle? style}
   return inset;
 }
 
+// 一行字在当前字号下比标准字号（100%）高出多少（比标准小时为负）：外框按「标准字号下的设计高度 + 这一行多出来的」长高。
+// 底栏、分段控件这类外框里图标、内边距与触区不随字号变，只有文字那一行跟着长；以前写成「设计高度 × 字号倍数」，
+// 图标与留白一起放大，大字号下底栏高出一截、选中胶囊又高又空（11-25 用户截图）。textScaler 给了就按它量（底栏的字有放大上限）。
+double campusLineGrowth(BuildContext context, {TextStyle? style, TextScaler? textScaler}) {
+  final scaled = campusTextPainter(context, '字', style: style, maxLines: 1, textScaler: textScaler);
+  final standard = campusTextPainter(context, '字', style: style, maxLines: 1, textScaler: TextScaler.noScaling);
+  final growth = scaled.height - standard.height;
+  scaled.dispose();
+  standard.dispose();
+  return growth;
+}
+
 // 短句换行均衡（同 CSS text-wrap: balance）：一行放不下时，在不增加行数的前提下把各行排得尽量一样长，
 // 末行不剩一两个字（「马克思主义基本原 / 理」排成「马克思主义 / 基本原理」）。只管四行以内的短句（课名、教室、提示），
 // 更长的段落照常排。量的是子组件自己的排版，支持外层 IntrinsicHeight；居中对齐时收窄后的文字仍居中。

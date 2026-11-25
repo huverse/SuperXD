@@ -2,12 +2,16 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:superxd/page/animated_branches.dart';
+import 'package:superxd/page/section_pages.dart';
 import 'package:superxd/page/shell_page.dart';
+import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/status_bar_scroll.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
@@ -54,6 +58,55 @@ void main() {
     // 底栏72+8，距安全区12，上方留12；测试视图无系统安全区。
     expect(_Probe.inset, 72 + 8 + 12 + 12);
     expect(find.byKey(const ValueKey('navigation-capsule')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  // 人工决策见 shell_page.dart 的 DragNavigationBar（11-25 用户截图：有的手机上底栏过高，原来栏高 = 72 × 字号倍数）。
+  testWidgets('大字号下底栏只按文字那一行长、字最多放大 1.3 倍，图标不变；各页的底部安全区跟着栏的实际高度', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final bar = find.byType(DragNavigationBar);
+    Future<double> heightAt(double scale) async {
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(MaterialApp.router(
+        theme: campusTheme(),
+        routerConfig: _router(),
+        builder: (context, child) => MediaQuery(data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(scale)), child: child!),
+      ));
+      await tester.pumpAndSettle();
+      final height = tester.getSize(bar).height;
+      expect(_Probe.inset, height + 12 + 12, reason: '各页的底部安全区 = 栏（含上下各 4）+ 离底 12 + 上方 12');
+      expect(tester.getSize(find.descendant(of: bar, matching: find.byType(CampusMorphIcon)).first).height, 24, reason: '图标不随字号放大');
+      expect(tester.renderObject<RenderParagraph>(find.descendant(of: bar, matching: find.text('今天'))).textScaler.scale(14), closeTo(14 * (scale > 1.3 ? 1.3 : scale), .01));
+      return height;
+    }
+
+    final standard = await heightAt(1), large = await heightAt(1.3), huge = await heightAt(2);
+    expect(standard, 72 + 8, reason: '标准字号下不变');
+    expect(large - standard, inInclusiveRange(1, 20 * .3 + 1), reason: '只多出文字那一行（行高 20 的三成），原来多出 72 的三成');
+    expect(huge, large, reason: '字最多放大 1.3 倍，原来 2 倍字号下栏高 152');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('同类的外框（底栏根页的大标题顶栏、分段控件）标准字号下不变，大字号下只按文字长、不按字号倍数放大', (tester) async {
+    Future<(double, double)> heightsAt(double scale) async {
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: MediaQuery(
+        data: MediaQueryData(size: const Size(400, 800), textScaler: TextScaler.linear(scale)),
+        child: Scaffold(body: Column(children: [
+          const SectionTitleBar(title: '服务'),
+          CampusSegmented<int>(values: const [0, 1, 2], label: (value) => const ['天', '学期', '学年'][value], selected: 0, onSelected: (_) {}),
+        ])),
+      )));
+      await tester.pump();
+      return (tester.getSize(find.byType(SectionTitleBar)).height, tester.getSize(find.byType(CampusSegmented<int>)).height);
+    }
+
+    expect(await heightsAt(1), (56.0, 48.0), reason: '标准字号下不变');
+    final (title, segmented) = await heightsAt(1.3);
+    expect(title, 56, reason: '1.3 倍时标题一行仍放得下，原来是 56 × 1.3');
+    expect(segmented, inExclusiveRange(48, 56), reason: '只多出文字那一行，原来是 48 × 1.3');
+    final (hugeTitle, _) = await heightsAt(2);
+    expect(hugeTitle, inInclusiveRange(32 * 2 + 8, 80), reason: '标题放不下 56 时按标题一行（行高 32 的两倍）加上下各 4，原来是 112');
     expect(tester.takeException(), isNull);
   });
 

@@ -15,6 +15,7 @@ import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_rolling_text.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
+import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 
 import 'fixture_campus_gateway.dart';
@@ -594,6 +595,24 @@ void main() {
     // 放得下时照旧一行，离今天多远另起一行。
     await _mount(tester, _Gateway());
     expect(find.text('9月25日 周五'), findsOneWidget);
+  });
+
+  // 人工决策见 shell_page.dart 底栏 11-25 那条：顶栏不再按 56 × 字号倍数放大（两侧圆钮固定 44，放大只多出留白）。
+  testWidgets('顶栏按两行日期量出的高：标准字号下 56，大字号下看别的日子多出一行也不跳、不裁字', (tester) async {
+    final bar = find.byType(CampusTopBar);
+    await _mount(tester, _Gateway());
+    expect(tester.getSize(bar).height, 56);
+    for (final scale in [1.3, 2.0]) {
+      await tester.pumpWidget(const SizedBox());
+      await _mount(tester, _Gateway(), size: const Size(360, 740), scale: scale);
+      final today = tester.getSize(bar).height;
+      expect(today, lessThan(56 * scale), reason: '原来是 56 × $scale');
+      await _swipeDate(tester, '2026-09-25', 100);
+      expect(tester.getSize(bar).height, today, reason: '多出离今天多远那一行，顶栏不跳');
+      final lines = find.descendant(of: _date('2026-09-26'), matching: find.byType(Text));
+      expect(tester.getRect(lines.last).bottom, lessThanOrEqualTo(tester.getRect(bar).bottom - 4), reason: '第二行完整放在顶栏里');
+      expect(tester.takeException(), isNull);
+    }
   });
 
   testWidgets('预告跨到下周的课写「下周一」，不只写星期', (tester) async {

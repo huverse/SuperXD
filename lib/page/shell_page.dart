@@ -15,6 +15,7 @@ import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/theme/native_glass.dart';
 import 'package:superxd/theme/campus_side_drawer.dart';
+import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/theme/status_bar_scroll.dart';
 
 class ShellPage extends StatelessWidget {
@@ -37,7 +38,7 @@ class ShellPage extends StatelessWidget {
   Widget _layout(BuildContext context, {double? nativeHeight}) {
     final media = MediaQuery.of(context);
     final keyboard = media.viewInsets.bottom > 0;
-    final barHeight = 72.0 * media.textScaler.scale(14) / 14 + 8;
+    final barHeight = DragNavigationBar.heightOf(context) + 8;
     final bottom = media.padding.bottom + 12;
     // 底栏上方都多留 12：回今天胶囊、列表末项同底栏之间的间隙（today_page.dart 10-05 的人工决策：可见间隙约 18dp）；
     // iOS 原来只留系统底栏的总高，胶囊几乎贴着底栏（10-27 真机截图约 6pt）。
@@ -160,6 +161,18 @@ class DragNavigationBar extends StatefulWidget {
   final List<int> badges;
   // 各项有没有不计数的新内容（小圆点），有角标时不画。
   final List<bool> dots;
+
+  // [人工决策-2026-11-25 23:22:02] 底栏高度不再按字号倍数放大（用户截图：有的手机上底栏过高，要求参考业界规范按最佳实践改）：
+  // 原来栏高 = 72 × 字号倍数，图标 24、留白与选中胶囊的边距跟着一起放大，1.3 倍字号下多出约 20dp、胶囊又高又空。
+  // 现在标准字号下仍是 72，字号变大时只按文字那一行实际多出来的高度长（campusLineGrowth）；文字最多放大到 labelMaxScale 倍，
+  // 同 Material 3 的 NavigationBar（Flutter 源码里同样封顶 1.3，为保持图标为主的层级）与 iOS 底栏（文字不随字号变）。读屏照旧读整项。
+  static const labelMaxScale = 1.3;
+  // 底栏文字：行高写明（同正文 20/14），壳层（在 Scaffold 外面）与栏里量出来的才一样。
+  static const labelStyle = TextStyle(fontSize: 14, height: 20 / 14);
+  // 一栏的高（不含上下各 4 的外边距），壳层按它给各页留出底部安全区。
+  static double heightOf(BuildContext context) =>
+      (72 + campusLineGrowth(context, style: labelStyle, textScaler: MediaQuery.textScalerOf(context).clamp(maxScaleFactor: labelMaxScale))).ceilToDouble();
+
   @override
   State<DragNavigationBar> createState() => _DragNavigationBarState();
 }
@@ -357,12 +370,12 @@ class _DragNavigationBarState extends State<DragNavigationBar>
   );
 
   Widget _bar(BuildContext context) {
-    final height = 72.0 * MediaQuery.textScalerOf(context).scale(14) / 14;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: SizedBox(
-        height: height,
-        child: LayoutBuilder(
+        height: DragNavigationBar.heightOf(context),
+        // 栏里的字（名字与未读角标）最多放大到 labelMaxScale 倍，见 heightOf 上的人工决策。
+        child: MediaQuery.withClampedTextScaling(maxScaleFactor: DragNavigationBar.labelMaxScale, child: LayoutBuilder(
           builder: (context, constraints) {
             final slotWidth = constraints.maxWidth / 4;
             return Listener(
@@ -495,8 +508,7 @@ class _DragNavigationBarState extends State<DragNavigationBar>
                                         const SizedBox(height: 4),
                                         Text(
                                           labels[index],
-                                          style: TextStyle(
-                                            fontSize: 14,
+                                          style: DragNavigationBar.labelStyle.copyWith(
                                             color: preview == index
                                                 ? CampusPalette.of(context)
                                                       .primary
@@ -521,7 +533,7 @@ class _DragNavigationBarState extends State<DragNavigationBar>
               ),
             );
           },
-        ),
+        )),
       ),
     );
   }

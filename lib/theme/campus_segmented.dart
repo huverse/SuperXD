@@ -103,11 +103,11 @@ class _CampusSegmentedState<T> extends State<CampusSegmented<T>> with TickerProv
   @override
   Widget build(BuildContext context) {
     final palette = CampusPalette.of(context);
-    final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
     final count = widget.values.length;
     final enabled = widget.onSelected != null;
     return SizedBox(
-      height: 48 * scale,
+      // 标准字号下 48，字号变大时只按文字那一行多出来的高度长（campusLineGrowth），槽与选中块的边距不跟着放大；以前是 48 × 字号倍数。
+      height: 48 + campusLineGrowth(context, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
       child: LayoutBuilder(builder: (context, constraints) {
       _widths = _segmentWidths(context, constraints.maxWidth);
       return Listener(
