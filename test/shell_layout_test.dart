@@ -55,9 +55,12 @@ void main() {
     await tester.pumpWidget(MaterialApp.router(theme: campusTheme(), routerConfig: _router()));
     await tester.pumpAndSettle();
     expect(tester.getBottomLeft(find.byKey(const ValueKey('probe'))).dy, 800);
-    // 底栏72+8，距安全区12，上方留12；测试视图无系统安全区。
-    expect(_Probe.inset, 72 + 8 + 12 + 12);
-    expect(find.byKey(const ValueKey('navigation-capsule')), findsOneWidget);
+    // 底栏58+8（11-26 由 72 压到 58，人工决策见 shell_page.dart 的 DragNavigationBar），距安全区12，上方留12；测试视图无系统安全区。
+    expect(_Probe.inset, 58 + 8 + 12 + 12);
+    // 选中胶囊贴着栏的上下沿：玻璃边到胶囊 4，胶囊高 58（图标 24、间距 2、文字一行 20，上下各留 6）。
+    final capsule = tester.getRect(find.byKey(const ValueKey('navigation-capsule')));
+    final bar = tester.getRect(find.byType(DragNavigationBar));
+    expect((capsule.height, capsule.top - bar.top, bar.bottom - capsule.bottom), (58, 4, 4));
     expect(tester.takeException(), isNull);
   });
 
@@ -82,8 +85,8 @@ void main() {
     }
 
     final standard = await heightAt(1), large = await heightAt(1.3), huge = await heightAt(2);
-    expect(standard, 72 + 8, reason: '标准字号下不变');
-    expect(large - standard, inInclusiveRange(1, 20 * .3 + 1), reason: '只多出文字那一行（行高 20 的三成），原来多出 72 的三成');
+    expect(standard, 58 + 8, reason: '标准字号下整栏 66（11-26 由 80 压下来）');
+    expect(large - standard, inInclusiveRange(1, 20 * .3 + 1), reason: '只多出文字那一行（行高 20 的三成），11-25 之前多出 72 的三成');
     expect(huge, large, reason: '字最多放大 1.3 倍，原来 2 倍字号下栏高 152');
     expect(tester.takeException(), isNull);
   });
@@ -223,8 +226,8 @@ void main() {
     expect(find.byType(DragNavigationBar), findsOneWidget);
     expect(find.byType(NativeTabBar), findsNothing);
     expect(calls, isEmpty, reason: '旧系统不挂系统底栏');
-    // 同安卓：底栏72+8，距安全区12，上方留12。
-    expect(_Probe.inset, 72 + 8 + 12 + 12);
+    // 同安卓：底栏58+8，距安全区12，上方留12。
+    expect(_Probe.inset, 58 + 8 + 12 + 12);
     showCampusToast(tester.element(find.byKey(const ValueKey('probe'))), '已复制');
     await tester.pumpAndSettle();
     expect(tester.getBottomLeft(find.text('已复制')).dy, lessThanOrEqualTo(tester.getTopLeft(find.byType(DragNavigationBar)).dy - 12));
