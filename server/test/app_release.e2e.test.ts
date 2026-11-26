@@ -251,6 +251,17 @@ describe('字体包下载', () => {
     }
   });
 
+  it('星空背景素材（.webp，客户端 lib/domain/sky.dart）同一个接口下载，类型是 image/webp', async () => {
+    const sky = 'sky_real_dawn-0123456789ab.webp';
+    await writeFile(join(dir(), sky), fontBytes);
+    const whole = await request(server).get(`/v1/app/files/${sky}`);
+    expect(whole.status).toBe(200);
+    expect(whole.headers['content-type']).toBe('image/webp');
+    for (const name of ['sky.png', '.hidden.webp', 'sky.webp.json']) {
+      expect((await request(server).get(`/v1/app/files/${name}`)).body.code, name).toBe('INVALID_REQUEST');
+    }
+  });
+
   it('与安装包共用每小时的下载上限', async () => {
     pinClock();
     await writeFile(join(dir(), font), fontBytes);
