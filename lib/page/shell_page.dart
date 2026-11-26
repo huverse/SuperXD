@@ -15,6 +15,7 @@ import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/theme/native_glass.dart';
 import 'package:superxd/theme/campus_side_drawer.dart';
+import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/theme/status_bar_scroll.dart';
 
@@ -166,12 +167,16 @@ class DragNavigationBar extends StatefulWidget {
   // 原来栏高 = 72 × 字号倍数，图标 24、留白与选中胶囊的边距跟着一起放大，1.3 倍字号下多出约 20dp、胶囊又高又空。
   // 现在标准字号下仍是 72，字号变大时只按文字那一行实际多出来的高度长（campusLineGrowth）；文字最多放大到 labelMaxScale 倍，
   // 同 Material 3 的 NavigationBar（Flutter 源码里同样封顶 1.3，为保持图标为主的层级）与 iOS 底栏（文字不随字号变）。读屏照旧读整项。
+  // [人工决策-2026-11-26 18:13:35] 整栏 80 压到 66（用户 11-26 说底栏偏高，从「保留样子压到 66」「换成 Material 3 现行底栏 64」里选前者）：
+  // 选中胶囊照旧包住图标与文字（同 iOS 26 底栏，拖动透镜不变），只去掉多余留白：胶囊贴着栏的上下沿（玻璃边到胶囊 4）、
+  // 图标与文字间距 4 改 2，胶囊里图标与文字上下各留 6。标准字号下栏高 58、加上下各 4 的外边距共 66（原来 72 + 8 = 80）；
+  // Material 3 现行底栏容器是 64（Compose 的 NavigationBarTokens.ContainerHeight，旧的高底栏 80），我们的文字是 14 号（它是 12），所以多 2。
   static const labelMaxScale = 1.3;
   // 底栏文字：行高写明（同正文 20/14），壳层（在 Scaffold 外面）与栏里量出来的才一样。
   static const labelStyle = TextStyle(fontSize: 14, height: 20 / 14);
   // 一栏的高（不含上下各 4 的外边距），壳层按它给各页留出底部安全区。
   static double heightOf(BuildContext context) =>
-      (72 + campusLineGrowth(context, style: labelStyle, textScaler: MediaQuery.textScalerOf(context).clamp(maxScaleFactor: labelMaxScale))).ceilToDouble();
+      (58 + campusLineGrowth(context, style: labelStyle, textScaler: MediaQuery.textScalerOf(context).clamp(maxScaleFactor: labelMaxScale))).ceilToDouble();
 
   @override
   State<DragNavigationBar> createState() => _DragNavigationBarState();
@@ -351,7 +356,8 @@ class _DragNavigationBarState extends State<DragNavigationBar>
                               isBackgroundIndicator: false,
                               paintBackground: false,
                               paintGlass: true,
-                              padding: const EdgeInsets.all(4),
+                              // 同静止胶囊：左右各让 4，上下贴着栏。
+                              padding: const EdgeInsets.symmetric(horizontal: 4),
                               expansion: _lensExpansion,
                               exactOffset: _position.value * slotWidth,
                               exactWidth: slotWidth - 8,
@@ -435,8 +441,8 @@ class _DragNavigationBarState extends State<DragNavigationBar>
                       children: [
                         Positioned(
                           left: _position.value * slotWidth + 4,
-                          top: 4,
-                          bottom: 4,
+                          top: 0,
+                          bottom: 0,
                           width: slotWidth - 8,
                           child: Opacity(
                             opacity: rest,
@@ -505,7 +511,7 @@ class _DragNavigationBarState extends State<DragNavigationBar>
                                               child: SizedBox.square(dimension: 8, child: DecoratedBox(decoration: BoxDecoration(color: CampusPalette.of(context).dangerFill, shape: BoxShape.circle))),
                                             ),
                                         ]),
-                                        const SizedBox(height: 4),
+                                        const SizedBox(height: CampusGap.hairline),
                                         Text(
                                           labels[index],
                                           style: DragNavigationBar.labelStyle.copyWith(
