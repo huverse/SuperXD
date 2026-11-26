@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
@@ -540,7 +541,6 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
                     now: widget.now,
                     // 过去的日子不预告“下一节”。
                     next: day.compareTo(_today) >= 0 ? _nextClass(day) : null,
-                    onOpen: _openCourse,
                     onJump: (date) {
                       HapticFeedback.selectionClick();
                       _selectDay(date);
@@ -674,13 +674,18 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
 // 只在开课前 5 分钟自动展开一次显示秒级倒数，这时再收起，这节课开始前不再展开；上课、下课只换条里的内容。
 // 点完整卡片照旧看这节课的详情（上面 10-18 那条不变），点条是展开。剩余时长一律带单位（「1小时29分」「4分59秒」：用户指出「1:29」会被看成 1 分 29 秒）；
 // 下课前 5 分钟也按秒倒数（用户选定，同开课前）。
+// [人工决策-2026-11-26 18:13:35] 去掉把手、单击与滑动重排（用户 11-26 傍晚看了 alpha.43：把手「完全是多余设计」，撑高卡片后本来一屏看完的今天页要滑；
+// 点此刻卡看详情与点下面的课程卡重复）：没有跳转的卡（上课中、下一节）点一下展开或收起，取代 10-18 的点卡片看详情（详情只在课程卡上）；
+// 有跳转的卡（课上完与没课、有下一节）点一下照旧跳到那天，展开收起改成在卡片上滑（用户原话「对于有点击跳转的卡片，优化为单击依旧是跳转，
+// 收缩/展开逻辑改为上滑/下滑卡片」）。滑动所有状态都能用（同 Android 通知、Spotify 迷你播放条上下滑改大小）：完整卡片往上滑收起、条往下拉展开，
+// 只认这一个方向，起手往反方向就交给页面切日（在完整卡片上往下拉照旧是前一天）；取代上一条的把手与「手势只在把手与条上」。
+// 跳转的卡在读屏里另有「收起成一条」「展开」两个动作（滑动读屏做不了）；其余（收起记住、开课前 5 分钟自动展开一次）照旧。
 class _ClassNow extends StatefulWidget {
-  const _ClassNow({required this.spans, required this.bells, required this.date, required this.today, required this.onOpen, required this.onJump, this.now, this.next});
+  const _ClassNow({required this.spans, required this.bells, required this.date, required this.today, required this.onJump, this.now, this.next});
   final List<PeriodSpan> spans;
   final List<BellPeriod> bells;
   final String date;
   final String today;
-  final ValueChanged<PeriodSpan> onOpen;
   final ValueChanged<String> onJump;
   final DateTime Function()? now;
   final ({String date, CourseRecord course, CourseMeeting meeting})? next;
@@ -689,8 +694,9 @@ class _ClassNow extends StatefulWidget {
   State<_ClassNow> createState() => _ClassNowState();
 }
 
-// 一个状态的两种样子：完整卡片 content 与收起后的一条 strip（为空是不能收：作息不全时）；peek 是开课前 _secondsWindow 内那一节的编号（收着时自动展开一次）。
-typedef _ClassNowView = ({String key, Widget content, Widget? strip, String spoken, VoidCallback? onTap, String? peek});
+// 一个状态的两种样子：完整卡片 content 与收起后的一条 strip（为空是不能收：作息不全时）；jump 是单击跳到下一节那天（课上完与没课时，为空就是单击展开收起）；
+// peek 是开课前 _secondsWindow 内那一节的编号（收着时自动展开一次）。
+typedef _ClassNowView = ({String key, Widget content, Widget? strip, String spoken, VoidCallback? jump, String? peek});
 
 class _ClassNowState extends State<_ClassNow> {
   // 开课前这么多分钟内强调倒计时。
@@ -740,27 +746,30 @@ class _ClassNowState extends State<_ClassNow> {
       setState(() => _peekDismissed = view.peek);
     }
     void expand() => _setCollapsed(false);
-    final body = collapsed || strip == null ? strip ?? view.content : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [view.content, _Grabber(onCollapse: collapse)]);
-    final keyed = KeyedSubtree(key: ValueKey('${view.key}:${collapsed ? 'strip' : 'card'}'), child: body);
+    final resize = strip == null ? null : collapsed ? expand : collapse;
+    // 单击：有跳转的照旧跳到那天，没有的展开或收起。
+    final tap = view.jump ?? resize;
+    final keyed = KeyedSubtree(key: ValueKey('${view.key}:${collapsed ? 'strip' : 'card'}'), child: collapsed ? strip : view.content);
     final duration = MediaQuery.disableAnimationsOf(context) ? Duration.zero : campusEnter;
-    // 自成读屏节点，不并进祖先（否则整卡一句落到外层列表上，范围和按钮都不对）；把手在读屏里是「收起成一条」这个动作。
+    final resizeLabel = collapsed ? '展开' : '收起成一条';
+    // 自成读屏节点，不并进祖先（否则整卡一句落到外层列表上，范围和按钮都不对）；单击是跳转时，展开收起另作读屏动作。
     return Semantics(
       container: true,
-      button: collapsed || view.onTap != null,
+      button: tap != null,
       label: view.spoken,
-      onTap: collapsed ? expand : view.onTap,
-      onTapHint: collapsed ? '展开' : null,
-      customSemanticsActions: strip == null || collapsed ? null : {const CustomSemanticsAction(label: '收起成一条'): collapse},
+      onTap: tap,
+      onTapHint: view.jump == null && resize != null ? resizeLabel : null,
+      customSemanticsActions: view.jump == null || resize == null ? null : {CustomSemanticsAction(label: resizeLabel): resize},
       excludeSemantics: true,
-      // 条上往下拉展开（这里的上下拖动不再交给页面切日：手势竞技场里它更深、先认领）。
-      child: _Flick(upward: false, onFlick: collapsed ? expand : null, child: SizedBox(width: double.infinity, child: CampusSurface(
+      // 完整卡片往上滑收起、条往下拉展开（这个方向的上下拖动不交给页面切日：手势竞技场里它更深、先认领）。
+      child: _Swipe(upward: !collapsed, onSwipe: resize, child: SizedBox(width: double.infinity, child: CampusSurface(
         padding: EdgeInsets.zero,
-        onTap: collapsed ? expand : view.onTap,
+        onTap: tap,
         child: AnimatedPadding(
         duration: duration,
         curve: Curves.easeInOutCubic,
-        // 条矮一些；带把手的完整卡片底边留给把手。
-        padding: collapsed ? const EdgeInsets.symmetric(horizontal: 16, vertical: 12) : EdgeInsets.fromLTRB(16, 16, 16, strip == null ? 16 : 4),
+        // 条矮一些。
+        padding: collapsed ? const EdgeInsets.symmetric(horizontal: 16, vertical: 12) : const EdgeInsets.all(16),
         // 减少动画时直接换内容：AnimatedSize 时长为 0 会在自己的布局里报错。
         // 高度用先慢后快再慢的缓动，主要在新旧内容交接时变化：弹簧曲线前段太快，旧内容还没淡出就被裁掉（录屏所见）。
         child: MediaQuery.disableAnimationsOf(context) ? keyed : AnimatedSize(
@@ -792,7 +801,7 @@ class _ClassNowState extends State<_ClassNow> {
     if (occupied.isEmpty) return _rest(context, widget.date == widget.today ? '今天没课' : '这天没课', CampusIcons.dayOff);
     // 作息不完整时不把“第3节”当钟点比较，也不猜测下一节或已下课。
     if (occupied.any((span) => meetingTime(widget.bells, span.meeting!) == null)) {
-      return (key: 'bells', content: const Text('今日课程'), strip: null, spoken: '今日课程', onTap: null, peek: null);
+      return (key: 'bells', content: const Text('今日课程'), strip: null, spoken: '今日课程', jump: null, peek: null);
     }
     final instant = widget.now?.call() ?? LiveClock.maybeOf(context)?.value ?? DateTime.now();
     final moment = classMoment(widget.spans, widget.bells, widget.date, instant);
@@ -885,7 +894,7 @@ class _ClassNowState extends State<_ClassNow> {
       content: content,
       strip: strip,
       spoken: [status.replaceAll(' · ', '，'), course.courseName, place, course.teacherName, '$remaining$suffix'].where((part) => part.isNotEmpty).join('，'),
-      onTap: () => widget.onOpen(focus),
+      jump: null,
       // 开课前 5 分钟：收着的条自动展开一次（同实时活动到点在灵动岛展开）。
       peek: !moment.ongoing && seconds ? spanIdentity(focus) : null,
     );
@@ -912,7 +921,7 @@ class _ClassNowState extends State<_ClassNow> {
       if (when != null) ...[const SizedBox(width: CampusGap.medium), Text(when, maxLines: 1, style: secondary.copyWith(fontFeatures: const [FontFeature.tabularFigures()]))],
     ]);
     final next = widget.next;
-    if (next == null) return (key: 'rest:$status', content: headline, strip: strip(null), spoken: status, onTap: null, peek: null);
+    if (next == null) return (key: 'rest:$status', content: headline, strip: strip(null), spoken: status, jump: null, peek: null);
     final target = parseIsoDate(next.date);
     final offset = target.difference(parseIsoDate(widget.today)).inDays;
     // [人工决策-2026-10-19 17:55:48] 跨到下周的写「下周一」（用户选定）：以前按离今天几天算，周六看到「10月26日」其实就是后天周一、周五看到「周一」分不清是哪周。
@@ -938,56 +947,65 @@ class _ClassNowState extends State<_ClassNow> {
       content: content,
       strip: strip(when),
       spoken: [status, '下一节$when', next.course.courseName, place].where((part) => part.isNotEmpty).join('，'),
-      onTap: () => widget.onJump(next.date),
+      jump: () => widget.onJump(next.date),
       peek: null,
     );
   }
 }
 
-// 把手（同底部弹层顶上那一道）：点一下或往上推，此刻卡收成一条（人工决策见 _ClassNow）。触区比短横大，读屏里是卡片的「收起成一条」动作。
-class _Grabber extends StatelessWidget {
-  const _Grabber({required this.onCollapse});
-  final VoidCallback onCollapse;
-
-  @override
-  Widget build(BuildContext context) => Center(child: _Flick(upward: true, onFlick: onCollapse, child: GestureDetector(
-    key: const ValueKey('class-now-grabber'),
-    behavior: HitTestBehavior.opaque,
-    onTap: onCollapse,
-    child: SizedBox(width: 96, height: 24, child: Center(child: DecoratedBox(
-      decoration: BoxDecoration(color: CampusPalette.of(context).onSurfaceVariant.withValues(alpha: .4), borderRadius: BorderRadius.circular(2)),
-      child: const SizedBox(width: 32, height: 4),
-    ))),
-  )));
-}
-
-// 往上推或往下拉一下就算（同底部弹层把手的轻推，不跟手）：按位移或速度认；onFlick 为空时不接上下拖动、树的结构不变（里面的过渡不重来）。
-// 接着的时候，落在这里的上下拖动不交给页面切日（手势竞技场里它更深、先认领）。
-class _Flick extends StatefulWidget {
-  const _Flick({required this.upward, required this.onFlick, required this.child});
+// 在卡片上往上滑或往下拉一下就算（同 Android 通知、Spotify 迷你播放条上下滑改大小，不跟手）：按位移或速度认，人工决策见 _ClassNow。
+// 只认 upward 给的那个方向：起手往反方向走就当场放弃这一手，交给页面切日（在完整卡片上往下拉照旧是前一天）；
+// onSwipe 为空时不接上下拖动、树的结构不变（里面的过渡不重来）。
+class _Swipe extends StatelessWidget {
+  const _Swipe({required this.upward, required this.onSwipe, required this.child});
   final bool upward;
-  final VoidCallback? onFlick;
+  final VoidCallback? onSwipe;
   final Widget child;
 
   @override
-  State<_Flick> createState() => _FlickState();
+  Widget build(BuildContext context) {
+    final onSwipe = this.onSwipe;
+    // 触摸阈值同 GestureDetector 一样取系统的（安卓约 8）：不取时按 Flutter 默认的 18，外面页面切日的识别器先过阈值、把上滑抢走（11-26 模拟器上所见）。
+    final settings = MediaQuery.maybeGestureSettingsOf(context);
+    return RawGestureDetector(
+      gestures: onSwipe == null ? const {} : {
+        _OneWayDrag: GestureRecognizerFactoryWithHandlers<_OneWayDrag>(_OneWayDrag.new, (recognizer) => recognizer..upward = upward..onSwipe = onSwipe..gestureSettings = settings),
+      },
+      child: child,
+    );
+  }
 }
 
-class _FlickState extends State<_Flick> {
+class _OneWayDrag extends VerticalDragGestureRecognizer {
+  _OneWayDrag() {
+    onStart = (_) => _moved = 0;
+    onUpdate = (details) => _moved += details.delta.dy;
+    onEnd = (details) {
+      final sign = upward ? -1 : 1;
+      if (_moved * sign > 12 || (details.primaryVelocity ?? 0) * sign > 300) onSwipe?.call();
+    };
+  }
+  bool upward = true;
+  VoidCallback? onSwipe;
   var _moved = 0.0;
+  // 各手指按下的位置，起手方向定了（走过 2 像素）就拿掉。
+  final _origins = <int, double>{};
 
   @override
-  Widget build(BuildContext context) {
-    final onFlick = widget.onFlick;
-    return GestureDetector(
-      onVerticalDragStart: onFlick == null ? null : (_) => _moved = 0,
-      onVerticalDragUpdate: onFlick == null ? null : (details) => _moved += details.delta.dy,
-      onVerticalDragEnd: onFlick == null ? null : (details) {
-        final sign = widget.upward ? -1 : 1;
-        if (_moved * sign > 12 || (details.primaryVelocity ?? 0) * sign > 300) onFlick();
-      },
-      child: widget.child,
-    );
+  void addAllowedPointer(PointerDownEvent event) {
+    _origins[event.pointer] = event.position.dy;
+    super.addAllowedPointer(event);
+  }
+
+  @override
+  void handleEvent(PointerEvent event) {
+    final origin = _origins[event.pointer];
+    if (origin != null && event is PointerMoveEvent && (event.position.dy - origin).abs() > 2) {
+      _origins.remove(event.pointer);
+      if ((event.position.dy < origin) != upward) return resolvePointer(event.pointer, GestureDisposition.rejected);
+    }
+    if (event is PointerUpEvent || event is PointerCancelEvent) _origins.remove(event.pointer);
+    super.handleEvent(event);
   }
 }
 

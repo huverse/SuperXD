@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:superxd/domain/campus_gateway.dart';
@@ -186,8 +188,10 @@ Future<ValueNotifier<DateTime>> _mountWithClock(WidgetTester tester, DateTime at
   addTearDown(clock.dispose);
   await tester.binding.setSurfaceSize(const Size(390, 850));
   addTearDown(() => tester.binding.setSurfaceSize(null));
+  // 带上安卓的触摸阈值（约 8，真机上 MediaQuery 里有系统的手势设置；测试默认没有、各识别器都按 18 认）：
+  // 11-26 模拟器上卡片的上滑被页面切日抢走就是这个差别，测试里两边都按 18 时看不出来。
   final app = MaterialApp(theme: campusTheme(), home: MediaQuery(
-    data: const MediaQueryData(size: Size(390, 850)),
+    data: const MediaQueryData(size: Size(390, 850), gestureSettings: DeviceGestureSettings(touchSlop: 8)),
     child: Scaffold(body: LiveClock.fixed(clock, child: TodayPage(gateway: _Gateway(), now: () => clock.value))),
   ));
   await tester.pumpWidget(display == null ? app : DisplayScope(settings: display, child: app));
@@ -686,25 +690,6 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('此刻卡可点：上课中点开这节课的只读详情，课上完后点了跳到下一节那天', (tester) async {
-    var now = DateTime.utc(2026, 9, 25, 0, 20);
-    await _mount(tester, _Gateway(), now: () => now);
-    await tester.tap(find.text('上课中\u00A0· '));
-    await tester.pumpAndSettle();
-    expect(find.text('上课时段'), findsOneWidget);
-    expect(find.text('编辑课程'), findsNothing);
-    await tester.tap(find.byTooltip('关闭'));
-    await tester.pumpAndSettle();
-    await tester.pumpWidget(const SizedBox());
-    now = DateTime.utc(2026, 9, 25, 2);
-    await _mount(tester, _Gateway(), now: () => now);
-    await tester.tap(find.text('明天早八 8:00'));
-    await tester.pumpAndSettle();
-    expect(_date('2026-09-26'), findsOneWidget);
-    expect(find.text('上课时段'), findsNothing);
-    expect(tester.takeException(), isNull);
-  });
-
   testWidgets('开课前 15 分钟内倒计时转激活色，更早保持正文色', (tester) async {
     var now = DateTime.utc(2026, 9, 24, 23, 44);
     Color? color() => tester.widget<AnimatedDefaultTextStyle>(find.ancestor(of: find.byKey(const ValueKey('class-now-remaining')), matching: find.byType(AnimatedDefaultTextStyle)).first).style.color;
@@ -752,33 +737,93 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  // 人工决策见 today_page.dart 的 _ClassNow（11-26 用户选定：把手收成一条、都能收、收起后一直保持、开课前 5 分钟自动展开一次、下课前也按秒倒数）。
-  testWidgets('此刻卡：点把手或往上推收成一条（记在显示设置里、重开还是条），条上点一下或往下拉展开；在把手与条上拖动不切日', (tester) async {
+  // 人工决策见 today_page.dart 的 _ClassNow（11-26 傍晚：去掉把手；没有跳转的卡点一下展开收起，有跳转的照旧跳转、在卡片上滑动展开收起）。
+  testWidgets('此刻卡单击：上课中点一下收成一条、再点展开，不再看详情（详情只在课程卡上）；课上完后点了照旧跳到下一节那天', (tester) async {
     final display = DisplaySettings.memory();
     addTearDown(display.dispose);
-    final grabber = find.byKey(const ValueKey('class-now-grabber'));
     final strip = find.text(' · 教室');
-    // 校园时间 8:20，上课中（8:00–9:45）。
+    // 校园时间 8:20，上课中。
     await _mountWithClock(tester, DateTime.utc(2026, 9, 25, 0, 20), display: display);
-    expect((grabber.evaluate().length, strip.evaluate().length, _remaining(tester)), (1, 0, '1小时25分'));
-    await tester.tap(grabber);
+    expect(find.byKey(const ValueKey('class-now-grabber')), findsNothing, reason: '没有把手');
+    final node = tester.getSemantics(find.bySemanticsLabel('上课中，第1–2节，星期5的课，教室，老师，1小时25分后下课'));
+    expect(node, isSemantics(isButton: true, hasTapAction: true));
+    await tester.tap(find.text('上课中 · '));
     await tester.pumpAndSettle();
-    expect((grabber.evaluate().length, strip.evaluate().length, display.classNowCollapsed.value), (0, 1, true));
-    expect((_remaining(tester), find.text('后下课').evaluate().length), ('1小时25分', 1), reason: '条里照样写剩余时长，带单位');
+    expect((strip.evaluate().length, display.classNowCollapsed.value, find.text('上课时段').evaluate().length), (1, true, 0));
+    await tester.tap(strip);
+    await tester.pumpAndSettle();
+    expect((strip.evaluate().length, display.classNowCollapsed.value, find.text('上课中 · ').evaluate().length), (0, false, 1));
+    // 课程卡照旧点了看详情。
+    await tester.tap(find.text('星期5的课').last);
+    await tester.pumpAndSettle();
+    expect((find.text('上课时段').evaluate().length, find.text('编辑课程').evaluate().length), (1, 0));
+    await tester.tap(find.byTooltip('关闭'));
+    await tester.pumpAndSettle();
+    // 校园时间 10:00，课上完：点卡片跳到下一节那天，不收起。
+    await tester.pumpWidget(const SizedBox());
+    await _mountWithClock(tester, DateTime.utc(2026, 9, 25, 2), display: display);
+    await tester.tap(find.text('明天早八 8:00'));
+    await tester.pumpAndSettle();
+    expect((_date('2026-09-26').evaluate().length, display.classNowCollapsed.value), (1, false));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('此刻卡滑动：完整卡片往上滑收起、条往下拉展开（不切日）；在完整卡片上往下拉照旧是前一天', (tester) async {
+    final display = DisplaySettings.memory();
+    addTearDown(display.dispose);
+    final strip = find.text(' · 教室');
+    await _mountWithClock(tester, DateTime.utc(2026, 9, 25, 0, 20), display: display);
+    // 像真机一样一次只挪几个像素（tester.drag 第一步就挪 20，两边同一事件过阈值，看不出阈值不同时谁先认）。
+    final step = await tester.startGesture(tester.getCenter(find.text('上课中 · ')));
+    for (var index = 0; index < 20; index++) {
+      await step.moveBy(const Offset(0, -3));
+      await tester.pump(const Duration(milliseconds: 8));
+    }
+    await step.up();
+    await tester.pumpAndSettle();
+    expect((strip.evaluate().length, display.classNowCollapsed.value, _date('2026-09-25').evaluate().length), (1, true, 1), reason: '往上滑收起，不切日');
     await tester.drag(strip, const Offset(0, 60));
     await tester.pumpAndSettle();
-    expect((grabber.evaluate().length, display.classNowCollapsed.value), (1, false), reason: '往下拉展开');
-    await tester.drag(grabber, const Offset(0, -60));
+    expect((strip.evaluate().length, display.classNowCollapsed.value, _date('2026-09-25').evaluate().length), (0, false, 1), reason: '往下拉展开，不切日');
+    // 重开（显示设置还在）：收起记着。
+    await tester.drag(find.text('上课中 · '), const Offset(0, -60));
     await tester.pumpAndSettle();
-    expect((strip.evaluate().length, display.classNowCollapsed.value), (1, true), reason: '往上推收起');
-    expect(_date('2026-09-25'), findsOneWidget, reason: '在把手与条上拖动不切日');
-    // 重开（显示设置还在）：一打开就是条；点条展开。
     await tester.pumpWidget(const SizedBox());
     await _mountWithClock(tester, DateTime.utc(2026, 9, 25, 0, 20), display: display);
     expect(strip, findsOneWidget);
-    await tester.tap(strip);
+    await tester.drag(strip, const Offset(0, 60));
     await tester.pumpAndSettle();
-    expect((grabber.evaluate().length, display.classNowCollapsed.value), (1, false), reason: '点条是展开，不是看详情');
+    // 反方向不归卡片：从完整卡片上往下拉是前一天（同在页面别处往下拉）。
+    final pull = await tester.startGesture(tester.getCenter(find.text('上课中\u00A0· ')));
+    await pull.moveBy(const Offset(0, 24));
+    await tester.pump();
+    await pull.moveBy(const Offset(0, 100));
+    await tester.pump(const Duration(milliseconds: 16));
+    await pull.up();
+    await tester.pumpAndSettle();
+    expect((_date('2026-09-24').evaluate().length, display.classNowCollapsed.value), (1, false));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('课上完的卡：点一下跳转，往上滑收成一条、往下拉展开；读屏里收起与展开是卡片的动作', (tester) async {
+    final display = DisplaySettings.memory();
+    addTearDown(display.dispose);
+    const label = '今天的课上完了，下一节明天早八 8:00，星期6的课，教室';
+    await _mountWithClock(tester, DateTime.utc(2026, 9, 25, 2), display: display);
+    expect(tester.getSemantics(find.bySemanticsLabel(label)), isSemantics(isButton: true, hasTapAction: true, customActions: const [CustomSemanticsAction(label: '收起成一条')]));
+    await tester.drag(find.text('今天的课上完了'), const Offset(0, -60));
+    await tester.pumpAndSettle();
+    expect((find.text('星期6的课').evaluate().length, display.classNowCollapsed.value), (0, true), reason: '条上只写状态与下一节何时');
+    expect(tester.getSemantics(find.bySemanticsLabel(label)), isSemantics(customActions: const [CustomSemanticsAction(label: '展开')]));
+    await tester.drag(find.text('今天的课上完了'), const Offset(0, 60));
+    await tester.pumpAndSettle();
+    expect((find.text('星期6的课').evaluate().length, display.classNowCollapsed.value), (1, false));
+    // 收着时点条也是跳转。
+    await tester.drag(find.text('今天的课上完了'), const Offset(0, -60));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('明天早八 8:00'));
+    await tester.pumpAndSettle();
+    expect(_date('2026-09-26'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -786,22 +831,22 @@ void main() {
     final display = DisplaySettings.memory();
     addTearDown(display.dispose);
     await display.setClassNowCollapsed(true);
-    final grabber = find.byKey(const ValueKey('class-now-grabber'));
+    final card = find.text('下一节\u00A0· ');
     final strip = find.text(' · 教室');
     // 校园时间 7:50：离 8:00 开课还有 10 分钟，是条。
     final clock = await _mountWithClock(tester, DateTime.utc(2026, 9, 24, 23, 50), display: display);
     expect((strip.evaluate().length, _remaining(tester)), (1, '10分钟'));
     clock.value = DateTime.utc(2026, 9, 24, 23, 56, 30);
     await tester.pumpAndSettle();
-    expect((grabber.evaluate().length, _remaining(tester)), (1, '3分30秒'), reason: '开课前 5 分钟自动展开');
-    await tester.tap(grabber);
+    expect((card.evaluate().length, _remaining(tester)), (1, '3分30秒'), reason: '开课前 5 分钟自动展开');
+    await tester.tap(card);
     await tester.pumpAndSettle();
     clock.value = DateTime.utc(2026, 9, 24, 23, 57);
     await tester.pumpAndSettle();
     expect((strip.evaluate().length, _remaining(tester)), (1, '3分00秒'), reason: '再收起后这节课开始前不再展开');
     clock.value = DateTime.utc(2026, 9, 25, 0, 20);
     await tester.pumpAndSettle();
-    expect((strip.evaluate().length, grabber.evaluate().length), (1, 0), reason: '上课不自动展开');
+    expect((strip.evaluate().length, find.text('上课中\u00A0· ').evaluate().length), (1, 0), reason: '上课不自动展开');
     // 9:41:30，下课前 3 分 30 秒。
     clock.value = DateTime.utc(2026, 9, 25, 1, 41, 30);
     await tester.pumpAndSettle();
