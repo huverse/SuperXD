@@ -6,7 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
+import 'package:superxd/domain/download_pack.dart';
 import 'package:superxd/domain/font_pack.dart';
+import 'package:superxd/domain/sky.dart';
 import 'package:superxd/page/image_copy_pick.dart';
 import 'package:superxd/page/text_size_range.dart';
 import 'package:superxd/page/course_cards.dart';
@@ -285,9 +287,30 @@ class _AppearancePageState extends State<AppearancePage> {
     ]);
   }
 
+  // 正在下载、还没换上的星空画风（下载失败时留着，原地给重试；取消或换成别的背景就清掉）。
+  String? _skyChoosing;
+
+  // 点选星空画风（人工决策见 domain/sky.dart）：先下载、核对好那一套素材再换上（DisplaySettings.chooseSky），进度、失败与取消都在背景区原地显示。
+  Future<void> _chooseSky(DisplaySettings settings, String style) async {
+    setState(() => _skyChoosing = style);
+    await _save(() => settings.chooseSky(style));
+    if (!mounted || _skyChoosing != style) return;
+    if (settings.skyStyle == style || settings.skyPacks?.statusOf(style).phase != PackPhase.failed) setState(() => _skyChoosing = null);
+  }
+
+  // 换成云雾或自定义图片：停下正在下的星空素材。
+  void _leaveSky(DisplaySettings settings) {
+    final packs = settings.skyPacks;
+    for (final style in packs?.packs.keys ?? const <String>[]) {
+      packs!.cancel(style);
+    }
+    setState(() => _skyChoosing = null);
+  }
+
   List<Widget> _wallpaperSection(BuildContext context, DisplaySettings settings) {
     final busy = _importing;
-    final custom = settings.wallpaperFile != null;
+    final sky = _skyChoosing ?? settings.skyStyle;
+    final custom = settings.wallpaperFile != null && sky == null;
     // [人工决策-2026-10-04 16:08:17] 壁纸模糊与透明度为连续滑杆，拖动实时预览、松手保存（取代三档标签）；用户实测确认。
     // 模糊与透明度连续可调（0–100%），拖动时背景实时变化；透明度只在保证文字可读的下限之上调，不会让文字看不清。
     Widget slider(String label, int value, void Function(int) preview) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -307,9 +330,20 @@ class _AppearancePageState extends State<AppearancePage> {
       Text('背景', style: Theme.of(context).textTheme.titleLarge),
       const SizedBox(height: 12),
       Wrap(spacing: 8, runSpacing: 8, children: [
-        CampusGlassChip(label: '默认云雾', selected: !custom, onSelected: busy ? null : (_) => _save(settings.clearWallpaper)),
-        CampusGlassChip(label: '自定义图片', selected: custom, onSelected: busy ? null : (_) => _importWallpaper(settings)),
+        CampusGlassChip(label: '默认云雾', selected: !custom && sky == null, onSelected: busy ? null : (_) {
+          _leaveSky(settings);
+          _save(settings.clearWallpaper);
+        }),
+        CampusGlassChip(label: '星空', selected: sky != null, onSelected: busy ? null : (_) => _chooseSky(settings, sky ?? SkyStyle.real.id)),
+        CampusGlassChip(label: '自定义图片', selected: custom, onSelected: busy ? null : (_) {
+          _leaveSky(settings);
+          _importWallpaper(settings);
+        }),
       ]),
+      if (sky != null) ...[
+        const SizedBox(height: 12),
+        ListenableBuilder(listenable: settings.skyPacks ?? settings, builder: (context, _) => _skySection(context, settings, sky)),
+      ],
       if (custom) ...[
         const SizedBox(height: 12),
         Align(
@@ -376,7 +410,8 @@ class _AppearancePageState extends State<AppearancePage> {
                   Text(label, style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 8),
                   Align(alignment: AlignmentDirectional.centerStart, child: _FontPreview(fontId: id, color: colors.onSurface)),
-                  if (pack != null && status != null) ..._packStatus(context, settings, colors, pack, status, selected),
+                  if (pack != null && status != null)
+                    ..._packStatus(context, colors, size: pack.size, status: status, selected: selected, waiting: '还没下载，暂用 Maple 显示', retry: () => _choose(settings, pack.id), cancel: () => packs!.cancel(pack.id)),
                 ],
               ),
             ),
@@ -389,43 +424,83 @@ class _AppearancePageState extends State<AppearancePage> {
     );
   }
 
-  // 字体包这一项的状态，原地显示：没下载写大小、下载中是进度条与取消、失败写原因给重试；下好了（含这次还没注册的）不再多写。
-  List<Widget> _packStatus(BuildContext context, DisplaySettings settings, CampusPalette colors, FontPack pack, FontPackStatus status, bool selected) {
+  // 按需下载的包（字体包、星空素材）的状态，原地显示：没下载写大小、下载中是进度条与取消、失败写原因给重试；下好了（含这次还没装好的）不再多写。
+  // waiting 是选着它却还没下载时写的那句（暂用什么显示）。
+  List<Widget> _packStatus(BuildContext context, CampusPalette colors, {required int size, required PackStatus status, required bool selected, required String waiting, required VoidCallback retry, required VoidCallback cancel}) {
     final secondary = TextStyle(fontSize: 14, color: colors.onSurfaceVariant);
     String megabytes(int bytes) => (bytes / 1048576).toStringAsFixed(1);
     return switch (status.phase) {
-      FontPackPhase.downloading => [
+      PackPhase.downloading => [
         const SizedBox(height: 12),
         Row(children: [
           Expanded(child: LinearProgressIndicator(value: status.progress, borderRadius: BorderRadius.circular(4))),
-          IconButton(tooltip: '取消下载', onPressed: () => settings.fontPacks!.cancel(pack.id), icon: const CampusIcon(CampusIcons.close)),
+          IconButton(tooltip: '取消下载', onPressed: cancel, icon: const CampusIcon(CampusIcons.close)),
         ]),
         Text('正在下载 ${megabytes(status.received)} / ${megabytes(status.total)} MB', style: secondary.copyWith(fontFeatures: const [FontFeature.tabularFigures()])),
       ],
-      FontPackPhase.failed => [
+      PackPhase.failed => [
         const SizedBox(height: 8),
         Text(status.error ?? '下载没完成，请重试', style: TextStyle(fontSize: 14, color: colors.danger)),
         const SizedBox(height: 8),
         Align(
           alignment: AlignmentDirectional.centerStart,
-          child: TextButton.icon(onPressed: () => _choose(settings, pack.id), icon: const CampusIcon(CampusIcons.sync), label: const Text('重试')),
+          child: TextButton.icon(onPressed: retry, icon: const CampusIcon(CampusIcons.sync), label: const Text('重试')),
         ),
       ],
-      FontPackPhase.missing when selected => [
+      PackPhase.missing when selected => [
         const SizedBox(height: 8),
-        Text('还没下载，暂用 Maple 显示', style: secondary),
+        Text(waiting, style: secondary),
         const SizedBox(height: 8),
         Align(
           alignment: AlignmentDirectional.centerStart,
-          child: TextButton.icon(onPressed: () => _choose(settings, pack.id), icon: const CampusIcon(CampusIcons.download), label: Text('下载 ${megabytes(pack.size)} MB')),
+          child: TextButton.icon(onPressed: retry, icon: const CampusIcon(CampusIcons.download), label: Text('下载 ${megabytes(size)} MB')),
         ),
       ],
-      FontPackPhase.missing => [
+      PackPhase.missing => [
         const SizedBox(height: 8),
-        Text('选用时下载，约 ${megabytes(pack.size)} MB', style: secondary),
+        Text('选用时下载，约 ${megabytes(size)} MB', style: secondary),
       ],
-      FontPackPhase.stored || FontPackPhase.ready => const [],
+      PackPhase.stored || PackPhase.ready => const [],
     };
+  }
+
+  // 星空画风：两种画风并排点选，下载状态与删除同字体包（素材按需下载，人工决策见 domain/sky.dart）。
+  Widget _skySection(BuildContext context, DisplaySettings settings, String current) {
+    final colors = CampusPalette.of(context);
+    final packs = settings.skyPacks;
+    final pack = packs?.packs[current];
+    final status = packs?.statusOf(current);
+    final downloading = status?.phase == PackPhase.downloading;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Row(children: [
+        Expanded(child: Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final style in SkyStyle.values)
+            CampusGlassChip(label: style.label, selected: current == style.id, onSelected: (_) => _chooseSky(settings, style.id)),
+        ])),
+        if (packs != null && packs.hasFiles(current) && !downloading)
+          Builder(builder: (anchor) => IconButton(tooltip: '更多操作', onPressed: () => _skyMenu(anchor, settings, current), icon: const CampusIcon(CampusIcons.manage))),
+      ]),
+      if (pack != null && status != null)
+        ..._packStatus(context, colors, size: packSize(pack), status: status, selected: settings.skyStyle == current, waiting: '还没下载，暂用云雾显示', retry: () => _chooseSky(settings, current), cancel: () => packs!.cancel(current)),
+    ]);
+  }
+
+  // ⋯里的「删除星空素材」：先确认；正在用就先换回云雾再删（DisplaySettings.deleteSkyPack），删完这个画风回到未下载。
+  Future<void> _skyMenu(BuildContext anchor, DisplaySettings settings, String style) async {
+    final choice = await showCampusMenu<String>(anchor, items: const [CampusMenuItem(value: 'delete', label: '删除星空素材', icon: CampusIcons.delete, destructive: true)]);
+    if (choice != 'delete' || !mounted) return;
+    final label = SkyStyle.values.firstWhere((value) => value.id == style).label;
+    final agreed = await showCampusConfirm(
+      context,
+      title: '删除星空素材',
+      message: settings.skyStyle == style ? '先换回云雾，再删除本机的$label星空素材，之后可以再下载。' : '删除本机的$label星空素材，之后可以再下载。',
+      action: '删除',
+      destructive: true,
+    );
+    if (!agreed || !mounted) return;
+    setState(() => _skyChoosing = null);
+    await _save(() => settings.deleteSkyPack(style));
+    if (mounted && _error == null) showCampusToast(context, '已删除星空素材');
   }
 
   // ⋯里的「删除字体包」：破坏性操作先确认；正在用就先换回默认字体再删（DisplaySettings.deleteFontPack），删完这一项回到未下载。
@@ -473,6 +548,11 @@ class _AppearancePageState extends State<AppearancePage> {
               label: (mode) => switch (mode) { ThemeMode.system => '跟随系统', ThemeMode.light => '浅色', ThemeMode.dark => '深色' },
               onSelected: (mode) => _save(() => settings.setThemeMode(mode)),
             ),
+            // 星空背景固定深色（人工决策见 domain/sky.dart），这里的选择留到换回别的背景时用。
+            if (settings.skyInUse != null) ...[
+              const SizedBox(height: 8),
+              Text('星空背景固定深色', style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant)),
+            ],
             // [人工决策-2026-10-06 13:06:11] 按使用频率排：外观模式、配色、背景、字体、字号在前，玻璃效果（性能项、少用）放最后，用户选定。
             const SizedBox(height: 24),
             Text('配色', style: Theme.of(context).textTheme.titleLarge),

@@ -3,13 +3,24 @@ import 'package:flutter/material.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_background.dart';
 
-// 卡片底色：配色的 surface（选中时 surfaceSelected），平时 91% 不透明、透出一点背景，高对比度或读屏导航时完全不透明；
-// solid 另要求不透明（如输入框聚焦时微亮）。卡片、搜索框与快递登录的胶囊框共用这一条（以前三处各写一遍）。
+// 卡片底色：配色的 surface（选中时 surfaceSelected），平时 91% 不透明、透出一点背景（背景是星空时由组合根经 CampusSurfaceScope 调到 65%），
+// 高对比度或读屏导航时完全不透明；solid 另要求不透明（如输入框聚焦时微亮）。卡片、搜索框与快递登录的胶囊框共用这一条（以前三处各写一遍）。
 Color campusSurfaceFill(BuildContext context, {bool selected = false, bool solid = false}) {
   final palette = CampusPalette.of(context);
   final opaque = solid || MediaQuery.highContrastOf(context) || MediaQuery.accessibleNavigationOf(context);
   // 选中的卡片铺选中着色（见 CampusPalette.selectedFill）。
-  return (selected ? Color.alphaBlend(palette.selectedFill, palette.surface) : palette.surface).withValues(alpha: opaque ? 1 : .91);
+  return (selected ? Color.alphaBlend(palette.selectedFill, palette.surface) : palette.surface).withValues(alpha: opaque ? 1 : CampusSurfaceScope.opacityOf(context));
+}
+
+// 卡片底色的不透明度，组合根按背景定（星空背景下透一些，让画里的星光从卡片里隐约透出）；没有时是平时的 .91。
+class CampusSurfaceScope extends InheritedWidget {
+  const CampusSurfaceScope({super.key, required this.opacity, required super.child});
+  final double opacity;
+  static const standard = .91;
+  static double opacityOf(BuildContext context) => context.dependOnInheritedWidgetOfExactType<CampusSurfaceScope>()?.opacity ?? standard;
+
+  @override
+  bool updateShouldNotify(CampusSurfaceScope oldWidget) => opacity != oldWidget.opacity;
 }
 
 class CampusSurface extends StatelessWidget {

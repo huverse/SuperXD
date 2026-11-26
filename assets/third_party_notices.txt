@@ -12,7 +12,7 @@ SuperXD
 
 本程序是自由软件：你可以依据自由软件基金会发布的 GNU 通用公共许可证第 3 版重新分发和修改它。本程序以“希望有用”为目的分发，但不提供任何担保，也不担保适销性或特定用途适用性，详见 GPL-3.0 全文。
 
-GPL 的例外：下文第四节所述 math-curve-loaders 改编部分（lib/theme/curve_geometry.dart 中的曲线几何）、第五节所述测试期临时图标与第六节所述开屏画作不随本项目以 GPL 授权。再分发本项目或其修改版时，须自行取得相应授权，或移除、替换这些部分。
+GPL 的例外：下文第四节所述 math-curve-loaders 改编部分（lib/theme/curve_geometry.dart 中的曲线几何）、第五节所述测试期临时图标、第六节所述开屏画作与第七节所述星空背景不随本项目以 GPL 授权。再分发本项目或其修改版时，须自行取得相应授权，或移除、替换这些部分。
 
 
 二、随应用分发的第三方作品
@@ -138,7 +138,24 @@ math-curve-loaders（曲线加载动画设计）
 开屏与“关于 › 开屏画作”里的画作（assets/paintings 下的图片）由本项目作者用 AI 生成（仿莫奈、梵高风格），版权所有 (C) 2026 Galaxyous，保留所有权利，不随本项目以 GPL 授权。画作仅随本应用分发：你可以在应用里把它们存到本机作个人壁纸，但不得单独取用后再分发或商用；再分发本项目或其修改版时，请移除或替换这些画作。画中如出现第三方作品的角色形象，其权利归原权利人所有；如权利人要求，将立即移除。
 
 
-七、许可证全文
+七、星空背景
+
+外观页背景选“星空”时显示的画面不随安装包，用户选用时才从本项目的中转服务器下载（源码里只登记文件名、大小与校验值）。这些画面是第三方作品，版权归各自的作者与权利人所有，不随本项目以 GPL 授权，也不得从本项目中单独取用后再分发或商用；如作者或权利人要求，将立即移除。出处：
+真实画风
+- 黎明：https://wallhaven.cc/w/9dkywx
+- 白天：NASA 国际空间站照片 iss039e001010（https://images.nasa.gov/details/iss039e001010，公有领域）
+- 黄昏：paulwilsonimage 摄（https://x.com/paulwilsonimage/status/2014908587777384832，经 https://wallhaven.cc/w/jx62ly）
+- 夜：espederle 摄（https://www.flickr.com/photos/espederle/48212819337/）
+- 深夜：https://wallhaven.cc/w/o35yv7
+新海诚画风
+- 黎明：https://wallhaven.cc/w/8x16oj
+- 白天：https://wallhaven.cc/w/28ev1y
+- 黄昏：pixiv 作品 89578796（https://www.pixiv.net/artworks/89578796）
+- 夜：https://wallhaven.cc/w/x6yrez
+- 深夜：pixiv 作品 86356054（https://www.pixiv.net/artworks/86356054）
+
+
+八、许可证全文
 
 MIT License
 适用于第二、三节标注 MIT 的作品，各自的版权声明见上文。

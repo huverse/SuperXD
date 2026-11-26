@@ -11,25 +11,31 @@
 // 直到用旧文件的版本都低于最低可用版本（release.yml 的 RELEASE_MIN_SUPPORTED）再删。
 // 以后要把别的字体也做成包（如默认字体），在 fontPacks 里加一项即可，下载、核对、注册与删除都按 id 走。
 
-class FontPackFile {
-  const FontPackFile({required this.name, required this.weight, required this.size, required this.sha256});
-  // 中转发布目录与本机目录里的文件名（只许字母数字与 . _ -，以 .ttf 结尾）。
-  final String name;
+import 'package:superxd/domain/download_pack.dart';
+
+// 下载、核对与状态是按需下载文件包的通用一套（domain/download_pack.dart，星空素材包同用），这里只多字重与族名；旧名字留作别名。
+typedef FontPackStatus = PackStatus;
+typedef FontPackPhase = PackPhase;
+typedef FontPackSource = PackSource;
+typedef FontPackException = PackException;
+typedef FontPackCancelled = PackCancelled;
+
+class FontPackFile extends PackFile {
+  const FontPackFile({required super.name, required this.weight, required super.size, required super.sha256});
   // 字重（400、500、600），注册时与 pubspec 里内置字体的写法一致。
   final int weight;
-  final int size;
-  // 小写十六进制。
-  final String sha256;
 }
 
-class FontPack {
+class FontPack implements DownloadPack {
   const FontPack({required this.id, required this.family, required this.files});
   // 与显示设置里的字体 id 一致（如 serif）。
+  @override
   final String id;
   // 注册给引擎的字体族名，界面按它取字体（与 DisplaySettings.fontFamilies 一致）。
   final String family;
+  @override
   final List<FontPackFile> files;
-  int get size => files.fold(0, (sum, file) => sum + file.size);
+  int get size => packSize(this);
 }
 
 // Noto Serif SC 2.003 三个静态字重，裁到 tool/font_charset.txt（tool/font_subset.py）。
@@ -43,37 +49,3 @@ const fontPacks = <String, FontPack>{
 
 // 字体包文件名的规则（同中转下载接口）。
 final fontPackFileName = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.ttf$');
-
-// stored 是文件齐全（按大小看）但这次运行还没注册：选它时核对、注册，不用联网。
-enum FontPackPhase { missing, downloading, stored, ready, failed }
-
-class FontPackStatus {
-  const FontPackStatus(this.phase, {this.received = 0, this.total = 0, this.error});
-  static const missing = FontPackStatus(FontPackPhase.missing);
-  static const stored = FontPackStatus(FontPackPhase.stored);
-  static const ready = FontPackStatus(FontPackPhase.ready);
-  final FontPackPhase phase;
-  // 下载中：这个包已收到与总共的字节数（已经在本机、核对通过的文件算作收到）。
-  final int received;
-  final int total;
-  // 下载失败时给用户看的原因。
-  final String? error;
-  double get progress => total == 0 ? 0 : (received / total).clamp(0.0, 1.0);
-}
-
-// 下载一个字体包文件的端口（device 层经自建中转实现）：把文件写到 target（覆盖），onProgress 报这个文件已收到的字节；
-// abort 完成时尽快停下并抛 FontPackCancelled。只管传输、超时与响应上限（不超过 file.size），SHA-256 由调用方核对。
-abstract interface class FontPackSource {
-  Future<void> download(FontPackFile file, String target, {required void Function(int received) onProgress, required Future<void> abort});
-}
-
-class FontPackException implements Exception {
-  const FontPackException(this.message);
-  final String message;
-  @override
-  String toString() => 'FontPackException: $message';
-}
-
-class FontPackCancelled implements Exception {
-  const FontPackCancelled();
-}

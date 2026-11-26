@@ -33,11 +33,12 @@ import 'package:superxd/device/app_shortcuts.dart';
 import 'package:superxd/device/home_widget_publisher.dart';
 import 'package:superxd/device/notification_reminders.dart';
 import 'package:superxd/device/picture_export.dart';
-import 'package:superxd/device/relay_font_pack_source.dart';
+import 'package:superxd/device/relay_pack_source.dart';
 import 'package:superxd/device/sync_notifications.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/network_policy.dart';
+import 'package:superxd/domain/sky.dart';
 import 'package:superxd/gateway/account_gateway.dart';
 import 'package:superxd/local/account_store.dart';
 import 'package:superxd/local/credential_store.dart';
@@ -45,6 +46,7 @@ import 'package:superxd/local/developer_settings.dart';
 import 'package:superxd/local/diagnostic_log.dart';
 import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/local/font_packs.dart';
+import 'package:superxd/local/pack_library.dart';
 import 'package:superxd/local/network_mode_memory.dart';
 import 'package:superxd/local/legal_notice_memory.dart';
 import 'package:superxd/local/painting_library.dart';
@@ -157,7 +159,13 @@ void main() async {
     final relay? => RelayFontPackSource(relay.base),
     null => null,
   });
-  final displayOpen = DisplaySettings.open(wallpaperDirectory: Directory(path.join(support.path, 'display', 'wallpaper')), fontPacks: fontPacks);
+  // 星空背景的素材（人工决策见 domain/sky.dart）：同字体包，文件在应用支持目录的 sky_packs（排除备份），选着的在显示设置打开时（首帧前）核对，
+  // 缺了等同意协议与政策之后自动下回来（见下面 ensureSkyPack）。
+  final skyLibrary = PackLibrary<SkyPack>(directory: Directory(path.join(support.path, 'sky_packs')), packs: skyPacks, tag: 'SkyPack', noun: '星空', source: switch (relay) {
+    final relay? => RelayPackSource(relay.base, module: 'sky_pack', tag: 'SkyPack', noun: '星空'),
+    null => null,
+  });
+  final displayOpen = DisplaySettings.open(wallpaperDirectory: Directory(path.join(support.path, 'display', 'wallpaper')), fontPacks: fontPacks, skyPacks: skyLibrary);
   final glassLoad = CampusGlassGuard.load();
   final databasesPath = getDatabasesPath();
   final networkOpen = FileNetworkModeMemory.open(File(path.join(support.path, 'network_mode.json')), legacy: File(path.join(support.path, 'leisure.json')));
@@ -205,7 +213,7 @@ void main() async {
   if (Platform.isIOS) {
     unawaited(excludeFromBackup(
       folders: [
-        for (final folder in ['toolbox', 'backgroundDownloaderTaskRecords', 'backgroundDownloaderResumeData', 'backgroundDownloaderDatabase', 'font_packs']) Directory(path.join(support.path, folder)),
+        for (final folder in ['toolbox', 'backgroundDownloaderTaskRecords', 'backgroundDownloaderResumeData', 'backgroundDownloaderDatabase', 'font_packs', 'sky_packs']) Directory(path.join(support.path, folder)),
         deviceOnly,
         Directory(path.join(socialDirectory, SocialSpaces.accountFolder)),
       ],
@@ -271,6 +279,8 @@ void main() async {
   watchNearby(nearby, appAccounts);
   // 选着字体包而本机没有（升级上来原先就选着衬线的）：同意之后下回来，装好界面就换过去；失败下次启动再试。
   hooks.afterAgreed('FontPacks', display.ensureFontPack, service: NetworkService.fontPack);
+  // 选着星空而本机素材缺了或坏了：同意之后下回来，装好背景就换过去；失败下次启动再试。
+  hooks.afterAgreed('SkyPacks', display.ensureSkyPack, service: NetworkService.skyPack);
   try {
     await session.restore();
   } catch (error, stack) {

@@ -24,6 +24,8 @@ enum NetworkService {
   appUpdate,
   // 下载的字体包。
   fontPack,
+  // 下载的星空背景素材。
+  skyPack,
   // 诊断包上传与认领。
   diagnostics,
   // 学习通签到（学习通服务器）。

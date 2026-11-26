@@ -22,19 +22,44 @@ class CampusWallpaper {
   static const maxBlurSigma = 30.0;
 }
 
+// 星空背景的一幅画面：图片与它的色调网格（同自定义壁纸，算直接压在背景上的文字所需的可读下限）。
+class CampusSkyImage {
+  const CampusSkyImage({required this.image, required this.tone});
+  final ImageProvider image;
+  final WallpaperTone tone;
+  @override
+  bool operator ==(Object other) => other is CampusSkyImage && other.image == image && other.tone == tone;
+  @override
+  int get hashCode => Object.hash(image, tone);
+}
+
+// 星空背景此刻的样子：from 与 to 两幅按 mix 交叉过渡（0 只有 from）。哪两幅、过渡到哪由组合根按时段算好，本层只管画。
+class CampusSkyScene {
+  const CampusSkyScene({required this.from, required this.to, required this.mix});
+  final CampusSkyImage from;
+  final CampusSkyImage to;
+  final double mix;
+  @override
+  bool operator ==(Object other) => other is CampusSkyScene && other.from == from && other.to == to && other.mix == mix;
+  @override
+  int get hashCode => Object.hash(from, to, mix);
+}
+
 // 云雾与壁纸互换、换图时交叉淡化的时长（新图已先解码好）；背景在所有玻璃之下，淡化不影响玻璃取背景。
 const _backgroundSwap = Duration(milliseconds: 420);
 // 模糊、淡化数值变化（读屏增减、松手吸附、预览退回）时平滑跟随的时长；拖动中逐帧跟手，几乎无延迟感。
 const _lookFollow = Duration(milliseconds: 160);
 
 // 唯一背景循环，不随路由/列表项复制。纹理固定，不逐帧生成随机噪点。设了壁纸时改画静态壁纸，不再循环；高对比度时两者都不画。
+// sky 给了画面时改画星空（优先于壁纸，同样不循环）；画面每分钟由组合根更新，只重画背景这一层、不重建应用。
 // overlays 是正在显示的弹窗、弹层层数，大于 0 时云雾停在原处：弹窗的全屏模糊压在流动的云雾上时，每一帧都要重算整屏模糊
 // （模拟器上弹窗静止时每帧栅格约 80ms），停下后弹窗不动就不出帧；关掉后从原处接着流动，不跳。
 class CampusAtmosphere extends StatefulWidget {
-  const CampusAtmosphere({super.key, required this.child, this.phase, this.wallpaper, this.overlays});
+  const CampusAtmosphere({super.key, required this.child, this.phase, this.wallpaper, this.sky, this.overlays});
   final Widget child;
   final double? phase;
   final CampusWallpaper? wallpaper;
+  final ValueListenable<CampusSkyScene?>? sky;
   final ValueListenable<int>? overlays;
   // 没人操作满这么久云雾就停在原处（[人工决策] 见 _ticking 上方 11-17 那条）。
   static const idleAfter = Duration(seconds: 8);
@@ -70,6 +95,8 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
   // 正在显示的壁纸。换上新图时先按铺满屏幕的尺寸解码好再换，交叉淡化直接从旧背景到新图，
   // 不会先淡到底色、等解码完图片再冒出来；恢复云雾和同一张图的外观变化立即生效。
   late CampusWallpaper? _shown = widget.wallpaper;
+  // 正在显示的星空画面。新的两幅图先按铺满屏幕的尺寸解码好再换（同壁纸）；只有过渡比例变了直接换。
+  CampusSkyScene? _skyShown;
 
   @override
   void didChangeDependencies() {
@@ -78,7 +105,26 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
         CampusMotion.allowed(context) &&
         !MediaQuery.highContrastOf(context) &&
         !MediaQuery.accessibleNavigationOf(context);
+    if (_skyShown == null && widget.sky?.value != null) _syncSky();
     _updatePlayback();
+  }
+
+  void _syncSky() {
+    final next = widget.sky?.value;
+    final shown = _skyShown;
+    if (next == null || shown != null && next.from == shown.from && next.to == shown.to) {
+      if (next != shown) setState(() => _skyShown = next);
+      _updatePlayback();
+      return;
+    }
+    Future<void> decode(CampusSkyImage image) => precacheImage(_coverImage(image.image, image.tone, context), context, onError: (error, stack) {
+      campusLog('[Sky] action=precache errorType=${error.runtimeType}\n$stack');
+    });
+    Future.wait([decode(next.from), if (next.to != next.from) decode(next.to)]).then((_) {
+      if (!mounted || widget.sky?.value?.from != next.from || widget.sky?.value?.to != next.to) return;
+      setState(() => _skyShown = widget.sky!.value);
+      _updatePlayback();
+    });
   }
 
   void _syncWallpaper() {
@@ -103,7 +149,7 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
   }
 
   void _updatePlayback() {
-    final want = _allowed && _foreground && widget.phase == null && _shown == null && (widget.overlays?.value ?? 0) == 0;
+    final want = _allowed && _foreground && widget.phase == null && _shown == null && _skyShown == null && (widget.overlays?.value ?? 0) == 0;
     if (want && !_wanted) _armIdle();
     _wanted = want;
     final run = want && !_idle;
@@ -138,12 +184,18 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
     WidgetsBinding.instance.addObserver(this);
     GestureBinding.instance.pointerRouter.addGlobalRoute(_onPointer);
     widget.overlays?.addListener(_updatePlayback);
+    widget.sky?.addListener(_syncSky);
   }
 
   @override
   void didUpdateWidget(CampusAtmosphere oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.wallpaper != widget.wallpaper) _syncWallpaper();
+    if (oldWidget.sky != widget.sky) {
+      oldWidget.sky?.removeListener(_syncSky);
+      widget.sky?.addListener(_syncSky);
+      _syncSky();
+    }
     if (oldWidget.overlays != widget.overlays) {
       oldWidget.overlays?.removeListener(_updatePlayback);
       widget.overlays?.addListener(_updatePlayback);
@@ -156,6 +208,7 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
     WidgetsBinding.instance.removeObserver(this);
     GestureBinding.instance.pointerRouter.removeGlobalRoute(_onPointer);
     widget.overlays?.removeListener(_updatePlayback);
+    widget.sky?.removeListener(_syncSky);
     _idleTimer?.cancel();
     if (_ticking) campusDecorTick.removeListener(_advance);
     _fogCache.dispose();
@@ -166,6 +219,7 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
   Widget _layer(BuildContext context) {
     final highContrast = MediaQuery.highContrastOf(context);
     final wallpaper = highContrast ? null : _shown;
+    final sky = highContrast ? null : _skyShown;
     return RepaintBoundary(
       child: IgnorePointer(
         child: ExcludeSemantics(
@@ -174,7 +228,9 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
             switchInCurve: Curves.easeInOutCubic,
             switchOutCurve: Curves.easeInOutCubic,
             layoutBuilder: (current, previous) => Stack(fit: StackFit.expand, children: [...previous, ?current]),
-            child: wallpaper != null
+            child: sky != null
+                ? _SkyLayer(key: const ValueKey('sky'), scene: sky)
+                : wallpaper != null
                 ? _WallpaperLayer(key: ValueKey(wallpaper.image), wallpaper: wallpaper)
                 : CustomPaint(
                     key: const ValueKey('fog'),
@@ -218,11 +274,59 @@ class CampusBackdrop extends InheritedWidget {
 }
 
 // 按铺满屏幕所需的像素解码，不放大原图；预解码与绘制共用，缓存键一致。只订阅屏幕尺寸与像素密度。
-ImageProvider _wallpaperImage(CampusWallpaper wallpaper, BuildContext context) {
-  final tone = wallpaper.tone;
+ImageProvider _wallpaperImage(CampusWallpaper wallpaper, BuildContext context) => _coverImage(wallpaper.image, wallpaper.tone, context);
+
+ImageProvider _coverImage(ImageProvider image, WallpaperTone tone, BuildContext context) {
   final physical = MediaQuery.sizeOf(context) * MediaQuery.devicePixelRatioOf(context);
   final scale = math.min(1.0, math.max(physical.width / tone.width, physical.height / tone.height));
-  return ResizeImage(wallpaper.image, width: math.max(1, (tone.width * scale).round()), height: math.max(1, (tone.height * scale).round()));
+  return ResizeImage(image, width: math.max(1, (tone.width * scale).round()), height: math.max(1, (tone.height * scale).round()));
+}
+
+// 星空的两幅画按过渡比例叠着画（后一幅用图片自带的不透明度，不另开离屏图层），可读下限按两幅的网格同比例插值，
+// 直接压在背景上的字与状态栏图标在过渡中也看得清（同自定义壁纸的淡化层）。
+class _SkyLayer extends StatefulWidget {
+  const _SkyLayer({super.key, required this.scene});
+  final CampusSkyScene scene;
+  @override
+  State<_SkyLayer> createState() => _SkyLayerState();
+}
+
+class _SkyLayerState extends State<_SkyLayer> {
+  final _floors = <(WallpaperTone, CampusPalette), Float64List>{};
+
+  Float64List _floor(WallpaperTone tone, CampusPalette palette) {
+    if (_floors.length > 4) _floors.clear();
+    return _floors[(tone, palette)] ??= wallpaperVeilAlphas(tone, palette);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = CampusPalette.of(context);
+    final scene = widget.scene, from = scene.from, to = scene.to;
+    final blending = scene.mix > 0 && to != from;
+    Widget image(CampusSkyImage sky, double opacity) => Image(
+      image: _coverImage(sky.image, sky.tone, context),
+      fit: BoxFit.cover,
+      filterQuality: FilterQuality.medium,
+      gaplessPlayback: true,
+      opacity: opacity >= 1 ? null : AlwaysStoppedAnimation(opacity),
+      errorBuilder: (context, error, stack) {
+        campusLog('[Sky] action=load errorType=${error.runtimeType}\n$stack');
+        return const SizedBox.expand();
+      },
+    );
+    var floor = _floor(from.tone, palette);
+    if (blending && to.tone.columns == from.tone.columns && to.tone.rows == from.tone.rows) {
+      final next = _floor(to.tone, palette);
+      floor = Float64List.fromList([for (var index = 0; index < floor.length; index++) floor[index] + (next[index] - floor[index]) * scene.mix]);
+    }
+    return Stack(fit: StackFit.expand, children: [
+      ColoredBox(color: wallpaperVeilColor(palette)),
+      image(from, 1),
+      if (blending) image(to, scene.mix),
+      CustomPaint(painter: _VeilPainter(tone: from.tone, floor: floor, fade: 0, color: wallpaperVeilColor(palette))),
+    ]);
+  }
 }
 
 class _WallpaperLayer extends StatefulWidget {

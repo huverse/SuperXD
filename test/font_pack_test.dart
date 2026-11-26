@@ -8,7 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-import 'package:superxd/device/relay_font_pack_source.dart';
+import 'package:superxd/device/relay_pack_source.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/font_pack.dart';
 import 'package:superxd/local/display_settings.dart';

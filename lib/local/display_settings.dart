@@ -10,13 +10,16 @@ import 'package:sqflite/sqflite.dart';
 import 'package:synchronized/synchronized.dart';
 
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/domain/sky.dart';
 import 'package:superxd/local/font_packs.dart';
+import 'package:superxd/local/pack_library.dart';
 import 'package:superxd/local/wallpaper_store.dart';
 
 // wallpaperDirectory 为 null 时不支持自定义壁纸（测试与内存实例）。
 // fontPacks 为 null 时不管字体包（测试与内存实例）：字体包里的字体当作已经装好，字体由调用方自己注册。
+// skyPacks 为 null 时同理：星空素材当作已经装好（测试与内存实例）。
 class DisplaySettings extends ChangeNotifier {
-  DisplaySettings.memory({Directory? wallpaperDirectory, this.fontPacks})
+  DisplaySettings.memory({Directory? wallpaperDirectory, this.fontPacks, this.skyPacks})
     : _database = null,
       _wallpaper = wallpaperDirectory == null ? null : WallpaperStore(wallpaperDirectory) {
     _watchFontPacks();
@@ -25,6 +28,7 @@ class DisplaySettings extends ChangeNotifier {
     this._database,
     this._wallpaper,
     this.fontPacks,
+    this.skyPacks,
     this._textSize,
     this._paletteId,
     this._fontId,
@@ -35,6 +39,7 @@ class DisplaySettings extends ChangeNotifier {
     this._wallpaperBlur,
     this._wallpaperFade,
     this._classNowCollapsed,
+    this._skyStyle,
   ) {
     _watchFontPacks();
   }
@@ -42,6 +47,8 @@ class DisplaySettings extends ChangeNotifier {
   final WallpaperStore? _wallpaper;
   // 要下载的字体（字体包，人工决策见 domain/font_pack.dart）的本机文件与下载状态，界面页经它显示进度、取消与删除。
   final FontPackLibrary? fontPacks;
+  // 星空背景的素材包（人工决策见 domain/sky.dart）：本机文件与下载状态，界面页经它显示进度、取消与删除，组合根按它取各幕的图片文件。
+  final PackLibrary<SkyPack>? skyPacks;
   final Lock _saveLock = Lock();
   double _textSize = 0;
   String _paletteId = defaultPaletteId;
@@ -53,6 +60,7 @@ class DisplaySettings extends ChangeNotifier {
   int _wallpaperBlur = defaultWallpaperBlur;
   int _wallpaperFade = 0;
   bool _classNowCollapsed = false;
+  String? _skyStyle;
   // 今天页的此刻卡收成一条（用户收起后一直保持，[人工决策] 在 page/today_page.dart 的 _ClassNow）：只是这一块的样子，
   // 改它不通知整个应用重建（同 wallpaperLook），页面单独听；落库同在保存锁里的整份快照。
   late final classNowCollapsed = ValueNotifier<bool>(_classNowCollapsed);
@@ -73,6 +81,12 @@ class DisplaySettings extends ChangeNotifier {
   // 为空是系统字体（交给平台默认：iOS 西文 SF、中文苹方；安卓是系统的默认字体）。
   String? get fontFamily => fontInUse == systemFont ? null : fontFamilies[fontInUse]!;
   String get glassMode => _glassMode;
+  // 背景选的星空画风（为空是云雾或自定义图片）；skyInUse 是实际铺着的：素材还没装好（正在下、升级上来、文件坏了）时先照旧用云雾或自定义图片，选择保留。
+  // 星空优先于自定义图片：选星空不删已经设好的图片，换回「自定义图片」时还在。
+  String? get skyStyle => _skyStyle;
+  String? get skyInUse => _skyStyle != null && skyReady(_skyStyle!) ? _skyStyle : null;
+  bool skyReady(String style) => skyPacks?.ready(style) ?? true;
+  static bool knownSky(String id) => SkyStyle.values.any((style) => style.id == id);
   bool get supportsWallpaper => _wallpaper != null;
   File? get wallpaperFile => _wallpaperFile == null ? null : _wallpaper?.file(_wallpaperFile!);
   // 色调网格由 theme/wallpaper_tone.dart 编码，这里只原样保存。
@@ -124,16 +138,16 @@ class DisplaySettings extends ChangeNotifier {
 
   // systemTextScale 是这时的系统字号，只在 v8 换算老字号时用；默认读窗口的。
   // fontPacks 给了时，选的是字体包就在这里（首帧之前）核对本机文件并注册好，缺了或坏了先用默认字体（见 fontInUse）。
-  static Future<DisplaySettings> open({String? databasePath, Directory? wallpaperDirectory, double? systemTextScale, FontPackLibrary? fontPacks}) async {
+  static Future<DisplaySettings> open({String? databasePath, Directory? wallpaperDirectory, double? systemTextScale, FontPackLibrary? fontPacks, PackLibrary<SkyPack>? skyPacks}) async {
     final system = systemTextScale ?? ui.PlatformDispatcher.instance.textScaleFactor;
     // 单实例并回滚遗留的事务：退出再进入时接回旧引擎留下的连接（人工决策见 account_store.dart 的 open）。
     final db = await databaseFactory.openDatabase(
       databasePath ??
           path.join(await getDatabasesPath(), 'display_settings.db'),
-      options: OpenDatabaseOptions(version: 9, rollbackActiveTransactionOnOpen: true,
+      options: OpenDatabaseOptions(version: 10, rollbackActiveTransactionOnOpen: true,
       onCreate: (db, _) async {
         await db.execute(
-          "CREATE TABLE display_settings (id INTEGER PRIMARY KEY CHECK(id=1), text_scale REAL NOT NULL, palette_id TEXT NOT NULL DEFAULT '$defaultPaletteId', font_id TEXT NOT NULL DEFAULT 'maple', theme_mode TEXT NOT NULL DEFAULT 'system', glass_mode TEXT NOT NULL DEFAULT 'auto', wallpaper_file TEXT, wallpaper_tone TEXT, wallpaper_blur INTEGER NOT NULL DEFAULT $defaultWallpaperBlur, wallpaper_fade INTEGER NOT NULL DEFAULT 0, class_now_collapsed INTEGER NOT NULL DEFAULT 0)",
+          "CREATE TABLE display_settings (id INTEGER PRIMARY KEY CHECK(id=1), text_scale REAL NOT NULL, palette_id TEXT NOT NULL DEFAULT '$defaultPaletteId', font_id TEXT NOT NULL DEFAULT 'maple', theme_mode TEXT NOT NULL DEFAULT 'system', glass_mode TEXT NOT NULL DEFAULT 'auto', wallpaper_file TEXT, wallpaper_tone TEXT, wallpaper_blur INTEGER NOT NULL DEFAULT $defaultWallpaperBlur, wallpaper_fade INTEGER NOT NULL DEFAULT 0, class_now_collapsed INTEGER NOT NULL DEFAULT 0, sky_style TEXT)",
         );
       },
       onUpgrade: (db, oldVersion, _) async {
@@ -180,6 +194,10 @@ class DisplaySettings extends ChangeNotifier {
         if (oldVersion < 9) {
           await db.execute('ALTER TABLE display_settings ADD COLUMN class_now_collapsed INTEGER NOT NULL DEFAULT 0');
         }
+        if (oldVersion < 10) {
+          // 星空背景的画风（为空是没选星空，人工决策见 domain/sky.dart）。
+          await db.execute('ALTER TABLE display_settings ADD COLUMN sky_style TEXT');
+        }
       },
     ));
     final rows = await db.query('display_settings', where: 'id = 1', limit: 1);
@@ -191,15 +209,19 @@ class DisplaySettings extends ChangeNotifier {
     final glass = row?['glass_mode'];
     final wallpaper = wallpaperDirectory == null ? null : WallpaperStore(wallpaperDirectory);
     final file = row?['wallpaper_file'], tone = row?['wallpaper_tone'];
-    final blur = row?['wallpaper_blur'], fade = row?['wallpaper_fade'], collapsed = row?['class_now_collapsed'];
+    final blur = row?['wallpaper_blur'], fade = row?['wallpaper_fade'], collapsed = row?['class_now_collapsed'], sky = row?['sky_style'];
     // 文件被外部删除、或缺少色调网格时按未设置处理，落库并清掉残留文件。
     final hasWallpaper = wallpaper != null && file is String && tone is String && await wallpaper.file(file).exists();
     final fontId = font is String && knownFont(font) ? font : defaultFontId;
     await fontPacks?.open(fontId);
+    final skyStyle = sky is String && knownSky(sky) ? sky : null;
+    // 选着星空时核对本机素材（首帧之前，不联网）；缺了或坏了先照旧用云雾或自定义图片，同意协议与政策后再下回来（ensureSkyPack）。
+    await skyPacks?.open(skyStyle);
     final settings = DisplaySettings._(
       db,
       wallpaper,
       fontPacks,
+      skyPacks,
       scale is num && knownTextSize(scale.toDouble()) ? (scale == 0 ? 0.0 : snapTextSize(scale.toDouble())) : 0.0,
       palette is String && paletteIds.contains(palette) ? palette : defaultPaletteId,
       fontId,
@@ -211,6 +233,7 @@ class DisplaySettings extends ChangeNotifier {
       blur is int && blur >= 0 && blur <= wallpaperMax ? blur : defaultWallpaperBlur,
       fade is int && fade >= 0 && fade <= wallpaperMax ? fade : 0,
       collapsed == 1,
+      skyStyle,
     );
     if (file != null && !hasWallpaper) {
       await db.update('display_settings', {'wallpaper_file': null, 'wallpaper_tone': null}, where: 'id = 1');
@@ -272,6 +295,37 @@ class DisplaySettings extends ChangeNotifier {
     await packs.delete(id);
   }
 
+  // 界面页点选星空画风：先下载、核对好那一套素材再换上（进度在界面页原地显示，可取消）；下载期间又点了别的背景，下完也不再换过去。
+  // 下载失败或取消时背景不变。
+  String? _choosingSky;
+  Future<void> chooseSky(String style) async {
+    if (!knownSky(style)) throw ArgumentError.value(style, 'sky');
+    _choosingSky = style;
+    final packs = skyPacks;
+    for (final other in packs?.packs.keys ?? const <String>[]) {
+      if (other != style) packs!.cancel(other);
+    }
+    if (packs != null && !packs.ready(style) && !await packs.install(style)) return;
+    if (_choosingSky != style) return;
+    _choosingSky = null;
+    await _saveLock.synchronized(() => _write(skyStyle: style));
+  }
+
+  // 选着星空却还没装好时下载并装上（升级上来、文件坏了），装好背景就换过去；失败只留在状态里，下次启动再试。
+  // 组合根在同意协议与政策之后调；没配中转（下不了）时什么也不做。
+  Future<void> ensureSkyPack() async {
+    final packs = skyPacks, style = _skyStyle;
+    if (packs == null || style == null || packs.ready(style) || !packs.downloadable) return;
+    await packs.install(style);
+  }
+
+  // 删除下载的星空素材（界面页⋯菜单里确认后）：正在用这一套就先换回云雾，再删文件；之后这个画风回到未下载，可以再下。
+  Future<void> deleteSkyPack(String style) async {
+    if (_choosingSky == style) _choosingSky = null;
+    if (_skyStyle == style) await _saveLock.synchronized(() => _write(clearSky: true));
+    await skyPacks!.delete(style);
+  }
+
   void _cancelPacksBut(String id) {
     for (final pack in fontPacks?.packs.keys ?? const <String>[]) {
       if (pack != id) fontPacks!.cancel(pack);
@@ -279,15 +333,20 @@ class DisplaySettings extends ChangeNotifier {
   }
 
   // 字体包装好或删掉时，正在用的字体变了才通知（下载进度每变一次都通知字体包，不让整个应用跟着重建）。
+  // 星空素材同理：实际铺着的画风变了才通知。
   String? _shownFont;
+  String? _shownSky;
   void _watchFontPacks() {
     _shownFont = fontInUse;
+    _shownSky = skyInUse;
     fontPacks?.addListener(_onFontPacks);
+    skyPacks?.addListener(_onFontPacks);
   }
 
   void _onFontPacks() {
-    if (fontInUse == _shownFont) return;
+    if (fontInUse == _shownFont && skyInUse == _shownSky) return;
     _shownFont = fontInUse;
+    _shownSky = skyInUse;
     notifyListeners();
   }
 
@@ -331,13 +390,15 @@ class DisplaySettings extends ChangeNotifier {
     if (wallpaper == null) throw StateError('不支持自定义壁纸');
     return _saveLock.synchronized(() async {
       final name = await wallpaper.import(source);
-      await _write(wallpaperFile: name, wallpaperTone: tone);
+      await _write(wallpaperFile: name, wallpaperTone: tone, clearSky: true);
       await wallpaper.prune(name);
     });
   }
 
+  // 回到默认云雾：自定义图片与星空都不用了。
   Future<void> clearWallpaper() => _saveLock.synchronized(() async {
-    await _write(clearWallpaper: true);
+    _choosingSky = null;
+    await _write(clearWallpaper: true, clearSky: true);
     await _wallpaper?.prune(null);
   });
 
@@ -372,7 +433,9 @@ class DisplaySettings extends ChangeNotifier {
     int? wallpaperBlur,
     int? wallpaperFade,
     bool? classNowCollapsed,
+    String? skyStyle,
     bool clearWallpaper = false,
+    bool clearSky = false,
   }) async {
     final nextTextSize = textSize ?? _textSize,
         nextPalette = paletteId ?? _paletteId,
@@ -383,7 +446,8 @@ class DisplaySettings extends ChangeNotifier {
         nextTone = clearWallpaper ? null : wallpaperTone ?? _wallpaperTone,
         nextBlur = wallpaperBlur ?? _wallpaperBlur,
         nextFade = wallpaperFade ?? _wallpaperFade,
-        nextCollapsed = classNowCollapsed ?? _classNowCollapsed;
+        nextCollapsed = classNowCollapsed ?? _classNowCollapsed,
+        nextSky = clearSky ? null : skyStyle ?? _skyStyle;
     // 只有此刻卡收起与否变了时只落库、不通知整个应用（见 classNowCollapsed）。
     final appearance = nextTextSize != _textSize ||
         nextPalette != _paletteId ||
@@ -393,7 +457,8 @@ class DisplaySettings extends ChangeNotifier {
         nextFile != _wallpaperFile ||
         nextTone != _wallpaperTone ||
         nextBlur != _wallpaperBlur ||
-        nextFade != _wallpaperFade;
+        nextFade != _wallpaperFade ||
+        nextSky != _skyStyle;
     if (!appearance && nextCollapsed == _classNowCollapsed) return;
     await _database?.insert('display_settings', {
       'id': 1,
@@ -407,6 +472,7 @@ class DisplaySettings extends ChangeNotifier {
       'wallpaper_blur': nextBlur,
       'wallpaper_fade': nextFade,
       'class_now_collapsed': nextCollapsed ? 1 : 0,
+      'sky_style': nextSky,
     }, conflictAlgorithm: ConflictAlgorithm.replace);
     _textSize = nextTextSize;
     _paletteId = nextPalette;
@@ -418,8 +484,10 @@ class DisplaySettings extends ChangeNotifier {
     _wallpaperBlur = nextBlur;
     _wallpaperFade = nextFade;
     _classNowCollapsed = nextCollapsed;
+    _skyStyle = nextSky;
     if (!appearance) return;
     _shownFont = fontInUse;
+    _shownSky = skyInUse;
     notifyListeners();
   }
   Future<void> close() async {
@@ -430,6 +498,7 @@ class DisplaySettings extends ChangeNotifier {
   @override
   void dispose() {
     fontPacks?.removeListener(_onFontPacks);
+    skyPacks?.removeListener(_onFontPacks);
     wallpaperLook.dispose();
     classNowCollapsed.dispose();
     super.dispose();

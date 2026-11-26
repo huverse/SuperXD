@@ -74,7 +74,9 @@
 - quick_nav.dart：今天页侧栏的常用与最近（人工决策见 page/side_drawer.dart 的 SideDrawerPanel）：QuickNavPrefs（常用为空表示没编辑过、用组合根给的默认；最近最新在前、最多 quickRecentLimit 个；fromJson 是本机文件的外部输入边界，常用最多 quickPinnedLimit 个）、本机记录端口 QuickNavMemory（local 实现）、搜索排序 quickNavRank（名字开头、名字里有、别名里有三档）。
 - app_health.dart：分批更新的健康回报与新版本反馈（[人工决策] 在文件头，服务端判定见 server/src/modules/app_health/app_health_rules.ts）：按校园日的一项 HealthDay（版本、有没有致命错误、发过没有，11-17 起另有本机原始数：各启动档的次数 launches 与帧数、慢帧数，发出去的只是中位启动档 launchTier 与慢帧档 frameTier，档位界线 healthLaunchBounds、healthSlowBounds、少于 healthFrameMinimum 帧不报）与本机记录 HealthRecord（另有当前版本第一次打开的日子与反馈交过没有）、只留最近几天 healthRecent、该发的 healthDue、给不给反馈入口 healthFeedbackOpen、失败 AppHealthException（rejected 是服务器拒收）、中转端口 AppHealthClient（device 实现）与本机记录端口 AppHealthMemory（local 实现）。
 - leisure.dart：娱乐与积分开关的来由（[人工决策] 在文件头：11-15 两条，11-16 起由联网偏好取代、不再单独收起游乐场），没有代码；删除数据在 application/leisure.dart。
-- font_pack.dart：字体包（不随安装包、选用时从自建中转下载的字体，[人工决策] 在文件头）：FontPack（字体 id、注册用的族名、各字重文件）与 FontPackFile（文件名、字重、大小、SHA-256），登记表 fontPacks 现在只有衬线 serif；文件就是仓库 font_packs 目录里的同名文件（tool/font_subset.py 生成，文件名带内容哈希），换内容就换名字、旧文件留到用它的版本都低于最低可用版本；状态 FontPackStatus（没下载、下载中、文件齐全未注册、已装好、失败）；下载端口 FontPackSource（device 实现）、FontPackException、FontPackCancelled。本机文件与注册在 local/font_packs.dart。
+- download_pack.dart：按需下载的文件包（字体包与星空素材共用）：文件 PackFile（文件名、大小、SHA-256）、包 DownloadPack 与总大小 packSize、文件名规则 packFileName（.ttf 或 .webp，同中转下载接口）、状态 PackStatus 与 PackPhase（没下载、下载中、文件齐全未装好、已装好、失败）、下载端口 PackSource（device 实现）、PackException、PackCancelled。本机文件与核对在 local/pack_library.dart。
+- font_pack.dart：字体包（不随安装包、选用时从自建中转下载的字体，[人工决策] 在文件头）：FontPack（字体 id、注册用的族名、各字重文件）与 FontPackFile（多一个字重），登记表 fontPacks 现在只有衬线 serif；文件就是仓库 font_packs 目录里的同名文件（tool/font_subset.py 生成，文件名带内容哈希），换内容就换名字、旧文件留到用它的版本都低于最低可用版本；FontPackStatus、FontPackPhase、FontPackSource、FontPackException、FontPackCancelled 是 download_pack.dart 那几样的别名。本机文件与注册在 local/font_packs.dart。
+- sky.dart：星空背景（[人工决策] 在文件头，11-26 六条）：画风 SkyStyle（真实、新海诚）、五幕 SkyPhase（黎明、白天、黄昏、夜、深夜）、素材包 SkyPack 与 SkyFile、登记表 skyPacks（素材是第三方作品不进仓库，维护者本机 tool/sky_pack.py 打包、tool/sky_publish.sh 传到中转，这里只登记文件名、大小与 SHA-256）；济南的太阳高度 sunAltitude 与此刻的画面 skyMoment（按太阳高度分幕、夜与深夜按校园时钟分，两幕之间平滑过渡，SkyMoment 是两幕与比例）。
 - interruption.dart：打扰时机的上下课安静期 classQuietUntil（开课前 20 分钟到开课后 5 分钟、下课前 5 分钟到下课后 10 分钟，相连的并成一段，返回这段结束的时刻）；人工决策在文件头，其余条件见 application/app_moments.dart。
 - common_free.dart：好友课表与自己课表的共同空闲。compareWeek 按好友那一周的日期对齐双方周次（任一方缺开学日时按相同周次），busyPeriods 求某周每天占用的节次，commonFree 合并双方都空的连续节次并配上作息时刻；周末任一方有课才显示周末。
 
@@ -111,7 +113,7 @@
 - 成绩、卡片与更新规则：grades_test.dart、share_card_test.dart、app_update_test.dart；开屏画作清单与轮换：painting_test.dart。
 - 同步记录（读写边界、文案与通知）：sync_record_test.dart。
 - 开发者的话与打扰时机（清单解析、弹信规则、安静期）：developer_notes_test.dart；节日规则：festival_test.dart；联网偏好：network_mode_test.dart。
-- 字体包（登记与仓库文件一致、本机文件与下载）：code_conventions_test.dart、font_pack_test.dart。
+- 字体包（登记与仓库文件一致、本机文件与下载）：code_conventions_test.dart、font_pack_test.dart；星空背景（登记、太阳高度、分幕与过渡连续）：sky_test.dart。
 - 灰度与分批更新（分桶向量含等级加权、配置解析、编排、签名下发、发版清单的放量表、本机记的等级与批次；第 2 版的条件与参数、两份签名、拉取退回第 1 版、点名的判定、本机记录与中转客户端）：rollout_test.dart。
 - 面向用户的文案写法（节次、学分、按远近写的时刻、不及格）：campus_text_test.dart。
 - 有界请求内核（超时管到响应体、取消、响应上限、请求记录、堆栈、公网地址与只连公网、记连接的内核按真连接分出超时卡在哪一步）：campus_http_test.dart；密码学小工具（严格解码、验签）：campus_crypto_test.dart。
@@ -119,4 +121,4 @@
 # 人工决策检索
 
 - 命令：grep -rn 人工决策- lib/domain
-- 本目录的标记位于灰度（rollout.dart 文件头，含 11-16 混合判定与本机签名上传两条）、功能开关登记（feature_flags.dart 文件头）、自动同步与三方合并（auto_sync.dart 文件头）、共用请求内核（campus_http.dart 的 CampusHttp）、日志出口、节次展开、单周调整、按课名合并、版本恢复、开发者的话（developer_note.dart 文件头）、打扰时机的安静期（interruption.dart 文件头）、节日（festival.dart 文件头）、娱乐与积分的开关（leisure.dart 文件头）、诊断包上传（diagnostic_upload.dart 文件头）、字体裁剪与字体包（font_pack.dart 文件头）。
+- 本目录的标记位于灰度（rollout.dart 文件头，含 11-16 混合判定与本机签名上传两条）、功能开关登记（feature_flags.dart 文件头）、自动同步与三方合并（auto_sync.dart 文件头）、共用请求内核（campus_http.dart 的 CampusHttp）、日志出口、节次展开、单周调整、按课名合并、版本恢复、开发者的话（developer_note.dart 文件头）、打扰时机的安静期（interruption.dart 文件头）、节日（festival.dart 文件头）、娱乐与积分的开关（leisure.dart 文件头）、诊断包上传（diagnostic_upload.dart 文件头）、字体裁剪与字体包（font_pack.dart 文件头）、星空背景（sky.dart 文件头）。

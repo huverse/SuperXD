@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 
+import 'package:superxd/domain/download_pack.dart';
 import 'package:superxd/domain/font_pack.dart';
 
 // 测试用的小字体包：同衬线的 id 与族名，三个字重各几 KB 的合成内容（只测下载、核对与状态，不真的注册给引擎）。
@@ -34,7 +35,7 @@ class FakeFontPackSource implements FontPackSource {
   Completer<void> held = Completer<void>();
 
   @override
-  Future<void> download(FontPackFile file, String target, {required void Function(int received) onProgress, required Future<void> abort}) async {
+  Future<void> download(PackFile file, String target, {required void Function(int received) onProgress, required Future<void> abort}) async {
     final index = requested.length;
     requested.add(file.name);
     if (index == failAt) throw error!;
