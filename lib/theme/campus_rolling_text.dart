@@ -3,11 +3,12 @@ import 'package:flutter/material.dart';
 // 数字滚动（同 iOS 实时活动、灵动岛的数字过渡）：文字变了时只有变了的那几位滚动，新字从下方滚入、旧字向上滚出并淡去；
 // 倒数（countsDown）时方向相反，像往回拨。没变的位不动，位按右对齐配对，位数变了（10:00 → 9:59）多出的那位直接淡出。
 // 每位一个 AnimatedSwitcher，没用 animated_flip_counter：它只认整数加前后缀、会滚过中间每个数字，排不了「4:59」这种带分隔的串。
-// 减少动画时直接换字。读屏请由调用方给整句标签。
+// 减少动画时直接换字。读屏请由调用方给整句标签。strutStyle 原样交给每个字（数字和小一号的单位排在一行、要按单位那行定高时用）。
 class CampusRollingText extends StatelessWidget {
-  const CampusRollingText(this.text, {super.key, this.style, this.countsDown = false});
+  const CampusRollingText(this.text, {super.key, this.style, this.strutStyle, this.countsDown = false});
   final String text;
   final TextStyle? style;
+  final StrutStyle? strutStyle;
   final bool countsDown;
 
   @override
@@ -17,7 +18,7 @@ class CampusRollingText extends StatelessWidget {
     return Row(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
       for (final (index, glyph) in glyphs.indexed)
         instant
-            ? Text(glyph, style: style)
+            ? Text(glyph, style: style, strutStyle: strutStyle)
             : AnimatedSwitcher(
                 key: ValueKey(glyphs.length - index),
                 duration: const Duration(milliseconds: 360),
@@ -34,7 +35,7 @@ class CampusRollingText extends StatelessWidget {
                     child: SlideTransition(position: animation.drive(Tween(begin: Offset(0, offset), end: Offset.zero)), child: child),
                   );
                 },
-                child: Text(glyph, key: ValueKey(glyph), style: style),
+                child: Text(glyph, key: ValueKey(glyph), style: style, strutStyle: strutStyle),
               ),
     ]);
   }

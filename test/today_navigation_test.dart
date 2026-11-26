@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/semantics.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:superxd/domain/campus_gateway.dart';
@@ -857,6 +857,44 @@ void main() {
     await tester.pumpAndSettle();
     expect((strip.evaluate().length, _remaining(tester), find.text('后下课').evaluate().length), (1, '3分30秒', 1));
     expect(display.classNowCollapsed.value, isTrue, reason: '自动展开与再收起都不改记下的选择');
+    expect(tester.takeException(), isNull);
+  });
+
+  // 11-26 用户截图：条里「49秒 后上课」的「秒」比「后上课」低（数字连单位按基线、整组被大数字撑高后和「后上课」各自居中）。
+  testWidgets('此刻条右边：数字、单位与「后上课」同一条基线，「后上课」与课名按行中线对齐（分钟、秒级与上课中都是）', (tester) async {
+    final display = DisplaySettings.memory();
+    addTearDown(display.dispose);
+    await display.setClassNowCollapsed(true);
+    // 照段落的参数复排一份取第一行的基线（布局之外不能问 RenderBox 的基线）。
+    double baseline(Element element) {
+      final paragraph = element.renderObject! as RenderParagraph;
+      final painter = TextPainter(text: paragraph.text, textDirection: paragraph.textDirection, textScaler: paragraph.textScaler, strutStyle: paragraph.strutStyle, textHeightBehavior: paragraph.textHeightBehavior)..layout();
+      final line = painter.computeLineMetrics().first.baseline;
+      painter.dispose();
+      return paragraph.localToGlobal(Offset(0, line)).dy;
+    }
+    void expectAligned(String suffix, String reason) {
+      final remaining = find.byKey(const ValueKey('class-now-remaining'));
+      final strip = find.ancestor(of: remaining, matching: find.byType(CampusSurface));
+      final after = find.descendant(of: strip, matching: find.text(suffix));
+      final parts = find.descendant(of: remaining, matching: find.byType(RichText)).evaluate().toList();
+      expect(parts.length, greaterThan(1), reason: reason);
+      expect([for (final part in parts) baseline(part)], everyElement(closeTo(baseline(after.evaluate().single), .01)), reason: '$reason：同一条基线');
+      expect(tester.getCenter(after).dy, closeTo(tester.getCenter(find.descendant(of: strip, matching: find.text('星期5的课'))).dy, .01), reason: '$reason：与课名按中线对齐');
+    }
+    // 校园时间 7:50：离开课 10 分钟。
+    final clock = await _mountWithClock(tester, DateTime.utc(2026, 9, 24, 23, 50), display: display);
+    expectAligned('后上课', '分钟倒数');
+    // 7:59:11：秒级倒数会自动展开一次，点一下收回条。
+    clock.value = DateTime.utc(2026, 9, 24, 23, 59, 11);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('下一节 · '));
+    await tester.pumpAndSettle();
+    expect(_remaining(tester), '49秒');
+    expectAligned('后上课', '秒级倒数');
+    clock.value = DateTime.utc(2026, 9, 25, 0, 20);
+    await tester.pumpAndSettle();
+    expectAligned('后下课', '上课中');
     expect(tester.takeException(), isNull);
   });
 

@@ -838,14 +838,15 @@ class _ClassNowState extends State<_ClassNow> {
     final unit = TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: palette.onSurface);
     // 剩余时长（卡片与条共用）：数字大、单位小，一律带单位（「1小时29分」「4分59秒」，不写「1:29」免得看成分秒）。
     // 临近开课数字转激活色（大号字，单位仍是正文色，小字对比度不够），颜色渐变；动画样式先合并默认样式，不丢应用字体。
-    Widget remainingOf(TextStyle figure) => AnimatedDefaultTextStyle(
+    // strut 给了时数字按它排版（行框同单位那行字，数字只按基线坐在上面）。
+    Widget remainingOf(TextStyle figure, {StrutStyle? strut}) => AnimatedDefaultTextStyle(
       style: DefaultTextStyle.of(context).style.merge(TextStyle(color: soon ? palette.accentText : palette.onSurface)),
       duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : campusEnter,
       child: seconds
-          ? _SecondsCountdown(key: const ValueKey('class-now-remaining'), deadline: instant.add(Duration(seconds: left)), left: left, live: widget.now == null && LiveClock.liveOf(context), style: figure, unit: unit)
+          ? _SecondsCountdown(key: const ValueKey('class-now-remaining'), deadline: instant.add(Duration(seconds: left)), left: left, live: widget.now == null && LiveClock.liveOf(context), style: figure, unit: unit, strut: strut)
           : Row(key: const ValueKey('class-now-remaining'), mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
               for (final (text, number) in classDurationParts(moment.remainingMinutes))
-                number ? CampusRollingText(text, style: figure, countsDown: true) : Text(text, style: unit),
+                number ? CampusRollingText(text, style: figure, strutStyle: strut, countsDown: true) : Text(text, style: unit),
             ]),
     );
     // 同 iOS 实时活动：课的信息在左，剩余时长在右上（数字大、单位小），起止时刻标在进度条两端。
@@ -883,6 +884,9 @@ class _ClassNowState extends State<_ClassNow> {
     // 放不下时先省略课名、教室照写（去哪上课最要紧，课名看头几个字就认得）：课名至少留三个字加省略号的宽，其余给教室，教室再长也只省略它自己
     // （模拟器上「思想道德与法治 · 综…」后改的）。
     final titleStyle = Theme.of(context).textTheme.titleMedium;
+    // 右边「49秒 后上课」三段坐同一条基线：以前数字连单位按基线、整组却和「后上课」各自居中，大数字把整组撑高，「秒」比「后上课」低约 2dp（用户 11-26 截图指出）。
+    // 数字按单位那行 14 号字的行框排版（强制 strut），整组只有 14 号字那么高，居中后 14 号字与课名按中线对齐，大数字按基线坐在上面、不再把单位往下压。
+    final strut = StrutStyle.fromTextStyle(DefaultTextStyle.of(context).style.merge(unit), forceStrutHeight: true);
     final strip = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Row(children: [
         Expanded(child: LayoutBuilder(builder: (context, constraints) => Row(children: [
@@ -893,9 +897,11 @@ class _ClassNowState extends State<_ClassNow> {
           ),
         ]))),
         const SizedBox(width: CampusGap.medium),
-        remainingOf(const TextStyle(fontSize: 20, fontWeight: FontWeight.w600, height: 1.2, fontFeatures: figures)),
-        const SizedBox(width: CampusGap.hairline),
-        Text(suffix, style: secondary),
+        Row(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
+          remainingOf(const TextStyle(fontSize: 20, fontWeight: FontWeight.w600, height: 1.2, fontFeatures: figures), strut: strut),
+          const SizedBox(width: CampusGap.hairline),
+          Text(suffix, style: secondary),
+        ]),
       ]),
       if (fraction != null) ...[const SizedBox(height: CampusGap.small), _TimeTrack(fraction: fraction, pulse: moment.ongoing)],
     ]);
@@ -966,12 +972,13 @@ class _ClassNowState extends State<_ClassNow> {
 // 开课前与下课前最后几分钟的秒级倒计时（同 iOS 实时活动的计时器）：「4分59秒」「59秒」，带单位（「4:59」会和「1:29」这种时分混淆），换数字时滚动。
 // 真实时钟下按截止时刻每秒自己刷新，只在页面可见时走；测试拨好的时钟不走，停在拨好那一刻的剩余秒数。
 class _SecondsCountdown extends StatefulWidget {
-  const _SecondsCountdown({super.key, required this.deadline, required this.left, required this.live, required this.style, required this.unit});
+  const _SecondsCountdown({super.key, required this.deadline, required this.left, required this.live, required this.style, required this.unit, this.strut});
   final DateTime deadline;
   final int left;
   final bool live;
   final TextStyle style;
   final TextStyle unit;
+  final StrutStyle? strut;
 
   @override
   State<_SecondsCountdown> createState() => _SecondsCountdownState();
@@ -1022,8 +1029,8 @@ class _SecondsCountdownState extends State<_SecondsCountdown> {
   Widget build(BuildContext context) {
     final left = _left, minutes = left ~/ 60;
     return Row(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
-      if (minutes > 0) ...[CampusRollingText('$minutes', style: widget.style, countsDown: true), Text('分', style: widget.unit)],
-      CampusRollingText(minutes > 0 ? (left % 60).toString().padLeft(2, '0') : '${left % 60}', style: widget.style, countsDown: true),
+      if (minutes > 0) ...[CampusRollingText('$minutes', style: widget.style, strutStyle: widget.strut, countsDown: true), Text('分', style: widget.unit)],
+      CampusRollingText(minutes > 0 ? (left % 60).toString().padLeft(2, '0') : '${left % 60}', style: widget.style, strutStyle: widget.strut, countsDown: true),
       Text('秒', style: widget.unit),
     ]);
   }
