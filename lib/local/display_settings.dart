@@ -34,6 +34,7 @@ class DisplaySettings extends ChangeNotifier {
     this._wallpaperTone,
     this._wallpaperBlur,
     this._wallpaperFade,
+    this._classNowCollapsed,
   ) {
     _watchFontPacks();
   }
@@ -51,6 +52,10 @@ class DisplaySettings extends ChangeNotifier {
   String? _wallpaperTone;
   int _wallpaperBlur = defaultWallpaperBlur;
   int _wallpaperFade = 0;
+  bool _classNowCollapsed = false;
+  // 今天页的此刻卡收成一条（用户收起后一直保持，[人工决策] 在 page/today_page.dart 的 _ClassNow）：只是这一块的样子，
+  // 改它不通知整个应用重建（同 wallpaperLook），页面单独听；落库同在保存锁里的整份快照。
+  late final classNowCollapsed = ValueNotifier<bool>(_classNowCollapsed);
   // 壁纸模糊与淡化的当前外观。拖动滑杆时 previewWallpaper 只改它、不落库，背景单独监听它实时重画，
   // 不重建整个应用；落库后同步为已保存的值。
   late final wallpaperLook = ValueNotifier<({int blur, int fade})>((blur: _wallpaperBlur, fade: _wallpaperFade));
@@ -125,10 +130,10 @@ class DisplaySettings extends ChangeNotifier {
     final db = await databaseFactory.openDatabase(
       databasePath ??
           path.join(await getDatabasesPath(), 'display_settings.db'),
-      options: OpenDatabaseOptions(version: 8, rollbackActiveTransactionOnOpen: true,
+      options: OpenDatabaseOptions(version: 9, rollbackActiveTransactionOnOpen: true,
       onCreate: (db, _) async {
         await db.execute(
-          "CREATE TABLE display_settings (id INTEGER PRIMARY KEY CHECK(id=1), text_scale REAL NOT NULL, palette_id TEXT NOT NULL DEFAULT '$defaultPaletteId', font_id TEXT NOT NULL DEFAULT 'maple', theme_mode TEXT NOT NULL DEFAULT 'system', glass_mode TEXT NOT NULL DEFAULT 'auto', wallpaper_file TEXT, wallpaper_tone TEXT, wallpaper_blur INTEGER NOT NULL DEFAULT $defaultWallpaperBlur, wallpaper_fade INTEGER NOT NULL DEFAULT 0)",
+          "CREATE TABLE display_settings (id INTEGER PRIMARY KEY CHECK(id=1), text_scale REAL NOT NULL, palette_id TEXT NOT NULL DEFAULT '$defaultPaletteId', font_id TEXT NOT NULL DEFAULT 'maple', theme_mode TEXT NOT NULL DEFAULT 'system', glass_mode TEXT NOT NULL DEFAULT 'auto', wallpaper_file TEXT, wallpaper_tone TEXT, wallpaper_blur INTEGER NOT NULL DEFAULT $defaultWallpaperBlur, wallpaper_fade INTEGER NOT NULL DEFAULT 0, class_now_collapsed INTEGER NOT NULL DEFAULT 0)",
         );
       },
       onUpgrade: (db, oldVersion, _) async {
@@ -172,6 +177,9 @@ class DisplaySettings extends ChangeNotifier {
           // 字号从「系统字号上的倍数」改成实际显示大小（0 是跟随系统），看起来不变：原来的标准跟随系统，较大及以上换成系统字号 × 原倍数（人工决策见 textSizeMin）。
           await db.execute('UPDATE display_settings SET text_scale = CASE WHEN text_scale <= 1 THEN 0 ELSE MIN($textSizeMax, MAX($textSizeMin, ROUND(text_scale * $system * 20) / 20.0)) END');
         }
+        if (oldVersion < 9) {
+          await db.execute('ALTER TABLE display_settings ADD COLUMN class_now_collapsed INTEGER NOT NULL DEFAULT 0');
+        }
       },
     ));
     final rows = await db.query('display_settings', where: 'id = 1', limit: 1);
@@ -183,7 +191,7 @@ class DisplaySettings extends ChangeNotifier {
     final glass = row?['glass_mode'];
     final wallpaper = wallpaperDirectory == null ? null : WallpaperStore(wallpaperDirectory);
     final file = row?['wallpaper_file'], tone = row?['wallpaper_tone'];
-    final blur = row?['wallpaper_blur'], fade = row?['wallpaper_fade'];
+    final blur = row?['wallpaper_blur'], fade = row?['wallpaper_fade'], collapsed = row?['class_now_collapsed'];
     // 文件被外部删除、或缺少色调网格时按未设置处理，落库并清掉残留文件。
     final hasWallpaper = wallpaper != null && file is String && tone is String && await wallpaper.file(file).exists();
     final fontId = font is String && knownFont(font) ? font : defaultFontId;
@@ -202,6 +210,7 @@ class DisplaySettings extends ChangeNotifier {
       hasWallpaper ? tone : null,
       blur is int && blur >= 0 && blur <= wallpaperMax ? blur : defaultWallpaperBlur,
       fade is int && fade >= 0 && fade <= wallpaperMax ? fade : 0,
+      collapsed == 1,
     );
     if (file != null && !hasWallpaper) {
       await db.update('display_settings', {'wallpaper_file': null, 'wallpaper_tone': null}, where: 'id = 1');
@@ -306,6 +315,12 @@ class DisplaySettings extends ChangeNotifier {
     return _save(wallpaperBlur: blur, wallpaperFade: fade);
   }
 
+  // 此刻卡收起或展开：外观立即更新，落库在保存锁内排队（见 classNowCollapsed）。
+  Future<void> setClassNowCollapsed(bool value) {
+    classNowCollapsed.value = value;
+    return _saveLock.synchronized(() => _write(classNowCollapsed: value));
+  }
+
   void _checkLook(({int blur, int fade}) look) {
     if (look.blur < 0 || look.blur > wallpaperMax || look.fade < 0 || look.fade > wallpaperMax) throw ArgumentError.value(look, 'look');
   }
@@ -356,6 +371,7 @@ class DisplaySettings extends ChangeNotifier {
     String? wallpaperTone,
     int? wallpaperBlur,
     int? wallpaperFade,
+    bool? classNowCollapsed,
     bool clearWallpaper = false,
   }) async {
     final nextTextSize = textSize ?? _textSize,
@@ -366,18 +382,19 @@ class DisplaySettings extends ChangeNotifier {
         nextFile = clearWallpaper ? null : wallpaperFile ?? _wallpaperFile,
         nextTone = clearWallpaper ? null : wallpaperTone ?? _wallpaperTone,
         nextBlur = wallpaperBlur ?? _wallpaperBlur,
-        nextFade = wallpaperFade ?? _wallpaperFade;
-    if (nextTextSize == _textSize &&
-        nextPalette == _paletteId &&
-        nextFont == _fontId &&
-        nextMode == _themeMode &&
-        nextGlass == _glassMode &&
-        nextFile == _wallpaperFile &&
-        nextTone == _wallpaperTone &&
-        nextBlur == _wallpaperBlur &&
-        nextFade == _wallpaperFade) {
-      return;
-    }
+        nextFade = wallpaperFade ?? _wallpaperFade,
+        nextCollapsed = classNowCollapsed ?? _classNowCollapsed;
+    // 只有此刻卡收起与否变了时只落库、不通知整个应用（见 classNowCollapsed）。
+    final appearance = nextTextSize != _textSize ||
+        nextPalette != _paletteId ||
+        nextFont != _fontId ||
+        nextMode != _themeMode ||
+        nextGlass != _glassMode ||
+        nextFile != _wallpaperFile ||
+        nextTone != _wallpaperTone ||
+        nextBlur != _wallpaperBlur ||
+        nextFade != _wallpaperFade;
+    if (!appearance && nextCollapsed == _classNowCollapsed) return;
     await _database?.insert('display_settings', {
       'id': 1,
       'text_scale': nextTextSize,
@@ -389,6 +406,7 @@ class DisplaySettings extends ChangeNotifier {
       'wallpaper_tone': nextTone,
       'wallpaper_blur': nextBlur,
       'wallpaper_fade': nextFade,
+      'class_now_collapsed': nextCollapsed ? 1 : 0,
     }, conflictAlgorithm: ConflictAlgorithm.replace);
     _textSize = nextTextSize;
     _paletteId = nextPalette;
@@ -399,6 +417,8 @@ class DisplaySettings extends ChangeNotifier {
     _wallpaperTone = nextTone;
     _wallpaperBlur = nextBlur;
     _wallpaperFade = nextFade;
+    _classNowCollapsed = nextCollapsed;
+    if (!appearance) return;
     _shownFont = fontInUse;
     notifyListeners();
   }
@@ -411,6 +431,7 @@ class DisplaySettings extends ChangeNotifier {
   void dispose() {
     fontPacks?.removeListener(_onFontPacks);
     wallpaperLook.dispose();
+    classNowCollapsed.dispose();
     super.dispose();
   }
 }
@@ -423,6 +444,8 @@ class DisplayScope extends InheritedNotifier<DisplaySettings> {
   }) : super(notifier: settings);
   static DisplaySettings of(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<DisplayScope>()!.notifier!;
+  // 只取、不跟着外观变化重建（页面只听其中某一项时用，如今天页的此刻卡听 classNowCollapsed）；没有时为空（测试）。
+  static DisplaySettings? read(BuildContext context) => context.getInheritedWidgetOfExactType<DisplayScope>()?.notifier;
 }
 
 // [人工决策-2026-10-23 16:48:13] 改应用字号时连续过渡（用户反馈从大字号切到小字号整页跳动、按钮变形，要「流畅优雅的自然变形」）：

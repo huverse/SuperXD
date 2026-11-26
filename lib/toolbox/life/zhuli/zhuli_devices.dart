@@ -18,7 +18,9 @@ ZhuliCode? zhuliParseCode(String raw) {
   if (uri != null && (uri.scheme == 'https' || uri.scheme == 'http') && _codeHosts.contains(uri.host)) {
     // 查询串可能在 # 后面（原 App 把 search 与 hash 里的都读）。
     final query = {...uri.queryParameters, ...Uri.splitQueryString(uri.fragment.contains('?') ? uri.fragment.substring(uri.fragment.indexOf('?') + 1) : uri.fragment.contains('=') ? uri.fragment : '')};
-    final deviceId = int.tryParse(query['d'] ?? ''), mac = zhuliMac(query['mac'] ?? '');
+    // # 后面整段先当设备号，查询串里的 d 再盖过它（原 App 的 Zi：t.d = hash.slice(1)；资料表格只写了 ?d=）。
+    // 设备屏幕上的码就是「https://zhuli.whxinna.com/#设备号」，11-26 用户真机扫了说不是设备码（照片解出来是这个写法）。
+    final deviceId = int.tryParse(query['d'] ?? uri.fragment), mac = zhuliMac(query['mac'] ?? '');
     return deviceId == null && mac == null ? null : (deviceId: deviceId, mac: mac);
   }
   if (RegExp(r'^([0-9A-Fa-f]{12})-(\d{1,12})$').firstMatch(text) case final match?) return (deviceId: int.parse(match[2]!), mac: zhuliMac(match[1]!));

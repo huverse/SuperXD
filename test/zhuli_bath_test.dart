@@ -236,6 +236,9 @@ void main() {
     test('设备码同原 App：住理域名链接的 d 或 mac、「十六进制-设备号」、纯 12 位十六进制；别的码不认', () {
       expect(zhuliParseCode('https://zhuli.whxinna.com/?d=1234567'), (deviceId: 1234567, mac: null));
       expect(zhuliParseCode('https://alipay-zhuli.whxinna.com/#/?mac=0A1B2C3D4E5F'), (deviceId: null, mac: '0A:1B:2C:3D:4E:5F'));
+      // 设备屏幕上的码（11-26 用户真机扫了说不是设备码）：# 后面整段就是设备号；查询串里有 d 时以它为准（原 App 的 Zi）。
+      expect(zhuliParseCode('https://zhuli.whxinna.com/#1234567'), (deviceId: 1234567, mac: null));
+      expect(zhuliParseCode('https://zhuli.whxinna.com/#7654321?d=1234567'), (deviceId: 1234567, mac: null));
       expect(zhuliParseCode('0a1b2c3d4e5f-1234567'), (deviceId: 1234567, mac: '0A:1B:2C:3D:4E:5F'));
       expect(zhuliParseCode(' 0A-1B-2C-3D-4E-5F '), (deviceId: null, mac: '0A:1B:2C:3D:4E:5F'));
       expect(zhuliParseCode('https://example.com/?d=1'), isNull, reason: '别的域名不认');

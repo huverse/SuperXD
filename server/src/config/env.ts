@@ -50,7 +50,7 @@ export const loadEnv = () => ({
   port: integer('RELAY_PORT'),
   // 反向代理：按 X-Forwarded-For 取客户端 IP 做注册、登录与代签接口的限流与扫码登录的属地。前面没有代理时必须为 0，否则来源 IP 可被伪造。
   // [人工决策-2026-11-18 18:10:39] 中转改用 Let's Encrypt 公网 IP 证书的 HTTPS（用户在两路实验后选定）：Nginx 在 8443 终止 HTTPS 再转给中转，
-  // 旧版本客户端仍直连 8080 明文。两条路同时开着时不能用层数（直连 8080 的人可以自己写 X-Forwarded-For 冒充来源），
+  // 旧版本客户端当时仍直连 8080 明文（11-26 关掉，只绑本机回环）。两条路同时开着时不能用层数（直连 8080 的人可以自己写 X-Forwarded-For 冒充来源），
   // 线上设为 uniquelocal：只信内网来的请求（Nginx 在 compose 内网里），直连的公网来源一律按真实地址，见 docker-compose.yml 的 tls。
   trustProxy: parseTrustProxy('RELAY_TRUST_PROXY', required('RELAY_TRUST_PROXY')),
   swagger: flag('RELAY_SWAGGER'),

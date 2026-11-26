@@ -148,8 +148,6 @@ class _ExpressMobileSheetState extends State<_ExpressMobileSheet> {
               ),
             ),
         const SizedBox(height: 8),
-        Text('寄到绑定手机号的快递都能用这个账号的身份码取件', style: secondary),
-        const SizedBox(height: 16),
         if (showFastBind)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),

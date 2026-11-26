@@ -17,7 +17,7 @@
 - 设备身份是 Ed25519 签名公钥；设备号 = base64url(sha256(签名公钥) 前 16 字节)，22 个字符。另有 X25519 加密公钥，服务端只存档不使用。
 - 每个请求带 x-sxd-device、x-sxd-time（毫秒）、x-sxd-nonce（16 字节 base64url）、x-sxd-signature。签名原文为以下各项换行连接：SXD1、方法、路径含查询串、时间、随机数、请求体 sha256 的 base64url。
 - 时间与服务器相差超过 5 分钟返回 CLOCK_SKEW 并附 serverTime；随机数 10 分钟内不能重复（REPLAYED）。验签通过后才占用随机数。
-- 没有会话令牌：明文 HTTP 下截获的请求也无法冒用或重放。11-18 起正式入口是 tls 容器（Nginx）在 8443 用 Let's Encrypt 的 IP 证书终止 HTTPS，8080 明文入口留给还没升级的旧客户端（等它没人用再关）；两条路同一套签名规则。
+- 没有会话令牌：明文 HTTP 下截获的请求也无法冒用或重放。11-18 起正式入口是 tls 容器（Nginx）在 8443 用 Let's Encrypt 的 IP 证书终止 HTTPS；8080 明文旧入口 11-26 关掉（只绑本机回环，见 docker-compose.yml），签名规则照旧。
 - 双端一致性由 test/vectors/protocol_v1.json 守护，客户端 test/social_protocol_test.dart 读同一份文件。
 
 接口（base64url 一律无填充）
@@ -65,7 +65,7 @@
 - 清单文件 <渠道>.json 在明文字段之外带 envelopes：每个架构一份（载荷含渠道、架构、版本、最低可用版本、更新说明、发布页与这个架构的安装包文件名、大小、SHA-256），按请求的架构挑一份放进返回的 envelope；developer_notes.json 带一个 envelope（载荷是 {"notes": [...]}）。
 - 中转只校验信封形状（base64url、签名个数与长度、keyId 格式，多出字段即当写坏）、原样透传，不解码、不验签；明文字段照旧给 1.0.0-alpha.15 及以前不验签的旧客户端。
 - 灰度配置 rollout.json 同样带一个 envelope（载荷是 {"flags": [...], "levels": [...]}，域前缀 SXD1-rollout），客户端只认开发者的话那把钥与离线备用钥签的；分批更新的放量表 rollout 写在发版清单各架构的签名载荷里，明文字段不带。
-- 签名挡不住冻结与回滚（一直回放旧清单）：版本只升不降由客户端已装版本号与系统安装器保证；路上的人冻结靠 11-18 起的 HTTPS 挡（8080 明文入口上的旧客户端仍挡不住），中转自己回放旧清单签名挡不住；载荷不带过期时间。
+- 签名挡不住冻结与回滚（一直回放旧清单）：版本只升不降由客户端已装版本号与系统安装器保证；路上的人冻结靠 11-18 起的 HTTPS 挡（8080 明文入口 11-26 已关），中转自己回放旧清单签名挡不住；载荷不带过期时间。
 - 上线顺序：先部署本服务（能透传信封的版本），再发带验签的客户端。旧版服务会把带 envelopes 的清单当写坏的文件拒绝（新旧客户端都查不到更新），所以发版与 notes 流水线上传前都先确认返回里有 envelope 字段，没有就停。部署后旧客户端照常靠明文字段更新，不受影响。
 
 应用账号的信封（客户端 lib/relay/account_seal.dart，双端共用 test/vectors/account_seal_v2.json，第 1 版 account_seal_v1.json 留着核对旧客户端，向量里的明文是任意 JSON 对象）
@@ -157,7 +157,7 @@
 # 部署（单机 Docker Compose）
 
 1. 安装 Docker 与 Compose 插件。
-2. 复制本目录到服务器（git archive <提交>:server 打包，天然不含 .env、node_modules 与 dist），cp .env.example .env，把三个密码换成随机长串（如 openssl rand -hex 24，只留在服务器上）；RELAY_PUBLIC_PORT 为对外端口。国内服务器：NPM_REGISTRY 改为 https://registry.npmmirror.com；Docker Hub 不通时在 /etc/docker/daemon.json 配 registry-mirrors（如 https://docker.m.daocloud.io、https://docker.1ms.run）。
+2. 复制本目录到服务器（git archive <提交>:server 打包，天然不含 .env、node_modules 与 dist），cp .env.example .env，把三个密码换成随机长串（如 openssl rand -hex 24，只留在服务器上）；RELAY_PUBLIC_PORT 是中转在宿主机上的端口（11-26 起只绑本机回环，公网经 tls 的 8443）。国内服务器：NPM_REGISTRY 改为 https://registry.npmmirror.com；Docker Hub 不通时在 /etc/docker/daemon.json 配 registry-mirrors（如 https://docker.m.daocloud.io、https://docker.1ms.run）。
 3. 中转镜像按下面「镜像部署与回滚」加载，再 docker compose up -d --no-build（只在没有流水线镜像时才用 --build 在服务器上构建，小内存机器上约 6 分钟）。首次启动时 MySQL 自动执行 sql/schema.sql 建表，起来后跑一次 scripts/migrate_db.sh 把升级文件都登记进台账（在新库上都是空操作）；之后的表结构变更由人工执行，服务启动不做 DDL：已有的库先备份、再用 scripts/migrate_db.sh 执行还没登记的 upgrade_*.sql、最后部署新版服务，见下面「表结构升级台账」。
 4. curl http://服务器:端口/v1/health 应返回 {"protocol":1,...,"version":"<提交号>"}。防火墙（云服务器还有安全组）只放行中转端口，MySQL 与 Redis 不对外。
    小内存机器（2GB 以内）已按 compose 里的参数关闭 MySQL performance_schema、缓冲池 128MB。
@@ -190,8 +190,8 @@
 # HTTPS（11-18 起，人工决策见 docker-compose.yml 的 tls）
 
 - 证书：Let's Encrypt 的公网 IP 证书（不要域名、不要备案），shortlived 档 160 小时，webroot 经 80 端口验证。Nginx（compose 的 tls）在 8443 终止 HTTPS 转给内网里的中转；客户端按 IP 连接不带 SNI，所以一个端口一张证书。
-- 安全组放行 80（只给签发验证，其余 404）与 8443；8080 明文先留给还没升级的旧客户端（它们要经 8080 才查得到强制更新），等旧客户端基本都升上来、8080 没什么访问了，再关安全组与 compose 里的端口。
-- .env 的 RELAY_TRUST_PROXY 设为 uniquelocal：只有内网（Nginx）来的请求按 X-Forwarded-For 取客户端 IP，直连 8080 的照旧按真实地址，伪造的头不起作用（Nginx 覆盖这个头，人工决策见 src/config/env.ts）。8080 关掉后也可以照旧这样设。
+- 安全组放行 80（只给签发验证，其余 404）与 8443。8080 明文旧入口 11-26 关掉：抽样外网网卡一小时只有扫描器、近 7 天健康回报都是走 HTTPS 的版本，compose 里中转只绑本机回环（服务器上排查照旧 127.0.0.1:8080），安全组的 8080 规则删掉（人工决策在 docker-compose.yml 的 relay）。
+- .env 的 RELAY_TRUST_PROXY 设为 uniquelocal：只有内网（Nginx）来的请求按 X-Forwarded-For 取客户端 IP，直连的照旧按真实地址，伪造的头不起作用（Nginx 覆盖这个头，人工决策见 src/config/env.ts）。8080 关掉后照旧这样设。
 - 第一次：覆盖配置后跑 scripts/tls_cert.sh issue <公网 IP>（没有证书时先放一张占位证书、启动 Nginx，再签发、装好、让 Nginx 重读）；root 的 crontab 加 27 3 * * * /opt/superxd-relay/scripts/tls_cert.sh renew >> /var/log/superxd-relay-tls.log 2>&1（每天检查、剩 3 天续，续了才让 Nginx 重读）。scripts/tls_cert.sh status 看签发者、到期时间与 IP。
 - 证书、验证目录与 acme.sh 的账号在命名卷 tls-certs、acme-webroot、acme-home，不在部署目录里，不进备份（丢了重新 issue）。
 - 监控：外部探活（.github/workflows/relay-health.yml）在 RELAY_URL 是 https 时另查证书，剩不到 72 小时让工作流失败、发邮件；看 /var/log/superxd-relay-tls.log 与 status 找原因（常见：80 端口被拦、Let's Encrypt 故障、Docker 拉不到镜像），修好后手动 renew。

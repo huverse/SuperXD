@@ -66,6 +66,30 @@ void main() {
     await settings.close();
     await directory.delete(recursive: true);
   });
+  // 人工决策见 page/today_page.dart 的 _ClassNow（11-26：此刻卡收起后一直保持，重开应用也是条）。
+  test('今天页此刻卡收起与否记在显示设置里：重开还在、v8 升上来默认展开且原设置不丢；改它不通知整个应用重建，和别的设置同一份快照', () async {
+    final directory = await Directory.systemTemp.createTemp('appearance-');
+    final path = '${directory.path}/display.db';
+    final old = await openDatabase(path, version: 8, onCreate: (db, _) => db.execute(
+      "CREATE TABLE display_settings (id INTEGER PRIMARY KEY CHECK(id=1), text_scale REAL NOT NULL, palette_id TEXT NOT NULL DEFAULT 'mist', font_id TEXT NOT NULL DEFAULT 'maple', theme_mode TEXT NOT NULL DEFAULT 'system', glass_mode TEXT NOT NULL DEFAULT 'auto', wallpaper_file TEXT, wallpaper_tone TEXT, wallpaper_blur INTEGER NOT NULL DEFAULT 27, wallpaper_fade INTEGER NOT NULL DEFAULT 0)",
+    ));
+    await old.insert('display_settings', {'id': 1, 'text_scale': 1.2, 'palette_id': 'dusk'});
+    await old.close();
+    var settings = await DisplaySettings.open(databasePath: path);
+    expect((settings.classNowCollapsed.value, settings.paletteId, settings.textSize), (false, 'dusk', 1.2));
+    var notified = 0;
+    settings.addListener(() => notified++);
+    await settings.setClassNowCollapsed(true);
+    expect((settings.classNowCollapsed.value, notified), (true, 0), reason: '只改这一块，不让整个应用跟着重建');
+    await settings.setPalette('oat');
+    expect(notified, 1);
+    await settings.close();
+    settings = await DisplaySettings.open(databasePath: path);
+    expect((settings.classNowCollapsed.value, settings.paletteId, settings.textSize), (true, 'oat', 1.2), reason: '改配色的快照没把收起冲掉');
+    await settings.close();
+    await directory.delete(recursive: true);
+  });
+
   // 用户要求默认配色改为雾蓝：只改默认值，存过显示设置的保持原样；启动窗口底色跟着默认配色，冷启动不闪别的颜色。
   test('默认配色是雾蓝：新装与没存过显示设置的都是雾蓝，存过的保持原值；启动窗口浅深底色同默认配色', () async {
     expect(DisplaySettings.defaultPaletteId, 'mist');

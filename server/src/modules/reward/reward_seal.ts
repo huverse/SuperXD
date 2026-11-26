@@ -3,7 +3,7 @@ import { createCipheriv, diffieHellman, generateKeyPairSync, hkdfSync, KeyObject
 import { rewardPrizeCanonical, x25519PublicKey, x25519PublicOf } from 'src/common/crypto/relay_crypto';
 
 // 奖品下发的信封（客户端 lib/relay/relay_reward_client.dart 的 openRewardPrize 与此一致，共用 test/vectors/reward_prize_v1.json 与 reward_prize_v2.json）：
-// 支付宝口令与二维码是真钱：当初中转是明文 HTTP，不加这层同一网络里的人就能截走；11-18 起 HTTPS 后照旧封装（8080 明文入口上的旧版本仍靠它）。只有抽签的那台设备打得开：
+// 支付宝口令与二维码是真钱：当初中转是明文 HTTP，不加这层同一网络里的人就能截走；11-18 起 HTTPS、11-26 关掉 8080 明文入口后照旧封装。只有抽签的那台设备打得开：
 // 一次性 X25519 与这台设备登记的 box 公钥协商，HKDF-SHA256（盐 = 一次性公钥 + 设备公钥，info = SXD1-reward-prize）派生 AES-256-GCM 密钥，
 // 附加数据绑定版本、一次性公钥与「活动编号\n设备号」。布局同应用账号的信封：版本(1) | 一次性公钥(32) | 随机数(12) | 密文 | GCM 标签(16)。
 // 明文是 {kind, content, note} 的 UTF-8 JSON。同一个人重复抽返回同一份奖品，每次都另起一次性密钥重新封。

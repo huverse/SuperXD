@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/domain/week.dart';
+import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/page/course_cards.dart';
 import 'package:superxd/page/live_clock.dart';
 import 'package:superxd/page/today_date_transition.dart';
@@ -178,6 +179,28 @@ Future<void> _mount(
   );
   await tester.pumpAndSettle();
 }
+
+// 拨好的时钟挂在今天页上（改 clock.value 就换此刻卡的状态，同一份页面状态）；给了 display 时套上显示设置。
+Future<ValueNotifier<DateTime>> _mountWithClock(WidgetTester tester, DateTime at, {DisplaySettings? display}) async {
+  final clock = ValueNotifier(at);
+  addTearDown(clock.dispose);
+  await tester.binding.setSurfaceSize(const Size(390, 850));
+  addTearDown(() => tester.binding.setSurfaceSize(null));
+  final app = MaterialApp(theme: campusTheme(), home: MediaQuery(
+    data: const MediaQueryData(size: Size(390, 850)),
+    child: Scaffold(body: LiveClock.fixed(clock, child: TodayPage(gateway: _Gateway(), now: () => clock.value))),
+  ));
+  await tester.pumpWidget(display == null ? app : DisplayScope(settings: display, child: app));
+  await tester.pumpAndSettle();
+  return clock;
+}
+
+// 此刻卡的剩余时长按显示的样子拼出来（数字与单位）。
+String _remaining(WidgetTester tester) => tester
+    .widget<Row>(find.descendant(of: find.byKey(const ValueKey('class-now-remaining')), matching: find.byType(Row), matchRoot: true).first)
+    .children
+    .map((child) => child is CampusRollingText ? child.text : (child as Text).data!)
+    .join();
 
 Finder _date(String value) => find.byKey(ValueKey('today-date-$value'));
 Finder _spoken(String label) => find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == label);
@@ -698,16 +721,15 @@ void main() {
   });
 
   testWidgets('开课前 5 分钟内按秒倒数，更早按分钟（拨好的时钟不自己走）；上课中此刻点定时漾开，减少动画时不动', (tester) async {
-    String remaining() => tester.widget<CampusRollingText>(find.descendant(of: find.byKey(const ValueKey('class-now-remaining')), matching: find.byType(CampusRollingText)).first).text;
-    // 校园时间 7:56:30，8:00 开课：还剩 3 分 30 秒。
+    // 校园时间 7:56:30，8:00 开课：还剩 3 分 30 秒，带单位写（「3:30」会和「1:29」这种时分混淆，人工决策见 today_page.dart 的 _ClassNow）。
     await _mount(tester, _Gateway(), now: () => DateTime.utc(2026, 9, 24, 23, 56, 30));
-    expect(remaining(), '3:30');
+    expect(_remaining(tester), '3分30秒');
     await tester.pump(const Duration(seconds: 5));
-    expect(remaining(), '3:30');
+    expect(_remaining(tester), '3分30秒');
     expect(_spoken('下一节，第1–2节，星期5的课，教室，老师，4分钟后上课'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
     await _mount(tester, _Gateway(), now: () => DateTime.utc(2026, 9, 24, 23, 54, 30));
-    expect(remaining(), '6');
+    expect(_remaining(tester), '6分钟');
     for (final reduced in [false, true]) {
       await tester.pumpWidget(const SizedBox());
       await _mount(tester, _Gateway(), now: () => DateTime.utc(2026, 9, 25, 0, 20), reduced: reduced);
@@ -727,6 +749,64 @@ void main() {
       expect(vsync, isFalse, reason: '漾开不挂屏幕刷新的回调');
       await tester.pumpAndSettle();
     }
+    expect(tester.takeException(), isNull);
+  });
+
+  // 人工决策见 today_page.dart 的 _ClassNow（11-26 用户选定：把手收成一条、都能收、收起后一直保持、开课前 5 分钟自动展开一次、下课前也按秒倒数）。
+  testWidgets('此刻卡：点把手或往上推收成一条（记在显示设置里、重开还是条），条上点一下或往下拉展开；在把手与条上拖动不切日', (tester) async {
+    final display = DisplaySettings.memory();
+    addTearDown(display.dispose);
+    final grabber = find.byKey(const ValueKey('class-now-grabber'));
+    final strip = find.text(' · 教室');
+    // 校园时间 8:20，上课中（8:00–9:45）。
+    await _mountWithClock(tester, DateTime.utc(2026, 9, 25, 0, 20), display: display);
+    expect((grabber.evaluate().length, strip.evaluate().length, _remaining(tester)), (1, 0, '1小时25分'));
+    await tester.tap(grabber);
+    await tester.pumpAndSettle();
+    expect((grabber.evaluate().length, strip.evaluate().length, display.classNowCollapsed.value), (0, 1, true));
+    expect((_remaining(tester), find.text('后下课').evaluate().length), ('1小时25分', 1), reason: '条里照样写剩余时长，带单位');
+    await tester.drag(strip, const Offset(0, 60));
+    await tester.pumpAndSettle();
+    expect((grabber.evaluate().length, display.classNowCollapsed.value), (1, false), reason: '往下拉展开');
+    await tester.drag(grabber, const Offset(0, -60));
+    await tester.pumpAndSettle();
+    expect((strip.evaluate().length, display.classNowCollapsed.value), (1, true), reason: '往上推收起');
+    expect(_date('2026-09-25'), findsOneWidget, reason: '在把手与条上拖动不切日');
+    // 重开（显示设置还在）：一打开就是条；点条展开。
+    await tester.pumpWidget(const SizedBox());
+    await _mountWithClock(tester, DateTime.utc(2026, 9, 25, 0, 20), display: display);
+    expect(strip, findsOneWidget);
+    await tester.tap(strip);
+    await tester.pumpAndSettle();
+    expect((grabber.evaluate().length, display.classNowCollapsed.value), (1, false), reason: '点条是展开，不是看详情');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('此刻卡收着时：开课前 5 分钟自动展开一次显示秒级倒数，这时再收起、这节课开始前不再展开；上课后照旧是条，下课前 5 分钟条里也按秒倒数', (tester) async {
+    final display = DisplaySettings.memory();
+    addTearDown(display.dispose);
+    await display.setClassNowCollapsed(true);
+    final grabber = find.byKey(const ValueKey('class-now-grabber'));
+    final strip = find.text(' · 教室');
+    // 校园时间 7:50：离 8:00 开课还有 10 分钟，是条。
+    final clock = await _mountWithClock(tester, DateTime.utc(2026, 9, 24, 23, 50), display: display);
+    expect((strip.evaluate().length, _remaining(tester)), (1, '10分钟'));
+    clock.value = DateTime.utc(2026, 9, 24, 23, 56, 30);
+    await tester.pumpAndSettle();
+    expect((grabber.evaluate().length, _remaining(tester)), (1, '3分30秒'), reason: '开课前 5 分钟自动展开');
+    await tester.tap(grabber);
+    await tester.pumpAndSettle();
+    clock.value = DateTime.utc(2026, 9, 24, 23, 57);
+    await tester.pumpAndSettle();
+    expect((strip.evaluate().length, _remaining(tester)), (1, '3分00秒'), reason: '再收起后这节课开始前不再展开');
+    clock.value = DateTime.utc(2026, 9, 25, 0, 20);
+    await tester.pumpAndSettle();
+    expect((strip.evaluate().length, grabber.evaluate().length), (1, 0), reason: '上课不自动展开');
+    // 9:41:30，下课前 3 分 30 秒。
+    clock.value = DateTime.utc(2026, 9, 25, 1, 41, 30);
+    await tester.pumpAndSettle();
+    expect((strip.evaluate().length, _remaining(tester), find.text('后下课').evaluate().length), (1, '3分30秒', 1));
+    expect(display.classNowCollapsed.value, isTrue, reason: '自动展开与再收起都不改记下的选择');
     expect(tester.takeException(), isNull);
   });
 

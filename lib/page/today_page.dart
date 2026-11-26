@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 
 import 'package:superxd/domain/period_spans.dart';
 import 'package:superxd/domain/week.dart';
+import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/page/schedule_calendar.dart';
 import 'package:superxd/page/today_date_transition.dart';
 import 'package:superxd/theme/campus_palette.dart';
@@ -667,7 +668,13 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
 // 下一节是明天第 1 节时写“明天早八”。
 // [人工决策-2026-10-18 21:03:19] 再加三项灵动（用户选定）：倒计时换数字时滚动（同 iOS 实时活动的数字过渡）；开课前 5 分钟内倒计时精确到秒；
 // 上课中进度条末端的此刻点定时向外漾开一圈（同苹果地图的定位点），两次之间停一会儿、页面看不见或减少动画时不动。
-class _ClassNow extends StatelessWidget {
+// [人工决策-2026-11-26 12:29:30] 此刻卡能收成一条（用户 11-25 提出想法、11-26 从选项里选定，同灵动岛的展开与紧凑、Apple Music 的迷你播放条）：
+// 卡片底边一道把手，点一下或往上推收成一条，条上点一下或往下拉展开（手势只在把手与条上，别处上下拖动照旧切日；没选跟着列表滚动收起、卡片上下滑）；
+// 所有状态都能收：上课中与下一节写课名 · 教室与剩余时长、下面一道进度，课上完与没课写状态与下一节何时；收起后一直保持（记在显示设置里，重开应用也是条），
+// 只在开课前 5 分钟自动展开一次显示秒级倒数，这时再收起，这节课开始前不再展开；上课、下课只换条里的内容。
+// 点完整卡片照旧看这节课的详情（上面 10-18 那条不变），点条是展开。剩余时长一律带单位（「1小时29分」「4分59秒」：用户指出「1:29」会被看成 1 分 29 秒）；
+// 下课前 5 分钟也按秒倒数（用户选定，同开课前）。
+class _ClassNow extends StatefulWidget {
   const _ClassNow({required this.spans, required this.bells, required this.date, required this.today, required this.onOpen, required this.onJump, this.now, this.next});
   final List<PeriodSpan> spans;
   final List<BellPeriod> bells;
@@ -678,35 +685,82 @@ class _ClassNow extends StatelessWidget {
   final DateTime Function()? now;
   final ({String date, CourseRecord course, CourseMeeting meeting})? next;
 
+  @override
+  State<_ClassNow> createState() => _ClassNowState();
+}
+
+// 一个状态的两种样子：完整卡片 content 与收起后的一条 strip（为空是不能收：作息不全时）；peek 是开课前 _secondsWindow 内那一节的编号（收着时自动展开一次）。
+typedef _ClassNowView = ({String key, Widget content, Widget? strip, String spoken, VoidCallback? onTap, String? peek});
+
+class _ClassNowState extends State<_ClassNow> {
   // 开课前这么多分钟内强调倒计时。
   static const _soonMinutes = 15;
-  // 开课前这么多秒内倒计时精确到秒。
+  // 开课前与下课前这么多秒内倒计时精确到秒。
   static const _secondsWindow = 300;
+  // 没有显示设置（测试）时只在内存里记。
+  ValueNotifier<bool>? _memory;
+  // 开课前自动展开过、又被收起的那一节：只展开一次。
+  String? _peekDismissed;
+
+  ValueNotifier<bool> get _collapsed => DisplayScope.read(context)?.classNowCollapsed ?? (_memory ??= ValueNotifier(false));
+
+  void _setCollapsed(bool value) {
+    HapticFeedback.selectionClick();
+    final settings = DisplayScope.read(context);
+    if (settings == null) {
+      _collapsed.value = value;
+      return;
+    }
+    unawaited(settings.setClassNowCollapsed(value).catchError((Object error, StackTrace stack) => campusLog('[Today] action=class_now_collapse errorType=${error.runtimeType}\n$stack')));
+  }
+
+  @override
+  void dispose() {
+    _memory?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final clock = LiveClock.maybeOf(context);
-    if (clock == null || !TickerMode.valuesOf(context).enabled) return _card(context);
-    return ValueListenableBuilder(
-      valueListenable: clock,
-      builder: (context, _, child) => _card(context),
-    );
+    final listenable = clock == null || !TickerMode.valuesOf(context).enabled ? _collapsed : Listenable.merge([clock, _collapsed]);
+    return ListenableBuilder(listenable: listenable, builder: (context, _) => _card(context));
   }
 
-  // 状态键变了才过渡；同一状态里分钟倒计时与进度原地更新。读屏整卡一句，可点时报按钮。
+  // 状态键或收起与否变了才过渡；同一状态里分钟倒计时与进度原地更新。读屏整卡一句，可点时报按钮。
   Widget _card(BuildContext context) {
-    final (:key, :content, :spoken, :onTap) = _state(context);
-    final keyed = KeyedSubtree(key: ValueKey(key), child: content);
-    // 自成读屏节点，不并进祖先（否则整卡一句落到外层列表上，范围和按钮都不对）。
+    final view = _state(context);
+    final strip = view.strip;
+    final peeking = view.peek != null && view.peek != _peekDismissed;
+    final collapsed = strip != null && _collapsed.value && !peeking;
+    // 收起：开着时记成一直收着；收着、只是开课前自动展开的，记下这一节不再展开。展开：记成一直展开。
+    void collapse() {
+      if (!_collapsed.value) return _setCollapsed(true);
+      HapticFeedback.selectionClick();
+      setState(() => _peekDismissed = view.peek);
+    }
+    void expand() => _setCollapsed(false);
+    final body = collapsed || strip == null ? strip ?? view.content : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [view.content, _Grabber(onCollapse: collapse)]);
+    final keyed = KeyedSubtree(key: ValueKey('${view.key}:${collapsed ? 'strip' : 'card'}'), child: body);
+    final duration = MediaQuery.disableAnimationsOf(context) ? Duration.zero : campusEnter;
+    // 自成读屏节点，不并进祖先（否则整卡一句落到外层列表上，范围和按钮都不对）；把手在读屏里是「收起成一条」这个动作。
     return Semantics(
       container: true,
-      button: onTap != null,
-      label: spoken,
-      onTap: onTap,
+      button: collapsed || view.onTap != null,
+      label: view.spoken,
+      onTap: collapsed ? expand : view.onTap,
+      onTapHint: collapsed ? '展开' : null,
+      customSemanticsActions: strip == null || collapsed ? null : {const CustomSemanticsAction(label: '收起成一条'): collapse},
       excludeSemantics: true,
-      child: SizedBox(width: double.infinity, child: CampusSurface(
-        padding: const EdgeInsets.all(16),
-        onTap: onTap,
+      // 条上往下拉展开（这里的上下拖动不再交给页面切日：手势竞技场里它更深、先认领）。
+      child: _Flick(upward: false, onFlick: collapsed ? expand : null, child: SizedBox(width: double.infinity, child: CampusSurface(
+        padding: EdgeInsets.zero,
+        onTap: collapsed ? expand : view.onTap,
+        child: AnimatedPadding(
+        duration: duration,
+        curve: Curves.easeInOutCubic,
+        // 条矮一些；带把手的完整卡片底边留给把手。
+        padding: collapsed ? const EdgeInsets.symmetric(horizontal: 16, vertical: 12) : EdgeInsets.fromLTRB(16, 16, 16, strip == null ? 16 : 4),
         // 减少动画时直接换内容：AnimatedSize 时长为 0 会在自己的布局里报错。
         // 高度用先慢后快再慢的缓动，主要在新旧内容交接时变化：弹簧曲线前段太快，旧内容还没淡出就被裁掉（录屏所见）。
         child: MediaQuery.disableAnimationsOf(context) ? keyed : AnimatedSize(
@@ -729,25 +783,25 @@ class _ClassNow extends StatelessWidget {
             child: keyed,
           ),
         ),
-      )),
+      )))),
     );
   }
 
-  ({String key, Widget content, String spoken, VoidCallback? onTap}) _state(BuildContext context) {
-    final occupied = spans.where((span) => !span.empty);
-    if (occupied.isEmpty) return _rest(context, date == today ? '今天没课' : '这天没课', CampusIcons.dayOff);
+  _ClassNowView _state(BuildContext context) {
+    final occupied = widget.spans.where((span) => !span.empty);
+    if (occupied.isEmpty) return _rest(context, widget.date == widget.today ? '今天没课' : '这天没课', CampusIcons.dayOff);
     // 作息不完整时不把“第3节”当钟点比较，也不猜测下一节或已下课。
-    if (occupied.any((span) => meetingTime(bells, span.meeting!) == null)) {
-      return (key: 'bells', content: const Text('今日课程'), spoken: '今日课程', onTap: null);
+    if (occupied.any((span) => meetingTime(widget.bells, span.meeting!) == null)) {
+      return (key: 'bells', content: const Text('今日课程'), strip: null, spoken: '今日课程', onTap: null, peek: null);
     }
-    final instant = now?.call() ?? LiveClock.maybeOf(context)?.value ?? DateTime.now();
-    final moment = classMoment(spans, bells, date, instant);
+    final instant = widget.now?.call() ?? LiveClock.maybeOf(context)?.value ?? DateTime.now();
+    final moment = classMoment(widget.spans, widget.bells, widget.date, instant);
     final focus = moment.focus;
     if (focus == null) return _rest(context, '今天的课上完了', CampusIcons.success);
     return _live(context, moment, focus, instant);
   }
 
-  ({String key, Widget content, String spoken, VoidCallback? onTap}) _live(BuildContext context, ClassMoment moment, PeriodSpan focus, DateTime instant) {
+  _ClassNowView _live(BuildContext context, ClassMoment moment, PeriodSpan focus, DateTime instant) {
     final palette = CampusPalette.of(context);
     final secondary = TextStyle(fontSize: 14, color: palette.onSurfaceVariant);
     final course = focus.course!;
@@ -758,8 +812,23 @@ class _ClassNow extends StatelessWidget {
     final soon = !moment.ongoing && moment.remainingMinutes <= _soonMinutes;
     final fraction = moment.fraction;
     final left = moment.target - moment.seconds;
+    // 开课前与下课前 5 分钟内按秒倒数（真实时钟下自己每秒走，到点由分钟时钟换状态）；其余按分钟，换数字时滚动。
+    final seconds = left <= _secondsWindow;
     const figures = [FontFeature.tabularFigures()];
     const figure = TextStyle(fontSize: 28, fontWeight: FontWeight.w600, height: 1.15, fontFeatures: figures);
+    final unit = TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: palette.onSurface);
+    // 剩余时长（卡片与条共用）：数字大、单位小，一律带单位（「1小时29分」「4分59秒」，不写「1:29」免得看成分秒）。
+    // 临近开课数字转激活色（大号字，单位仍是正文色，小字对比度不够），颜色渐变；动画样式先合并默认样式，不丢应用字体。
+    Widget remainingOf(TextStyle figure) => AnimatedDefaultTextStyle(
+      style: DefaultTextStyle.of(context).style.merge(TextStyle(color: soon ? palette.accentText : palette.onSurface)),
+      duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : campusEnter,
+      child: seconds
+          ? _SecondsCountdown(key: const ValueKey('class-now-remaining'), deadline: instant.add(Duration(seconds: left)), left: left, live: widget.now == null && LiveClock.liveOf(context), style: figure, unit: unit)
+          : Row(key: const ValueKey('class-now-remaining'), mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
+              for (final (text, number) in classDurationParts(moment.remainingMinutes))
+                number ? CampusRollingText(text, style: figure, countsDown: true) : Text(text, style: unit),
+            ]),
+    );
     // 同 iOS 实时活动：课的信息在左，剩余时长在右上（数字大、单位小），起止时刻标在进度条两端。
     final content = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -776,18 +845,7 @@ class _ClassNow extends StatelessWidget {
         ])),
         const SizedBox(width: 12),
         Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          // 临近开课数字转激活色（大号字，单位仍是正文色，小字对比度不够），颜色渐变；动画样式先合并默认样式，不丢应用字体。
-          AnimatedDefaultTextStyle(
-            style: DefaultTextStyle.of(context).style.merge(TextStyle(color: soon ? palette.accentText : palette.onSurface)),
-            duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : campusEnter,
-            // 开课前 5 分钟内按秒倒数（真实时钟下自己每秒走，到点由分钟时钟换成上课中）；其余按分钟，换数字时滚动。
-            child: !moment.ongoing && left <= _secondsWindow
-                ? _SecondsCountdown(key: const ValueKey('class-now-remaining'), deadline: instant.add(Duration(seconds: left)), left: left, live: now == null && LiveClock.liveOf(context), style: figure)
-                : Row(key: const ValueKey('class-now-remaining'), mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
-                    for (final (text, number) in classDurationParts(moment.remainingMinutes))
-                      number ? CampusRollingText(text, style: figure, countsDown: true) : Text(text, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: palette.onSurface)),
-                  ]),
-          ),
+          remainingOf(figure),
           Text(suffix, style: secondary),
         ]),
       ]),
@@ -802,18 +860,41 @@ class _ClassNow extends StatelessWidget {
         ])),
       ],
     ]);
+    // 收起后的一条：课名 · 教室在左、剩余时长在右，下面一道同卡片的进度（课间与上课中才有）；不同字号按行中线对齐。
+    // 放不下时先省略课名、教室照写（去哪上课最要紧，课名看头几个字就认得）：课名至少留三个字加省略号的宽，其余给教室，教室再长也只省略它自己
+    // （模拟器上「思想道德与法治 · 综…」后改的）。
+    final titleStyle = Theme.of(context).textTheme.titleMedium;
+    final strip = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Row(children: [
+        Expanded(child: LayoutBuilder(builder: (context, constraints) => Row(children: [
+          Flexible(child: Text(course.courseName, maxLines: 1, overflow: TextOverflow.ellipsis, style: titleStyle)),
+          if (place.isNotEmpty) ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: math.max(constraints.maxWidth / 2, constraints.maxWidth - campusTextWidth(context, '课程名…', style: titleStyle))),
+            child: Text(' · $place', maxLines: 1, overflow: TextOverflow.ellipsis, style: titleStyle),
+          ),
+        ]))),
+        const SizedBox(width: CampusGap.medium),
+        remainingOf(const TextStyle(fontSize: 20, fontWeight: FontWeight.w600, height: 1.2, fontFeatures: figures)),
+        const SizedBox(width: CampusGap.hairline),
+        Text(suffix, style: secondary),
+      ]),
+      if (fraction != null) ...[const SizedBox(height: CampusGap.small), _TimeTrack(fraction: fraction, pulse: moment.ongoing)],
+    ]);
     return (
       key: '${moment.ongoing ? 'ongoing' : 'next'}:${spanIdentity(focus)}',
       content: content,
+      strip: strip,
       spoken: [status.replaceAll(' · ', '，'), course.courseName, place, course.teacherName, '$remaining$suffix'].where((part) => part.isNotEmpty).join('，'),
-      onTap: () => onOpen(focus),
+      onTap: () => widget.onOpen(focus),
+      // 开课前 5 分钟：收着的条自动展开一次（同实时活动到点在灵动岛展开）。
+      peek: !moment.ongoing && seconds ? spanIdentity(focus) : null,
     );
   }
 
   // 课上完或没课：大字写状态，这是今天的主要信息；有下一节就在下面预告：一行“下一节 · 哪天 时刻”，一行课名（预告里最突出）与教室。
   // 不放右侧大号时刻：那样和下面的课程卡一个样子，像今天还有这节课。
   // 哪天按离今天多远写：明天、后天，一周内写星期，更远写月日；作息缺这节时写节次。
-  ({String key, Widget content, String spoken, VoidCallback? onTap}) _rest(BuildContext context, String status, IconData icon) {
+  _ClassNowView _rest(BuildContext context, String status, IconData icon) {
     final palette = CampusPalette.of(context);
     final secondary = TextStyle(fontSize: 14, height: 1.3, color: palette.onSurfaceVariant);
     // 图标对齐状态行的首行（大字号下状态会折行，居中会悬在几行中间）。
@@ -823,15 +904,22 @@ class _ClassNow extends StatelessWidget {
       const SizedBox(width: 10),
       Expanded(child: Text(status, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, height: 1.3, color: palette.onSurface))),
     ]);
-    final next = this.next;
-    if (next == null) return (key: 'rest:$status', content: headline, spoken: status, onTap: null);
+    // 收起后的一条：状态在左（放不下省略）、下一节何时在右（不省略，窄屏大字号下先让状态省略，同上课中的条留着剩余时长）。
+    Widget strip(String? when) => Row(children: [
+      CampusIcon(icon, color: palette.primary, size: 20),
+      const SizedBox(width: CampusGap.medium),
+      Expanded(child: Text(status, maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleMedium)),
+      if (when != null) ...[const SizedBox(width: CampusGap.medium), Text(when, maxLines: 1, style: secondary.copyWith(fontFeatures: const [FontFeature.tabularFigures()]))],
+    ]);
+    final next = widget.next;
+    if (next == null) return (key: 'rest:$status', content: headline, strip: strip(null), spoken: status, onTap: null, peek: null);
     final target = parseIsoDate(next.date);
-    final offset = target.difference(parseIsoDate(today)).inDays;
+    final offset = target.difference(parseIsoDate(widget.today)).inDays;
     // [人工决策-2026-10-19 17:55:48] 跨到下周的写「下周一」（用户选定）：以前按离今天几天算，周六看到「10月26日」其实就是后天周一、周五看到「周一」分不清是哪周。
-    final week = parseIsoDate(mondayOf(next.date)).difference(parseIsoDate(mondayOf(today))).inDays ~/ 7;
+    final week = parseIsoDate(mondayOf(next.date)).difference(parseIsoDate(mondayOf(widget.today))).inDays ~/ 7;
     final day = switch (offset) { 1 => '明天', 2 => '后天', _ when week == 0 => '周${weekdayLabel(target.weekday)}', _ when week == 1 => '下周${weekdayLabel(target.weekday)}', _ => '${target.month}月${target.day}日' };
     final early = offset == 1 && next.meeting.periodStart == 1;
-    final time = meetingTime(bells, next.meeting)?.startLabel ?? periodLabel(next.meeting.periodStart, next.meeting.periodEnd);
+    final time = meetingTime(widget.bells, next.meeting)?.startLabel ?? periodLabel(next.meeting.periodStart, next.meeting.periodEnd);
     final when = '${early ? '明天早八' : day} $time';
     final place = next.meeting.place;
     final content = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -848,20 +936,70 @@ class _ClassNow extends StatelessWidget {
     return (
       key: 'rest:$status:${next.date}:${courseKey(next.course)}:${next.meeting.periodStart}',
       content: content,
+      strip: strip(when),
       spoken: [status, '下一节$when', next.course.courseName, place].where((part) => part.isNotEmpty).join('，'),
-      onTap: () => onJump(next.date),
+      onTap: () => widget.onJump(next.date),
+      peek: null,
     );
   }
 }
 
-// 开课前最后几分钟的秒级倒计时（同 iOS 实时活动的计时器）：“4:59”，换数字时滚动。真实时钟下按截止时刻每秒自己刷新，
-// 只在页面可见时走；测试拨好的时钟不走，停在拨好那一刻的剩余秒数。
+// 把手（同底部弹层顶上那一道）：点一下或往上推，此刻卡收成一条（人工决策见 _ClassNow）。触区比短横大，读屏里是卡片的「收起成一条」动作。
+class _Grabber extends StatelessWidget {
+  const _Grabber({required this.onCollapse});
+  final VoidCallback onCollapse;
+
+  @override
+  Widget build(BuildContext context) => Center(child: _Flick(upward: true, onFlick: onCollapse, child: GestureDetector(
+    key: const ValueKey('class-now-grabber'),
+    behavior: HitTestBehavior.opaque,
+    onTap: onCollapse,
+    child: SizedBox(width: 96, height: 24, child: Center(child: DecoratedBox(
+      decoration: BoxDecoration(color: CampusPalette.of(context).onSurfaceVariant.withValues(alpha: .4), borderRadius: BorderRadius.circular(2)),
+      child: const SizedBox(width: 32, height: 4),
+    ))),
+  )));
+}
+
+// 往上推或往下拉一下就算（同底部弹层把手的轻推，不跟手）：按位移或速度认；onFlick 为空时不接上下拖动、树的结构不变（里面的过渡不重来）。
+// 接着的时候，落在这里的上下拖动不交给页面切日（手势竞技场里它更深、先认领）。
+class _Flick extends StatefulWidget {
+  const _Flick({required this.upward, required this.onFlick, required this.child});
+  final bool upward;
+  final VoidCallback? onFlick;
+  final Widget child;
+
+  @override
+  State<_Flick> createState() => _FlickState();
+}
+
+class _FlickState extends State<_Flick> {
+  var _moved = 0.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final onFlick = widget.onFlick;
+    return GestureDetector(
+      onVerticalDragStart: onFlick == null ? null : (_) => _moved = 0,
+      onVerticalDragUpdate: onFlick == null ? null : (details) => _moved += details.delta.dy,
+      onVerticalDragEnd: onFlick == null ? null : (details) {
+        final sign = widget.upward ? -1 : 1;
+        if (_moved * sign > 12 || (details.primaryVelocity ?? 0) * sign > 300) onFlick();
+      },
+      child: widget.child,
+    );
+  }
+}
+
+// 开课前与下课前最后几分钟的秒级倒计时（同 iOS 实时活动的计时器）：「4分59秒」「59秒」，带单位（「4:59」会和「1:29」这种时分混淆），换数字时滚动。
+// 真实时钟下按截止时刻每秒自己刷新，只在页面可见时走；测试拨好的时钟不走，停在拨好那一刻的剩余秒数。
 class _SecondsCountdown extends StatefulWidget {
-  const _SecondsCountdown({super.key, required this.deadline, required this.left, required this.live, required this.style});
+  const _SecondsCountdown({super.key, required this.deadline, required this.left, required this.live, required this.style, required this.unit});
   final DateTime deadline;
   final int left;
   final bool live;
   final TextStyle style;
+  final TextStyle unit;
 
   @override
   State<_SecondsCountdown> createState() => _SecondsCountdownState();
@@ -910,8 +1048,12 @@ class _SecondsCountdownState extends State<_SecondsCountdown> {
 
   @override
   Widget build(BuildContext context) {
-    final left = _left;
-    return CampusRollingText('${left ~/ 60}:${(left % 60).toString().padLeft(2, '0')}', style: widget.style, countsDown: true);
+    final left = _left, minutes = left ~/ 60;
+    return Row(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
+      if (minutes > 0) ...[CampusRollingText('$minutes', style: widget.style, countsDown: true), Text('分', style: widget.unit)],
+      CampusRollingText(minutes > 0 ? (left % 60).toString().padLeft(2, '0') : '${left % 60}', style: widget.style, countsDown: true),
+      Text('秒', style: widget.unit),
+    ]);
   }
 }
 
