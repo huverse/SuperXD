@@ -326,8 +326,8 @@ class _FriendRow extends StatelessWidget {
           child: Text(friend.displayName.characters.first, style: TextStyle(fontSize: 16, color: colors.primary, fontWeight: FontWeight.w600)),
         ),
         // 时间在名字一行的右端、未读角标在预览一行的右端（同常见 IM 列表）：两行各自随字号长高。
-        // 以前两者叠成 trailing 一列，ListTile 把 trailing 限高 56，1.3 倍字号起就溢出。
-        title: Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
+        // 以前两者叠成 trailing 一列，ListTile 把 trailing 限高 56，1.3 倍字号起就溢出。名字 16 号、时间 14 号按行中线对齐（按基线时小一号的时间整体偏下，11-26 查出）。
+        title: Row(children: [
           Expanded(child: Text(friend.displayName, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, color: colors.onSurface, fontWeight: unread > 0 ? FontWeight.w600 : FontWeight.w400))),
           const SizedBox(width: 8),
           Text(socialShortTime(friend.lastActivity), style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant)),

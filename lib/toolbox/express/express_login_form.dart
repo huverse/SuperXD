@@ -144,6 +144,9 @@ class _ExpressLoginFormState extends State<ExpressLoginForm> {
     final agreementTop = math.max(0.0, (48 - line.height - 8) / 2);
     line.dispose();
     final link = campusLink.copyWith(padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 4)), minimumSize: const WidgetStatePropertyAll(Size.zero), tapTargetSize: MaterialTapTargetSize.shrinkWrap);
+    // 链接的字照正文的行高与行距分配排，同一行里不比「同意拼多多」高（同登录页的同意行）。
+    final body = DefaultTextStyle.of(context).style;
+    final linkText = agreementStyle.copyWith(height: body.height, leadingDistribution: body.leadingDistribution);
     final motion = MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 220);
     // [人工决策-2026-10-31 21:34:45] 用户选「胶囊框、验证码按钮嵌在框里」（未选「一张卡两行」「保留现在的框只加动效」，只改快递登录页）：
     // 胶囊形同应用的搜索框，占位文字不用浮动标签；「获取验证码」在验证码框里右侧，大字号下不挤；聚焦时描边渐变成主色、底色微亮；
@@ -204,7 +207,7 @@ class _ExpressLoginFormState extends State<ExpressLoginForm> {
                 onTap: busy ? null : () => setState(() => _agreed = !_agreed),
                 child: Padding(padding: const EdgeInsets.symmetric(vertical: 4), child: Text('同意拼多多', style: agreementStyle.copyWith(color: palette.onSurfaceVariant))),
               )),
-              TextButton(style: link, onPressed: widget.openTerms, child: const Text('服务协议与隐私政策', style: agreementStyle)),
+              TextButton(style: link, onPressed: widget.openTerms, child: Text('服务协议与隐私政策', style: linkText)),
             ]))),
           ]),
           // 出错提示展开淡入、清掉时淡出收起；减少动画时直接换（AnimatedSize 时长为 0 会在布局里报错）。
