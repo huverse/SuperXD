@@ -11,7 +11,7 @@
 **把校园里要用的，装进一个应用。**
 
 课表成绩、宿舍洗浴、驿站取件、课堂签到、视频下载、在线影视、和同学互看课表、益智游戏。<br>
-个人开发的非官方开源应用，最初为山东现代学院而做；数据默认留在你的手机上。
+个人开发的非官方开源应用；数据默认留在你的手机上。
 
 [![Release](https://img.shields.io/github/v/release/huverse/SuperXD?include_prereleases&label=release&color=2563eb)](https://github.com/huverse/SuperXD/releases)
 [![Android 11+](https://img.shields.io/badge/Android-11%2B-34a853?logo=android&logoColor=white)](https://github.com/huverse/SuperXD/releases)
