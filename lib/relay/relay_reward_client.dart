@@ -105,7 +105,7 @@ FestivalDraw parseFestivalDraw(Object? json, {required String occasion, required
   _ => throw const FormatException('不是抽签结果'),
 };
 
-// 奖品信封（服务端 server/src/modules/reward/reward_seal.ts，共用 server/test/vectors/reward_prize_v1.json 与 reward_prize_v2.json）：口令是真钱（当初中转是明文 HTTP；11-18 起 HTTPS 后照旧封装，8080 明文入口上的旧版本仍靠它），
+// 奖品信封（服务端 server/src/modules/reward/reward_seal.ts，共用 server/test/vectors/reward_prize_v1.json 与 reward_prize_v2.json）：口令是真钱（当初中转是明文 HTTP；11-18 起 HTTPS、11-26 关掉 8080 明文入口后照旧封装），
 // 服务器用抽签设备登记的 box 公钥封装，同一网络里的人截不走。一次性 X25519 与设备的 box 密钥协商，HKDF-SHA256（盐 = 一次性公钥 + 设备公钥，
 // info = SXD1-reward-prize）派生 AES-256-GCM 密钥，附加数据绑定版本、一次性公钥与「活动编号\n设备号」。
 // 布局：版本(1) | 一次性公钥(32) | 随机数(12) | 密文 | GCM 标签(16) | 服务器签名(64)；明文是 {kind, content, note} 的 JSON。

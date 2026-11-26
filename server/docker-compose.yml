@@ -37,8 +37,11 @@ services:
     volumes:
       - ./releases:/srv/releases:ro
       - diagnostics:/srv/diagnostics
+    # [人工决策-2026-11-26 12:52:46] 8080 明文旧入口关掉（用户 11-25 说「关中转的 8080 端口」；11-18 定强制更新后看访问再关，11-26 抽样外网网卡一小时只有扫描器、
+    # 没有一条 /v1/ 请求，近 7 天健康回报全是构建号 31 及以后（走 HTTPS））：只绑本机回环，公网连不上，服务器上排查照旧 127.0.0.1:${RELAY_PUBLIC_PORT}；
+    # 公网只剩 tls 的 8443 与证书验证的 80。阿里云安全组里的 8080 规则由维护者在控制台删。
     ports:
-      - "${RELAY_PUBLIC_PORT}:${RELAY_PORT}"
+      - "127.0.0.1:${RELAY_PUBLIC_PORT}:${RELAY_PORT}"
     depends_on:
       mysql:
         condition: service_healthy
@@ -58,7 +61,7 @@ services:
 
   # [人工决策-2026-11-18 18:10:39] HTTPS 用 Let's Encrypt 的公网 IP 证书（用户在两路实验后选定，没选自签证书加客户端内置：维护省、浏览器能直接打开中转链接）。
   # Nginx 在 8443 终止 HTTPS、转给内网里的中转；80 只给证书签发验证（ACME http-01），其余一律 404。证书 160 小时有效，scripts/tls_cert.sh 每天检查、剩 3 天续，
-  # 续不上会在 6 天内全挂，所以外部探活另查证书到期（.github/workflows/relay-health.yml）。旧版本客户端照旧直连 8080 明文，等提高最低版本后再关。
+  # 续不上会在 6 天内全挂，所以外部探活另查证书到期（.github/workflows/relay-health.yml）。8080 明文旧入口 11-26 已关（只绑本机回环，见 relay 的 ports）。
   # 中转按 X-Forwarded-For 取客户端 IP 只信内网来的请求（RELAY_TRUST_PROXY=uniquelocal，人工决策见 src/config/env.ts），Nginx 覆盖这个头、不接客户端自己写的。
   tls:
     image: nginx:1.28.0-alpine
