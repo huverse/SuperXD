@@ -253,7 +253,8 @@ void main() {
     // 恢复会话、换账号会整个重建账号应用：画面与深色放在外层，重建后第一帧就还是星空。
     accounts.bump();
     await tester.pump();
-    expect((Theme.of(page()).brightness, tester.widget<CampusAtmosphere>(find.byType(CampusAtmosphere)).sky?.value), (Brightness.dark, scene));
+    final drawn = find.byWidgetPredicate((widget) => widget is Image && widget.image is ResizeImage && (widget.image as ResizeImage).imageProvider == scene.from.image);
+    expect((Theme.of(page()).brightness, tester.widget<CampusAtmosphere>(find.byType(CampusAtmosphere)).sky?.value, drawn.evaluate().isNotEmpty), (Brightness.dark, scene, true));
     await tester.pumpAndSettle();
 
     await tester.runAsync(display.clearWallpaper);

@@ -95,8 +95,9 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
   // 正在显示的壁纸。换上新图时先按铺满屏幕的尺寸解码好再换，交叉淡化直接从旧背景到新图，
   // 不会先淡到底色、等解码完图片再冒出来；恢复云雾和同一张图的外观变化立即生效。
   late CampusWallpaper? _shown = widget.wallpaper;
-  // 正在显示的星空画面。新的两幅图先按铺满屏幕的尺寸解码好再换（同壁纸）；只有过渡比例变了直接换。
-  CampusSkyScene? _skyShown;
+  // 正在显示的星空画面：新建时直接用当前的（同壁纸；换账号代次时背景跟着重建，图已在缓存里，第一帧就画得出来，不先闪一下云雾）。
+  // 之后换成新的两幅图时先按铺满屏幕的尺寸解码好再换；只有过渡比例变了直接换。
+  late CampusSkyScene? _skyShown = widget.sky?.value;
 
   @override
   void didChangeDependencies() {
@@ -105,7 +106,6 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
         CampusMotion.allowed(context) &&
         !MediaQuery.highContrastOf(context) &&
         !MediaQuery.accessibleNavigationOf(context);
-    if (_skyShown == null && widget.sky?.value != null) _syncSky();
     _updatePlayback();
   }
 
