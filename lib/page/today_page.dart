@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
@@ -680,6 +679,10 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
 // 收缩/展开逻辑改为上滑/下滑卡片」）。滑动所有状态都能用（同 Android 通知、Spotify 迷你播放条上下滑改大小）：完整卡片往上滑收起、条往下拉展开，
 // 只认这一个方向，起手往反方向就交给页面切日（在完整卡片上往下拉照旧是前一天）；取代上一条的把手与「手势只在把手与条上」。
 // 跳转的卡在读屏里另有「收起成一条」「展开」两个动作（滑动读屏做不了）；其余（收起记住、开课前 5 分钟自动展开一次）照旧。
+// [人工决策-2026-11-26 18:56:21] 卡片的上下滑改成长按（取代上一条的滑动；用户 11-26 晚指出同一屏有两种上下滑：页面上下滑切日、卡片上下滑展开收起，
+// 查了 Apple 人机界面指南「人们预期同一手势在哪都做同一件事」后，从长按展开收起、长按弹菜单、长按看详情里选第一种）：上下滑一律归页面切日；
+// 所有状态长按展开或收起，带系统的长按反馈（同 Apple 实时活动长按看展开态、课表页长按课程卡展开）；单击照旧（没跳转的展开收起、有跳转的跳到那天）。
+// 读屏：长按是卡片的长按动作，跳转的卡另有「收起成一条」「展开」两个动作（iOS 读屏没有长按）。
 class _ClassNow extends StatefulWidget {
   const _ClassNow({required this.spans, required this.bells, required this.date, required this.today, required this.onJump, this.now, this.next});
   final List<PeriodSpan> spans;
@@ -710,8 +713,8 @@ class _ClassNowState extends State<_ClassNow> {
 
   ValueNotifier<bool> get _collapsed => DisplayScope.read(context)?.classNowCollapsed ?? (_memory ??= ValueNotifier(false));
 
+  // 震动由调用方给：单击轻触一下，长按用卡片自带的系统长按反馈（再震一下就成两下）。
   void _setCollapsed(bool value) {
-    HapticFeedback.selectionClick();
     final settings = DisplayScope.read(context);
     if (settings == null) {
       _collapsed.value = value;
@@ -742,13 +745,18 @@ class _ClassNowState extends State<_ClassNow> {
     // 收起：开着时记成一直收着；收着、只是开课前自动展开的，记下这一节不再展开。展开：记成一直展开。
     void collapse() {
       if (!_collapsed.value) return _setCollapsed(true);
-      HapticFeedback.selectionClick();
       setState(() => _peekDismissed = view.peek);
     }
     void expand() => _setCollapsed(false);
     final resize = strip == null ? null : collapsed ? expand : collapse;
-    // 单击：有跳转的照旧跳到那天，没有的展开或收起。
-    final tap = view.jump ?? resize;
+    // 单击：有跳转的照旧跳到那天，没有的展开或收起；长按都是展开或收起。
+    final tap = view.jump ?? switch (resize) {
+      final resize? => () {
+        HapticFeedback.selectionClick();
+        resize();
+      },
+      null => null,
+    };
     final keyed = KeyedSubtree(key: ValueKey('${view.key}:${collapsed ? 'strip' : 'card'}'), child: collapsed ? strip : view.content);
     final duration = MediaQuery.disableAnimationsOf(context) ? Duration.zero : campusEnter;
     final resizeLabel = collapsed ? '展开' : '收起成一条';
@@ -759,12 +767,14 @@ class _ClassNowState extends State<_ClassNow> {
       label: view.spoken,
       onTap: tap,
       onTapHint: view.jump == null && resize != null ? resizeLabel : null,
+      onLongPress: resize,
+      onLongPressHint: resize == null ? null : resizeLabel,
       customSemanticsActions: view.jump == null || resize == null ? null : {CustomSemanticsAction(label: resizeLabel): resize},
       excludeSemantics: true,
-      // 完整卡片往上滑收起、条往下拉展开（这个方向的上下拖动不交给页面切日：手势竞技场里它更深、先认领）。
-      child: _Swipe(upward: !collapsed, onSwipe: resize, child: SizedBox(width: double.infinity, child: CampusSurface(
+      child: SizedBox(width: double.infinity, child: CampusSurface(
         padding: EdgeInsets.zero,
         onTap: tap,
+        onLongPress: resize,
         child: AnimatedPadding(
         duration: duration,
         curve: Curves.easeInOutCubic,
@@ -792,7 +802,7 @@ class _ClassNowState extends State<_ClassNow> {
             child: keyed,
           ),
         ),
-      )))),
+      ))),
     );
   }
 
@@ -950,62 +960,6 @@ class _ClassNowState extends State<_ClassNow> {
       jump: () => widget.onJump(next.date),
       peek: null,
     );
-  }
-}
-
-// 在卡片上往上滑或往下拉一下就算（同 Android 通知、Spotify 迷你播放条上下滑改大小，不跟手）：按位移或速度认，人工决策见 _ClassNow。
-// 只认 upward 给的那个方向：起手往反方向走就当场放弃这一手，交给页面切日（在完整卡片上往下拉照旧是前一天）；
-// onSwipe 为空时不接上下拖动、树的结构不变（里面的过渡不重来）。
-class _Swipe extends StatelessWidget {
-  const _Swipe({required this.upward, required this.onSwipe, required this.child});
-  final bool upward;
-  final VoidCallback? onSwipe;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final onSwipe = this.onSwipe;
-    // 触摸阈值同 GestureDetector 一样取系统的（安卓约 8）：不取时按 Flutter 默认的 18，外面页面切日的识别器先过阈值、把上滑抢走（11-26 模拟器上所见）。
-    final settings = MediaQuery.maybeGestureSettingsOf(context);
-    return RawGestureDetector(
-      gestures: onSwipe == null ? const {} : {
-        _OneWayDrag: GestureRecognizerFactoryWithHandlers<_OneWayDrag>(_OneWayDrag.new, (recognizer) => recognizer..upward = upward..onSwipe = onSwipe..gestureSettings = settings),
-      },
-      child: child,
-    );
-  }
-}
-
-class _OneWayDrag extends VerticalDragGestureRecognizer {
-  _OneWayDrag() {
-    onStart = (_) => _moved = 0;
-    onUpdate = (details) => _moved += details.delta.dy;
-    onEnd = (details) {
-      final sign = upward ? -1 : 1;
-      if (_moved * sign > 12 || (details.primaryVelocity ?? 0) * sign > 300) onSwipe?.call();
-    };
-  }
-  bool upward = true;
-  VoidCallback? onSwipe;
-  var _moved = 0.0;
-  // 各手指按下的位置，起手方向定了（走过 2 像素）就拿掉。
-  final _origins = <int, double>{};
-
-  @override
-  void addAllowedPointer(PointerDownEvent event) {
-    _origins[event.pointer] = event.position.dy;
-    super.addAllowedPointer(event);
-  }
-
-  @override
-  void handleEvent(PointerEvent event) {
-    final origin = _origins[event.pointer];
-    if (origin != null && event is PointerMoveEvent && (event.position.dy - origin).abs() > 2) {
-      _origins.remove(event.pointer);
-      if ((event.position.dy < origin) != upward) return resolvePointer(event.pointer, GestureDisposition.rejected);
-    }
-    if (event is PointerUpEvent || event is PointerCancelEvent) _origins.remove(event.pointer);
-    super.handleEvent(event);
   }
 }
 

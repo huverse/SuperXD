@@ -20,6 +20,7 @@ class CampusSurface extends StatelessWidget {
     this.radius = 24,
     this.selected = false,
     this.onTap,
+    this.onLongPress,
     this.margin = EdgeInsets.zero,
   });
   final Widget child;
@@ -27,6 +28,8 @@ class CampusSurface extends StatelessWidget {
   final double radius;
   final bool selected;
   final VoidCallback? onTap;
+  // 长按（带系统的长按反馈：安卓震动，同 InkWell）。
+  final VoidCallback? onLongPress;
   final EdgeInsetsGeometry margin;
   @override
   Widget build(BuildContext context) {
@@ -50,12 +53,13 @@ class CampusSurface extends StatelessWidget {
               : BorderSide(color: CampusPalette.of(context).surfaceBorder),
         ),
         // 可点的卡片读屏报“按钮”（同系统列表项），不只是一段能双击的文字。
-        child: onTap == null
+        child: onTap == null && onLongPress == null
             ? content
             : Semantics(
                 button: true,
                 child: InkWell(
                   onTap: onTap,
+                  onLongPress: onLongPress,
                   borderRadius: BorderRadius.circular(radius),
                   child: content,
                 ),
