@@ -47,21 +47,21 @@ class SkyPack implements DownloadPack {
   SkyFile fileOf(SkyPhase phase) => files.firstWhere((file) => file.phase == phase);
 }
 
-// 竖屏 1290×2796 的 WebP（tool/sky_pack.py 生成），每个画风一幅一时段。
+// 竖屏 1290×2796 的 WebP（tool/sky_pack.py 生成，星多的几张减过星），每个画风一幅一时段。
 const skyPacks = <String, SkyPack>{
   'real': SkyPack(style: SkyStyle.real, files: [
-    SkyFile(phase: SkyPhase.dawn, name: 'sky_real_dawn-8beeddfe0040.webp', size: 892660, sha256: '8beeddfe0040ac4cfea4cbe3f6d813ea4f98d77b3ed8f44ed528d3c9863ebf79'),
+    SkyFile(phase: SkyPhase.dawn, name: 'sky_real_dawn-429b178f894f.webp', size: 549990, sha256: '429b178f894f68e081b2e2daef7e4c12a9a1adf0e30b86db3e0368c513e46822'),
     SkyFile(phase: SkyPhase.day, name: 'sky_real_day-91be9e24de9a.webp', size: 63950, sha256: '91be9e24de9a326ec89dd573991b100ee78a3f7d33fb197ad8053f8c09c6065c'),
-    SkyFile(phase: SkyPhase.dusk, name: 'sky_real_dusk-b7b43a8711ce.webp', size: 776186, sha256: 'b7b43a8711ce02f55a476c4b7719d2f994adba67632ea8bec072973c76e4f1e0'),
-    SkyFile(phase: SkyPhase.night, name: 'sky_real_night-ae34f8819f18.webp', size: 1014082, sha256: 'ae34f8819f186538e13682ef8c6bcdd0e54da84dc5bb2b2e085873c41b752baf'),
-    SkyFile(phase: SkyPhase.late, name: 'sky_real_late-8b3f12a0847a.webp', size: 949694, sha256: '8b3f12a0847a73266cd462bd259386f8c11907faf12c2367ad2cc65a34970b2c'),
+    SkyFile(phase: SkyPhase.dusk, name: 'sky_real_dusk-1445be8523f1.webp', size: 448448, sha256: '1445be8523f10aed42ab8de5be11fa0ab82c14d566e4bd55affca2dac22011ef'),
+    SkyFile(phase: SkyPhase.night, name: 'sky_real_night-ae3a5bb3bf60.webp', size: 473492, sha256: 'ae3a5bb3bf605825102cf2f300e77fc42263a4140514a14dda4ca7722df6a230'),
+    SkyFile(phase: SkyPhase.late, name: 'sky_real_late-a2ecf6cb9fed.webp', size: 551054, sha256: 'a2ecf6cb9fed971d3a9b835d1ece422583fea437272a14772eb8d8bb55c44acd'),
   ]),
   'shinkai': SkyPack(style: SkyStyle.shinkai, files: [
     SkyFile(phase: SkyPhase.dawn, name: 'sky_shinkai_dawn-cbc8a8f94f5c.webp', size: 98788, sha256: 'cbc8a8f94f5cae21bfbae8be9f48b839473fef951a13992b475599d4f295b275'),
     SkyFile(phase: SkyPhase.day, name: 'sky_shinkai_day-7a05ae90057d.webp', size: 370464, sha256: '7a05ae90057d5aeeb75285d1b7dd29cbd20e0a1905de0705ee738891ecd1b94a'),
     SkyFile(phase: SkyPhase.dusk, name: 'sky_shinkai_dusk-57d719aa4d5b.webp', size: 85794, sha256: '57d719aa4d5bef805c41e52be1bec0094734727c0fbe0a88acf7d14ba9ee0e16'),
     SkyFile(phase: SkyPhase.night, name: 'sky_shinkai_night-d8056401a3f5.webp', size: 174534, sha256: 'd8056401a3f5a5f2aea722056062f28541ea8d12af1a98ee2586c34d275b189d'),
-    SkyFile(phase: SkyPhase.late, name: 'sky_shinkai_late-7d388475988d.webp', size: 359090, sha256: '7d388475988d733f46d14177734e9f006e0ae0043fb751bcf914eb3f3d2635a0'),
+    SkyFile(phase: SkyPhase.late, name: 'sky_shinkai_late-764e471eccce.webp', size: 290050, sha256: '764e471eccce277431168713faef6509ab399f8138166f5f9bb62042e978ba6b'),
   ]),
 };
 
