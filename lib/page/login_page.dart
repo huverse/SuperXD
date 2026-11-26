@@ -162,13 +162,16 @@ class _LoginPageState extends State<LoginPage> {
     final top = math.max(0.0, (48 - line.height - 8) / 2);
     line.dispose();
     final link = campusLink.copyWith(padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 4)), minimumSize: const WidgetStatePropertyAll(Size.zero), tapTargetSize: MaterialTapTargetSize.shrinkWrap);
+    // 链接的字照正文的行高与行距分配排：按钮自带 1.25 倍行高、按比例分配，衬线与系统字体下比旁边的「和」高约 1dp（11-26 查出）。
+    final body = DefaultTextStyle.of(context).style;
+    final linkText = style.copyWith(height: body.height, leadingDistribution: body.leadingDistribution);
     return Padding(padding: EdgeInsets.only(top: top), child: Wrap(spacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
       // 整句已在勾选框的读屏名里，这两段文字不再单独朗读；两个链接照常是按钮。
       ExcludeSemantics(child: GestureDetector(onTap: _busy ? null : () => setState(() => _agreed = !_agreed), child: Padding(padding: const EdgeInsets.symmetric(vertical: 4), child: Text('我已阅读并同意', style: style.copyWith(color: CampusPalette.of(context).onSurfaceVariant))))),
       Wrap(spacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
-        TextButton(style: link, onPressed: _busy ? null : () => context.push('/legal/service'), child: const Text('用户协议', style: style)),
+        TextButton(style: link, onPressed: _busy ? null : () => context.push('/legal/service'), child: Text('用户协议', style: linkText)),
         const ExcludeSemantics(child: Text('和', style: style)),
-        TextButton(style: link, onPressed: _busy ? null : () => context.push('/legal/privacy'), child: const Text('隐私政策', style: style)),
+        TextButton(style: link, onPressed: _busy ? null : () => context.push('/legal/privacy'), child: Text('隐私政策', style: linkText)),
       ]),
     ]));
   }

@@ -382,6 +382,7 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
   }
 
   // 标题旁写第几周；窄屏、大字号下并排放不下时换到标题下面一行，不截成「第5」。
+  // 并排时 18 号的「课表」与 14 号的「第5周」按行中线对齐（以前按基线，小一号的整体偏下约 1.5dp，11-26 同此刻条一起查出）。
   Widget _titleWithWeek(BuildContext context) {
     final title = Text('课表', maxLines: 1, style: Theme.of(context).textTheme.titleLarge);
     final week = _shownWeek;
@@ -391,7 +392,7 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
     return LayoutBuilder(builder: (context, constraints) {
       final fits = campusTextWidth(context, '课表', style: Theme.of(context).textTheme.titleLarge) + 8 + campusTextWidth(context, '第$week周', style: style) <= constraints.maxWidth;
       return fits
-          ? Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [title, const SizedBox(width: 8), label])
+          ? Row(children: [title, const SizedBox(width: 8), label])
           : Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [title, label]);
     });
   }
