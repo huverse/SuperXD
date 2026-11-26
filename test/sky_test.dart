@@ -67,6 +67,18 @@ class _FakeSource implements PackSource {
 
 PackLibrary<SkyPack> _library(Directory root, PackSource? source) => PackLibrary<SkyPack>(directory: root, packs: _packs, tag: 'SkyPack', noun: '星空', source: source);
 
+// 账号代次可以往前推的合成账号（换账号、恢复会话时外壳按代次重建账号应用）。
+class _Accounts extends FixtureAccounts {
+  _Accounts(super.inner) : super(signedIn: false);
+  int _generation = 1;
+  @override
+  int get generation => _generation;
+  void bump() {
+    _generation++;
+    notifyListeners();
+  }
+}
+
 // 济南（校园时区 UTC+8）某天的某个钟点。
 DateTime _jinan(int month, int day, int hour, int minute) => DateTime.utc(2026, month, day, hour, minute).subtract(const Duration(hours: 8));
 
@@ -213,13 +225,14 @@ void main() {
     settings.dispose();
   });
 
-  testWidgets('星空背景铺上：应用固定深色、卡片透到 65%、背景拿到这一刻的画面；换回云雾就恢复', (tester) async {
+  testWidgets('星空背景铺上：应用固定深色、卡片透到 65%、背景拿到这一刻的画面；换账号代次时不闪回浅色与云雾；换回云雾就恢复', (tester) async {
     final root = (await tester.runAsync(() => Directory.systemTemp.createTemp('sky-shell-')))!;
     addTearDown(() => root.delete(recursive: true));
     final library = _library(root, _FakeSource());
     final display = DisplaySettings.memory(skyPacks: library);
     await display.setThemeMode(ThemeMode.light);
-    final session = AppSession(FixtureAccounts(FixtureCampusGateway(readText: (name) async => pageFixtures()[name]!), signedIn: false));
+    final accounts = _Accounts(FixtureCampusGateway(readText: (name) async => pageFixtures()[name]!));
+    final session = AppSession(accounts);
     await session.restore();
     await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, services: AppServices(display: display)));
     await tester.pumpAndSettle();
@@ -236,6 +249,12 @@ void main() {
     final moment = skyMoment(DateTime.now());
     expect(((scene.from.image as FileImage).file.path, scene.mix), (library.fileOf(_packs['real']!.fileOf(moment.from)).path, moment.mix));
     expect((Theme.of(page()).brightness, CampusSurfaceScope.opacityOf(page())), (Brightness.dark, .65));
+
+    // 恢复会话、换账号会整个重建账号应用：画面与深色放在外层，重建后第一帧就还是星空。
+    accounts.bump();
+    await tester.pump();
+    expect((Theme.of(page()).brightness, tester.widget<CampusAtmosphere>(find.byType(CampusAtmosphere)).sky?.value), (Brightness.dark, scene));
+    await tester.pumpAndSettle();
 
     await tester.runAsync(display.clearWallpaper);
     await tester.pumpAndSettle();

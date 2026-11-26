@@ -22,6 +22,7 @@ import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/festival.dart';
 import 'package:superxd/domain/sky.dart';
 import 'package:superxd/local/display_settings.dart';
+import 'package:superxd/local/pack_library.dart';
 import 'package:superxd/page/app_update_dialog.dart';
 import 'package:superxd/page/developer_notes_page.dart';
 import 'package:superxd/page/developer_page.dart';
@@ -129,6 +130,11 @@ class _SuperXdAppState extends State<SuperXdApp> {
     // 工具里灰度中的一部分（电影院的解析）问的功能开关，同百宝箱首页与路由用的那份。
     features: widget.services.features,
   );
+  // 星空背景的画面放在不随账号代次重建的这一层：换账号、恢复会话时画面与量好的色调都留着，不闪回云雾与浅色。
+  late final _SkyScenes? _sky = switch (widget.services.display) {
+    final display? => _SkyScenes(display),
+    null => null,
+  };
   late final AppShortcuts? _shortcuts = switch (widget.services.shortcuts) {
     final port? => AppShortcuts(port: port, tools: _toolbox.modules, pixelRatio: WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio),
     null => null,
@@ -157,6 +163,7 @@ class _SuperXdAppState extends State<SuperXdApp> {
   void dispose() {
     _shortcuts?.pending.removeListener(_onShortcutLaunch);
     _shortcuts?.dispose();
+    _sky?.dispose();
     if (widget.services.toolbox == null) {
       _toolbox.close().catchError((Object error, StackTrace stack) {
         campusLog('[Toolbox] action=close errorType=${error.runtimeType}\n$stack');
@@ -169,8 +176,71 @@ class _SuperXdAppState extends State<SuperXdApp> {
     return ListenableBuilder(
       listenable: widget.session,
       // [人工决策-2026-09-24 20:40:27] 账号切换成功才替换页面上下文；旧账号路由和内存状态不能带入新账号。
-      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, services: widget.services, toolbox: _toolbox, playground: _playground, shortcuts: _shortcuts, splashGone: widget.splashGone, backgroundPhase: widget.backgroundPhase),
+      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, services: widget.services, toolbox: _toolbox, playground: _playground, shortcuts: _shortcuts, splashGone: widget.splashGone, backgroundPhase: widget.backgroundPhase, sky: _sky),
     );
+  }
+}
+
+// 星空背景此刻的画面（人工决策见 domain/sky.dart）：选着星空且素材装好时每分钟按济南的时段算一次，交给背景单独重画、不重建应用。
+// on 是选着星空且素材装好：固定深色与卡片透明度立刻跟上，不等解码与量色调（这一小会儿背景还是云雾）；每分钟的过渡不改它，不让整个应用重建。
+// 色调网格（算直接压在背景上的字的可读下限）只量这一刻要用的一两幅，按文件名记住，换幕时再量新的那幅。
+class _SkyScenes {
+  _SkyScenes(this.display) {
+    display.addListener(_sync);
+    _sync();
+  }
+  final DisplaySettings display;
+  final scene = ValueNotifier<CampusSkyScene?>(null);
+  final on = ValueNotifier(false);
+  Timer? _timer;
+  final _tones = <String, WallpaperTone>{};
+  final _measuring = <String>{};
+  bool _disposed = false;
+
+  void _sync() {
+    final style = display.skyInUse, packs = display.skyPacks;
+    final pack = style == null ? null : packs?.packs[style];
+    if (pack == null || packs == null) {
+      _timer?.cancel();
+      _timer = null;
+      scene.value = null;
+      on.value = false;
+      return;
+    }
+    on.value = true;
+    _timer ??= Timer.periodic(const Duration(minutes: 1), (_) => _sync());
+    final moment = skyMoment(DateTime.now());
+    final from = pack.fileOf(moment.from), to = pack.fileOf(moment.to);
+    final missing = {from, to}.where((file) => !_tones.containsKey(file.name));
+    if (missing.isNotEmpty) {
+      for (final file in missing) {
+        unawaited(_measure(packs, file));
+      }
+      return;
+    }
+    CampusSkyImage image(SkyFile file) => CampusSkyImage(image: FileImage(packs.fileOf(file)), tone: _tones[file.name]!);
+    scene.value = CampusSkyScene(from: image(from), to: image(to), mix: moment.mix);
+  }
+
+  Future<void> _measure(PackLibrary<SkyPack> packs, SkyFile file) async {
+    if (!_measuring.add(file.name)) return;
+    try {
+      _tones[file.name] = await measureWallpaper(await packs.fileOf(file).readAsBytes());
+    } catch (error, stack) {
+      campusLog('[Sky] action=measure file=${file.name} errorType=${error.runtimeType}\n$stack');
+      return;
+    } finally {
+      _measuring.remove(file.name);
+    }
+    if (!_disposed) _sync();
+  }
+
+  void dispose() {
+    _disposed = true;
+    display.removeListener(_sync);
+    _timer?.cancel();
+    scene.dispose();
+    on.dispose();
   }
 }
 
@@ -189,8 +259,9 @@ class _MomentObserver extends NavigatorObserver {
 }
 
 class _AccountApp extends StatefulWidget {
-  const _AccountApp({super.key, required this.session, required this.services, required this.toolbox, required this.playground, this.shortcuts, this.splashGone, this.backgroundPhase});
+  const _AccountApp({super.key, required this.session, required this.services, required this.toolbox, required this.playground, this.shortcuts, this.splashGone, this.backgroundPhase, this.sky});
   final AppSession session;
+  final _SkyScenes? sky;
   final AppServices services;
   final ToolboxRuntime toolbox;
   final PlaygroundStore playground;
@@ -207,15 +278,6 @@ class _AccountAppState extends State<_AccountApp> {
   late final VoidCallback _unwatchRoutes;
   late final _display = widget.services.display ?? DisplaySettings.memory();
 
-  // 星空背景此刻的画面（人工决策见 domain/sky.dart）：选着星空且素材装好时每分钟按济南的时段算一次，交给背景单独重画、不重建应用；
-  // 不用时为空。_skyOn 只在用与不用之间切换时变（深色与卡片透明度跟着它），每分钟的过渡不让整个应用重建。
-  final _skyScene = ValueNotifier<CampusSkyScene?>(null);
-  final _skyOn = ValueNotifier(false);
-  Timer? _skyTimer;
-  // 各幅的色调网格（算可读下限），按文件名只量一次。
-  final _skyTones = <String, WallpaperTone>{};
-  bool _skyMeasuring = false;
-
   // 协议与政策的更新提示开着时，更新弹窗先等它关掉再弹，不叠两层。
   bool _legalOpen = false;
   late final StreamSubscription<CampusGlassTier> _glassBroken;
@@ -225,8 +287,6 @@ class _AccountAppState extends State<_AccountApp> {
     super.initState();
     widget.services.updates?.addListener(_promptUpdate);
     widget.services.legal?.addListener(_onLegal);
-    _display.addListener(_syncSky);
-    _syncSky();
     widget.shortcuts?.pending.addListener(_onShortcut);
     notificationRoute.addListener(_onShortcut);
     _router.routerDelegate.addListener(_onShortcut);
@@ -391,10 +451,6 @@ class _AccountAppState extends State<_AccountApp> {
     }
     _momentTimer?.cancel();
     unawaited(_glassBroken.cancel());
-    _display.removeListener(_syncSky);
-    _skyTimer?.cancel();
-    _skyScene.dispose();
-    _skyOn.dispose();
     _unwatchRoutes();
     _router.dispose();
     if (widget.services.display == null) _display.dispose();
@@ -408,48 +464,6 @@ class _AccountAppState extends State<_AccountApp> {
     await _display.setGlassMode('off');
     final context = _router.routerDelegate.navigatorKey.currentContext;
     if (context != null && context.mounted) showCampusToast(context, '玻璃效果在这台手机上显示异常，已关闭');
-  }
-
-  // 选着的星空画风装好了就开始按时段换画面（先把五幅的色调网格量好），换回云雾或自定义图片就停下。
-  void _syncSky() {
-    final style = _display.skyInUse, packs = _display.skyPacks;
-    final pack = style == null ? null : packs?.packs[style];
-    if (pack == null || packs == null) {
-      _skyTimer?.cancel();
-      _skyTimer = null;
-      _skyScene.value = null;
-      _skyOn.value = false;
-      return;
-    }
-    if (pack.files.any((file) => !_skyTones.containsKey(file.name))) {
-      unawaited(_measureSky(pack));
-      return;
-    }
-    _skyTimer ??= Timer.periodic(const Duration(minutes: 1), (_) => _syncSky());
-    final moment = skyMoment(DateTime.now());
-    CampusSkyImage image(SkyPhase phase) {
-      final file = pack.fileOf(phase);
-      return CampusSkyImage(image: FileImage(packs.fileOf(file)), tone: _skyTones[file.name]!);
-    }
-    _skyScene.value = CampusSkyScene(from: image(moment.from), to: image(moment.to), mix: moment.mix);
-    _skyOn.value = true;
-  }
-
-  Future<void> _measureSky(SkyPack pack) async {
-    if (_skyMeasuring) return;
-    _skyMeasuring = true;
-    try {
-      for (final file in pack.files) {
-        if (_skyTones.containsKey(file.name)) continue;
-        _skyTones[file.name] = await measureWallpaper(await _display.skyPacks!.fileOf(file).readAsBytes());
-      }
-    } catch (error, stack) {
-      campusLog('[Sky] action=measure errorType=${error.runtimeType}\n$stack');
-      return;
-    } finally {
-      _skyMeasuring = false;
-    }
-    if (mounted) _syncSky();
   }
 
   // 色调网格缺失或损坏时按未设置壁纸处理，回到云雾；同一份网格只解码一次。
@@ -479,11 +493,12 @@ class _AccountAppState extends State<_AccountApp> {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(listenable: Listenable.merge([_display, campusGlassCapped, _skyOn]), builder: (context, _) => MaterialApp.router(
+    final sky = widget.sky;
+    return ListenableBuilder(listenable: Listenable.merge([_display, campusGlassCapped, sky?.on]), builder: (context, _) => MaterialApp.router(
       title: 'SuperXD', theme: campusTheme(palette: CampusPalette.byId(_display.paletteId), fontFamily: _display.fontFamily),
       darkTheme: campusTheme(palette: CampusPalette.byId(_display.paletteId, brightness: Brightness.dark), fontFamily: _display.fontFamily),
       // 星空背景固定深色（人工决策见 domain/sky.dart）。
-      themeMode: _skyOn.value ? ThemeMode.dark : _display.themeMode, routerConfig: _router, scrollBehavior: const CampusScrollBehavior(),
+      themeMode: sky?.on.value ?? false ? ThemeMode.dark : _display.themeMode, routerConfig: _router, scrollBehavior: const CampusScrollBehavior(),
       themeAnimationDuration: WidgetsBinding.instance.platformDispatcher.accessibilityFeatures.disableAnimations || WidgetsBinding.instance.platformDispatcher.accessibilityFeatures.reduceMotion ? Duration.zero : const Duration(milliseconds: 260),
       locale: const Locale('zh', 'CN'), supportedLocales: const [Locale('zh', 'CN')],
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
@@ -500,7 +515,7 @@ class _AccountAppState extends State<_AccountApp> {
         child: NoteAttachmentScope(builders: _noteAttachments, child: DisplayScope(settings: _display, child: TextSizeComfort(builder: (context, comfortable) => CampusTextScale(
         textSize: _display.textSize,
         followLimit: comfortable,
-        child: AnnotatedRegion<SystemUiOverlayStyle>(value: campusSystemOverlay(CampusPalette.of(context)), child: NativeAppearanceSync(child: CampusStatusBarScroll(child: CampusGlassScope.wrap(mode: CampusGlassMode.values.byName(_display.glassMode), capped: campusGlassCapped.value, child: CampusMotion(child: CampusAtmosphere(phase: widget.backgroundPhase, wallpaper: _wallpaper(), sky: _skyScene, overlays: campusOverlayDepth, child: CampusSurfaceScope(opacity: _skyOn.value ? .65 : CampusSurfaceScope.standard, child: CampusEntryFade(child: LiveClock(child: switch ((widget.services.developer, widget.services.logs)) {
+        child: AnnotatedRegion<SystemUiOverlayStyle>(value: campusSystemOverlay(CampusPalette.of(context)), child: NativeAppearanceSync(child: CampusStatusBarScroll(child: CampusGlassScope.wrap(mode: CampusGlassMode.values.byName(_display.glassMode), capped: campusGlassCapped.value, child: CampusMotion(child: CampusAtmosphere(phase: widget.backgroundPhase, wallpaper: _wallpaper(), sky: sky?.scene, overlays: campusOverlayDepth, child: CampusSurfaceScope(opacity: sky?.on.value ?? false ? .65 : CampusSurfaceScope.standard, child: CampusEntryFade(child: LiveClock(child: switch ((widget.services.developer, widget.services.logs)) {
         // 开发者模式下浮在所有页面上的开发者工具按钮（见 page/developer_page.dart 的 DeveloperOverlay）；字号状态记录见 app_diagnostics.dart 的 TextSizeWatch。
         (final developer?, final logs?) => TextSizeWatch(developer: developer, logs: logs, display: _display, child: DeveloperOverlay(developer: developer, logs: logs, navigator: _router.routerDelegate.navigatorKey, location: () => _router.routerDelegate.currentConfiguration.uri.path, child: child!)),
         _ => child!,
