@@ -72,8 +72,9 @@ void main() async {
   campusLog = debugPrint;
   WidgetsFlutterBinding.ensureInitialized();
   // 致命错误也记进分批更新的健康回报（人工决策见 domain/app_health.dart）：健康记录打开前先放进缓冲，打开后补记、之后直接记。
-  final fatalBefore = <DateTime>[];
-  void Function(DateTime at) markFatal = fatalBefore.add;
+  // 上次退出原因另走 markExit：那时装的可能是升级前的版本，按出错时刻认版本（11-27 的人工决策见 domain/app_health.dart）。
+  final fatalBefore = <DateTime>[], exitsBefore = <DateTime>[];
+  void Function(DateTime at) markFatal = fatalBefore.add, markExit = exitsBefore.add;
   // 没被接住的异步错误（火忘式调用漏了 catch）也带堆栈走 campusLog，不只由引擎打到控制台。
   WidgetsBinding.instance.platformDispatcher.onError = (error, stack) {
     campusLog('[App] action=uncaught errorType=${error.runtimeType}\n$stack');
@@ -175,7 +176,7 @@ void main() async {
   final quickNav = QuickNav(memory: await quickOpen);
 
   watchDeveloperMode(developer, logs, environment: appEnvironment);
-  unawaited(recordExitReasons(marker: File(path.join(support.path, 'last_exit_seen')), read: readExitReasons, onAbnormal: (at) => markFatal(at)));
+  unawaited(recordExitReasons(marker: File(path.join(support.path, 'last_exit_seen')), read: readExitReasons, onAbnormal: (at) => markExit(at)));
   final session = AppSession(AccountGateway(store: store, credentials: SecureCredentialStore()));
   // 选壁纸走系统照片选择器：不申请存储权限，只拿到用户选中的那一张（API 36 起插件默认如此，更低版本须显式打开）。
   final picker = ImagePickerPlatform.instance;
@@ -238,7 +239,11 @@ void main() async {
   for (final at in fatalBefore) {
     unawaited(health.markFatal(at));
   }
+  for (final at in exitsBefore) {
+    unawaited(health.markExit(at));
+  }
   markFatal = (at) => unawaited(health.markFatal(at));
+  markExit = (at) => unawaited(health.markExit(at));
   // 自动同步（人工决策见 domain/auto_sync.dart）：设备级，经账号门面跟着当前账号；后台任务的入口与时机在 app_background_sync.dart。
   final autoSync = AutoSync(gateway: session.gateway, generation: () => session.generation, scheduler: WorkmanagerSyncScheduler(autoSyncDispatcher), notices: SyncNotifications());
   // 点了同步结果通知进同步记录（人工决策见 domain/sync_record.dart）：冷启动由通知拉起时取一次，开着或在后台时点了经流交来；

@@ -72,6 +72,26 @@ void main() {
       expect([0, 29, 30, 89, 90, 239, 240, 600].map((slow) => empty.copyWith(frames: 600, slowFrames: slow).frameTier), [0, 0, 1, 1, 2, 2, 3, 3]);
     });
 
+    // [人工决策-2026-11-27 13:28:05] 见 lib/domain/app_health.dart：每天每个用过的版本一项，上次退出原因按时刻认版本。
+    test('某一刻在用的版本：第一次记下不晚于它的最后一项，都晚于它取最早的，没有时刻的当这天开头；超过项数上限先丢最早的日子', () {
+      final old = HealthDay(day: '2026-11-15', versionCode: 30, since: DateTime.utc(2026, 11, 15, 0));
+      final updated = HealthDay(day: '2026-11-15', versionCode: 31, since: DateTime.utc(2026, 11, 15, 7));
+      final days = [updated, old, const HealthDay(day: '2026-11-14', versionCode: 30)];
+      expect(healthDayAt(days, '2026-11-15', DateTime.utc(2026, 11, 15, 1))?.versionCode, 30);
+      expect(healthDayAt(days, '2026-11-15', DateTime.utc(2026, 11, 15, 7))?.versionCode, 31);
+      expect(healthDayAt(days, '2026-11-15', DateTime.utc(2026, 11, 14, 17))?.versionCode, 30, reason: '记下之前就出了错');
+      expect(healthDayAt(days, '2026-11-14', DateTime.utc(2026, 11, 14, 4))?.versionCode, 30, reason: '旧记录没有时刻');
+      expect(healthDayAt(days, '2026-11-13', DateTime.utc(2026, 11, 13, 4)), isNull);
+      final many = [
+        for (var day = 10; day <= 16; day++)
+          for (final versionCode in [30, 31, 32]) HealthDay(day: '2026-11-$day', versionCode: versionCode),
+      ];
+      final kept = healthRecent(many, '2026-11-16');
+      expect(kept, hasLength(healthEntryLimit));
+      expect(kept.map((day) => day.day).toSet(), {for (var day = 12; day <= 16; day++) '2026-11-$day'}, reason: '先丢最早的日子');
+      expect(kept.where((day) => day.day == '2026-11-12'), hasLength(2), reason: '保留最新的 14 项');
+    });
+
     test('新版本反馈：这个版本装了不到 14 天、没交过', () {
       const record = HealthRecord(versionCode: 30, versionSince: '2026-11-10');
       expect(healthFeedbackOpen(record, 30, '2026-11-23'), isTrue);
@@ -87,13 +107,15 @@ void main() {
       addTearDown(() => directory.delete(recursive: true));
       final file = File('${directory.path}/health.json');
       final memory = await FileAppHealthMemory.open(file);
-      await memory.save(const HealthRecord(days: [HealthDay(day: '2026-11-15', versionCode: 30, fatal: true)], versionCode: 30, versionSince: '2026-11-10', feedbackSent: true));
+      await memory.save(HealthRecord(days: [HealthDay(day: '2026-11-15', versionCode: 30, fatal: true, since: DateTime.utc(2026, 11, 15, 1, 2))], versionCode: 30, versionSince: '2026-11-10', feedbackSent: true));
       final again = (await FileAppHealthMemory.open(file)).record;
-      expect((again.days.single.day, again.days.single.fatal, again.versionSince, again.feedbackSent), ('2026-11-15', true, '2026-11-10', true));
+      expect((again.days.single.day, again.days.single.fatal, again.days.single.since, again.versionSince, again.feedbackSent), ('2026-11-15', true, DateTime.utc(2026, 11, 15, 1, 2), '2026-11-10', true));
       final json = jsonDecode(await file.readAsString()) as Map;
       (json['days'] as List).add({'day': 'x', 'versionCode': 30, 'fatal': false, 'reported': false});
+      (json['days'] as List).add({'day': '2026-11-16', 'versionCode': 30, 'fatal': false, 'reported': false, 'since': '昨天'});
       await file.writeAsString(jsonEncode(json));
-      expect((await FileAppHealthMemory.open(file)).record.days, hasLength(1));
+      final read = (await FileAppHealthMemory.open(file)).record.days;
+      expect([for (final day in read) (day.day, day.since == null)], [('2026-11-15', false), ('2026-11-16', true)], reason: '坏项丢掉，坏的时刻当没有');
       await file.writeAsString('{坏');
       expect((await FileAppHealthMemory.open(file)).record.days, isEmpty);
     });
@@ -197,12 +219,40 @@ void main() {
       expect((client.reports.single.day, client.reports.single.launchTier, client.reports.single.frameTier), ('2026-11-15', 2, 2));
     });
 
-    test('升级当天：启动记到新版本那一项，换版本前的不带过去', () async {
-      await health(versionCode: 30).markLaunch(const Duration(milliseconds: 300));
+    test('升级当天：新旧版本各一项，启动、帧数与致命错误各记各的，第二天各发一份', () async {
+      now = DateTime.utc(2026, 11, 15, 0);
+      final old = health(versionCode: 30);
+      await old.markActive();
+      await old.markLaunch(const Duration(milliseconds: 300));
+      await old.markFatal(now);
+      now = DateTime.utc(2026, 11, 15, 7);
       final updated = health(versionCode: 31);
+      await updated.markActive();
       await updated.markLaunch(const Duration(seconds: 3));
-      expect(memory.record.days.single.versionCode, 31);
-      expect(memory.record.days.single.launches, [0, 0, 0, 1]);
+      updated.countFrames(700, 0);
+      await updated.flushFrames();
+      final days = {for (final day in memory.record.days) day.versionCode: day};
+      expect(days.keys, {30, 31});
+      expect([days[30]!.fatal, days[30]!.launches, days[30]!.frames], [true, [1, 0, 0, 0], 0]);
+      expect([days[31]!.fatal, days[31]!.launches, days[31]!.frames], [false, [0, 0, 0, 1], 700], reason: '旧版本的致命不带进新版本');
+      now = _noon(11, 16);
+      await updated.reportDue();
+      expect([for (final day in client.reports) (day.day, day.versionCode, day.fatal)]..sort((left, right) => left.$2.compareTo(right.$2)), [('2026-11-15', 30, true), ('2026-11-15', 31, false)]);
+      expect(healthDue(memory.record, '2026-11-16'), isEmpty, reason: '两项都记成发过');
+    });
+
+    test('上次退出原因按出错时刻认版本：升级前的崩溃记到旧版本，升级后的记到新版本，那天没有记录才算现在的版本', () async {
+      now = DateTime.utc(2026, 11, 15, 0);
+      await health(versionCode: 30).markActive();
+      now = DateTime.utc(2026, 11, 15, 7);
+      final updated = health(versionCode: 31);
+      await updated.markExit(DateTime.utc(2026, 11, 15, 3));
+      await updated.markActive();
+      expect({for (final day in memory.record.days) day.versionCode: day.fatal}, {30: true, 31: false}, reason: '新版本第一次启动前记下的也认到旧版本');
+      await updated.markExit(DateTime.utc(2026, 11, 15, 8));
+      expect({for (final day in memory.record.days) day.versionCode: day.fatal}, {30: true, 31: true});
+      await updated.markExit(DateTime.utc(2026, 11, 14, 4));
+      expect([for (final day in memory.record.days) if (day.day == '2026-11-14') (day.versionCode, day.fatal)], [(31, true)]);
     });
 
     test('上次退出原因里的崩溃与无响应交出系统记下的时刻，后台被回收不算', () async {
