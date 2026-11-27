@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:superxd/theme/campus_animated_list.dart';
 import 'package:superxd/theme/campus_loading.dart';
+import 'package:superxd/theme/campus_marquee.dart';
 import 'package:superxd/theme/campus_prose.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
@@ -276,4 +277,63 @@ void main() {
     await tester.pumpAndSettle();
     expect(focus.hasFocus, debugDefaultTargetPlatformOverride == TargetPlatform.android);
   }, variant: const TargetPlatformVariant({TargetPlatform.android, TargetPlatform.iOS}));
+
+  // [人工决策-2026-11-27 13:51:18] 见 lib/theme/campus_marquee.dart：放不下才滚，停 3 秒、滚一遍、首尾接上，最多 3 遍；不能动时显示原来的排法。
+  group('跑马灯', () {
+    const long = '思想道德与法治（实践课） · 恒毅篮球场003';
+    Future<void> show(WidgetTester tester, String text, {double width = 160, bool reduce = false}) => tester.pumpWidget(MaterialApp(
+      theme: campusTheme(),
+      home: MediaQuery(
+        data: MediaQueryData(disableAnimations: reduce),
+        child: Scaffold(body: Center(child: SizedBox(width: width, child: CampusMarquee(text, style: const TextStyle(fontSize: 16), child: Text('原来的排法：$text', maxLines: 1))))),
+      ),
+    ));
+    double offset(WidgetTester tester) => tester.widget<SingleChildScrollView>(find.byType(SingleChildScrollView)).controller!.offset;
+
+    testWidgets('放得下照原样显示，不滚、不留计时器', (tester) async {
+      await show(tester, '体育', width: 300);
+      await tester.pump();
+      expect((find.text('原来的排法：体育').evaluate().length, find.byType(SingleChildScrollView).evaluate().length), (1, 0));
+      await tester.pump(const Duration(seconds: 10));
+      expect(tester.binding.hasScheduledFrame, isFalse);
+    });
+
+    testWidgets('放不下：先停 3 秒，匀速往左滚完一遍回到开头再停；滚满 3 遍停在开头、不再出帧', (tester) async {
+      await show(tester, long);
+      await tester.pump();
+      expect((find.text(long).evaluate().length, find.text('原来的排法：$long').evaluate().length), (2, 0), reason: '原文两份首尾接上');
+      await tester.pump(const Duration(milliseconds: 2900));
+      expect(offset(tester), 0, reason: '先停 3 秒');
+      expect(tester.binding.hasScheduledFrame, isFalse, reason: '停着时不出帧');
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump(const Duration(milliseconds: 500));
+      final moved = offset(tester);
+      expect(moved, greaterThan(0));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(offset(tester), greaterThan(moved), reason: '一直往左滚');
+      for (var round = 0; round < 3; round++) {
+        await tester.pumpAndSettle();
+        expect(offset(tester), 0, reason: '第 ${round + 1} 遍滚完回到开头');
+        await tester.pump(const Duration(seconds: 4));
+      }
+      await tester.pump(const Duration(seconds: 30));
+      expect((offset(tester), tester.binding.hasScheduledFrame), (0, false), reason: '3 遍后停在开头');
+    });
+
+    testWidgets('减少动画时不滚，显示原来的排法；换了内容从头停 3 秒再滚', (tester) async {
+      await show(tester, long, reduce: true);
+      await tester.pump(const Duration(seconds: 5));
+      expect((find.text('原来的排法：$long').evaluate().length, find.byType(SingleChildScrollView).evaluate().length), (1, 0));
+      await show(tester, long);
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(offset(tester), greaterThan(0));
+      await show(tester, '$long（换了一节）');
+      await tester.pump();
+      expect(offset(tester), 0, reason: '换了内容回到开头');
+      await tester.pump(const Duration(milliseconds: 2900));
+      expect(offset(tester), 0, reason: '重新停 3 秒');
+    });
+  });
 }

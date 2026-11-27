@@ -14,6 +14,7 @@ import 'package:superxd/page/course_cards.dart';
 import 'package:superxd/page/live_clock.dart';
 import 'package:superxd/page/today_date_transition.dart';
 import 'package:superxd/page/today_page.dart';
+import 'package:superxd/theme/campus_marquee.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_rolling_text.dart';
 import 'package:superxd/theme/campus_surface.dart';
@@ -183,14 +184,14 @@ Future<void> _mount(
 }
 
 // 拨好的时钟挂在今天页上（改 clock.value 就换此刻卡的状态，同一份页面状态）；给了 display 时套上显示设置。
-Future<ValueNotifier<DateTime>> _mountWithClock(WidgetTester tester, DateTime at, {DisplaySettings? display}) async {
+Future<ValueNotifier<DateTime>> _mountWithClock(WidgetTester tester, DateTime at, {DisplaySettings? display, TextScaler textScaler = TextScaler.noScaling}) async {
   final clock = ValueNotifier(at);
   addTearDown(clock.dispose);
   await tester.binding.setSurfaceSize(const Size(390, 850));
   addTearDown(() => tester.binding.setSurfaceSize(null));
   // 带上安卓的触摸阈值（约 8，真机上 MediaQuery 里有系统的手势设置；测试默认没有、各识别器都按 18 认，真机上谁先认拖动的差别看不出来）。
   final app = MaterialApp(theme: campusTheme(), home: MediaQuery(
-    data: const MediaQueryData(size: Size(390, 850), gestureSettings: DeviceGestureSettings(touchSlop: 8)),
+    data: MediaQueryData(size: const Size(390, 850), textScaler: textScaler, gestureSettings: const DeviceGestureSettings(touchSlop: 8)),
     child: Scaffold(body: LiveClock.fixed(clock, child: TodayPage(gateway: _Gateway(), now: () => clock.value))),
   ));
   await tester.pumpWidget(display == null ? app : DisplayScope(settings: display, child: app));
@@ -857,6 +858,29 @@ void main() {
     await tester.pumpAndSettle();
     expect((strip.evaluate().length, _remaining(tester), find.text('后下课').evaluate().length), (1, '3分30秒', 1));
     expect(display.classNowCollapsed.value, isTrue, reason: '自动展开与再收起都不改记下的选择');
+    expect(tester.takeException(), isNull);
+  });
+
+  // 11-27 用户截图「大学体育…」：条里「课名 · 教室」放不下时滚动播放（人工决策见 theme 的 campus_marquee.dart），放得下照旧两段。
+  testWidgets('此刻条放不下「课名 · 教室」时停 3 秒后整段滚动，放得下照旧两段不滚', (tester) async {
+    final display = DisplaySettings.memory();
+    addTearDown(display.dispose);
+    await display.setClassNowCollapsed(true);
+    final whole = find.text('星期5的课 · 教室');
+    // 校园时间 7:50：离开课 10 分钟；标准字号放得下。
+    await _mountWithClock(tester, DateTime.utc(2026, 9, 24, 23, 50), display: display);
+    expect((find.text(' · 教室').evaluate().length, whole.evaluate().length), (1, 0));
+    await tester.pumpWidget(const SizedBox());
+    // 两倍字号放不下：原文两份首尾接上，停 3 秒后往左滚。
+    await _mountWithClock(tester, DateTime.utc(2026, 9, 24, 23, 50), display: display, textScaler: const TextScaler.linear(2));
+    expect((find.text(' · 教室').evaluate().length, whole.evaluate().length), (0, 2));
+    final viewport = find.descendant(of: find.byType(CampusMarquee), matching: find.byType(SingleChildScrollView));
+    double offset() => tester.widget<SingleChildScrollView>(viewport).controller!.offset;
+    expect(offset(), 0);
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(offset(), greaterThan(0));
+    await tester.pumpWidget(const SizedBox());
     expect(tester.takeException(), isNull);
   });
 
