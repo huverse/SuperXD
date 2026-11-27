@@ -44,10 +44,11 @@ void main() {
       ('九、百宝箱：电影院', '你同意后才把片名直接发给它们'),
       ('九、百宝箱：电影院', '片名和你的 IP 地址会传到境外'),
       ('九、百宝箱：电影院', '视频本身由播放器直接从第三方服务器取，不经开发者的服务器'),
-      ('十、百宝箱：住理生活', '手机号和密码存在系统安全存储，会话过期时用来自动重新登录'),
-      ('十、百宝箱：住理生活', '余额、券和订单只在页面上显示，不保存'),
-      ('十、百宝箱：住理生活', '打开洗浴页和点「关水」时先连上，20 秒没用就断开'),
-      ('十、百宝箱：住理生活', '付款信息开发者拿不到'),
+      ('十、百宝箱：住理生活与胖乖生活', '手机号和密码存在系统安全存储，会话过期时用来自动重新登录'),
+      ('十、百宝箱：住理生活与胖乖生活', '余额、券和订单只在页面上显示，不保存'),
+      ('十、百宝箱：住理生活与胖乖生活', '打开洗浴页和点「关水」时先连上，20 秒没用就断开'),
+      ('十、百宝箱：住理生活与胖乖生活', '付款信息开发者拿不到'),
+      ('十、百宝箱：住理生活与胖乖生活', '找附近门店和下单时，手机当前的位置（经纬度）一起发给它'),
       ('十一、更新、开发者的话与匿名回报', '只发构建渠道和处理器架构'),
       ('十一、更新、开发者的话与匿名回报', '不带账号、设备编号和错误内容'),
       ('十二、节日活动与红包', '要登录建立满 7 天的应用账号'),
@@ -67,8 +68,9 @@ void main() {
       ('附录一 第三方 SDK 与服务', 'https://opendocs.alipay.com/common/02kiq3'),
       ('附录一 第三方 SDK 与服务', '本应用不申请电话权限，IMEI、IMSI 这类它拿不到'),
       ('附录一 第三方 SDK 与服务', '拼多多（pinduoduo.com、yangkeduo.com）'),
-      ('附录二 系统权限', '相机：扫码（加好友、签到二维码、代签码、住理生活的设备码）'),
-      ('附录二 系统权限', '位置：学习通位置签到，仅使用期间'),
+      ('附录一 第三方 SDK 与服务', '胖乖生活（qiekj.com）'),
+      ('附录二 系统权限', '相机：扫码（加好友、签到二维码、代签码、住理生活和胖乖生活的设备码）'),
+      ('附录二 系统权限', '位置：学习通位置签到、胖乖生活找附近门店和下单，仅使用期间'),
       ('附录二 系统权限', '安卓 11 上扫描蓝牙'),
       ('附录二 系统权限', 'Wi-Fi 状态与厂商标识服务'),
       ('附录三 保存期限', '课表：每学期最多 100 个历史版本'),
@@ -215,7 +217,7 @@ void main() {
       for (final file in Directory('lib').listSync(recursive: true).whereType<File>().where((file) => file.path.endsWith('.dart')))
         for (final match in RegExp(r"storageNamespace: '(\w+)'").allMatches(file.readAsStringSync())) match.group(1)!,
     };
-    expect(namespaces, containsAll(['superxd_credentials', 'superxd_social', 'superxd_chaoxing', 'superxd_pdd', 'superxd_account', 'superxd_zhuli']));
+    expect(namespaces, containsAll(['superxd_credentials', 'superxd_social', 'superxd_chaoxing', 'superxd_pdd', 'superxd_account', 'superxd_zhuli', 'superxd_pangguai']));
     final backup = File('android/app/src/main/res/xml/backup_rules.xml').readAsStringSync();
     final extraction = File('android/app/src/main/res/xml/data_extraction_rules.xml').readAsStringSync();
     for (final namespace in namespaces) {
