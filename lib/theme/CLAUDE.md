@@ -25,6 +25,7 @@
     - showCampusSheet 与 CampusSheetPanel 是底部弹层（键盘弹出时整块浮到键盘上方）；弹窗与弹层都经 CampusOverlayDepthRoute 登记层数。
   - campus_side_drawer.dart：侧栏 CampusSideDrawer（今天页用，同 Claude、ChatGPT）：按钮或页面上从左往右滑拉出，手指拖多少走多少，松手按速度与位置决定开合，临界阻尼弹簧接着手指的速度收尾；页面透明共用背景，所以整个页面往右推、侧栏裁剪在页面左边让出的那段里（带一点视差），不叠画；页面压暗留一条，点它、往左滑或返回关上；expand 展开成整屏（侧栏里的搜索，返回先收回）；shift 是页面此刻的位移（iOS 系统底栏跟着走）；dismissWhenCovered 之后推入的页面完全盖住时悄悄合上；减少动画时直接到位。
   - campus_rolling_text.dart：数字滚动 CampusRollingText（同 iOS 实时活动的数字过渡）：只有变了的位滚动，倒数时方向相反，位按右对齐，减少动画时直接换；可带 strutStyle（数字和小一号的单位排一行、按单位那行定高时用，今天页此刻条）。
+  - campus_marquee.dart：单行放不下时横向滚动的文字 CampusMarquee（跑马灯，同 Apple Music 迷你播放条，今天页此刻条用，[人工决策] 在类上）：先停 3 秒、匀速滚过原文加间隔、首尾接上回到开头再停，最多滚 rounds 遍（默认 3，同安卓 TextView）就停在开头；停着时只渐隐尾端、滚动中首端随滚出渐显；内容或宽度变了、重新能动时从头算；放得下或装饰动效不能动（CampusMotion.allowed）时显示 child（没给就单行省略）。
   - campus_refresh.dart：下拉刷新 CampusRefreshControl（基于 CupertinoSliverRefreshControl），放在 CustomScrollView 第一个 sliver，指示器是曲线动效、至少停留 600ms。
   - campus_loading.dart：曲线加载 CampusLoader 与带文字的加载状态 CampusLoading（先占位不显示，过 campusLoadingDelay 还在加载才淡入，转场后一闪而过的加载提示像闪烁，11-23；整页样式自己居中；联网等待超过 8 秒说明在等谁）；CampusLoadError 是整块读取失败（原因加带图标的「重试」）；CampusBusyContent 让按钮原地切换忙碌态；showCampusWaiting 只在已有的异步操作期间显示等待弹窗，做完在最上面时照弹窗平常的样子退场。
   - curve_geometry.dart：三种闭合曲线的几何与按弧长预采样。改编自 math-curve-loaders，不随项目以 GPL 再授权，见 assets/third_party_notices.txt 与文件内人工决策。

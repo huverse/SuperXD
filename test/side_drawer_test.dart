@@ -9,7 +9,6 @@ import 'package:superxd/app_services.dart';
 import 'package:superxd/app_session.dart';
 import 'package:superxd/app_shell.dart';
 import 'package:superxd/application/quick_nav.dart';
-import 'package:superxd/domain/feature_flags.dart';
 import 'package:superxd/domain/quick_nav.dart';
 import 'package:superxd/local/quick_nav_memory.dart';
 import 'package:superxd/page/academic_page.dart';
@@ -25,24 +24,12 @@ import 'fixture_campus_gateway.dart';
 import 'page_fixture_support.dart';
 
 // 今天页侧栏（11-23，人工决策见 page/side_drawer.dart 的 SideDrawerPanel 与 today_page.dart 的顶栏）。
-class _Gate implements FeatureGate {
-  _Gate(this.on);
-  final Set<String> on;
-  final _changes = StreamController<void>.broadcast();
-
-  @override
-  bool isOn(FeatureFlag flag) => on.contains(flag.id);
-
-  @override
-  Stream<void> get changes => _changes.stream;
-}
-
-Future<(QuickNav, AppSession)> _app(WidgetTester tester, {QuickNavPrefs prefs = const QuickNavPrefs(), FeatureGate? features}) async {
+Future<(QuickNav, AppSession)> _app(WidgetTester tester, {QuickNavPrefs prefs = const QuickNavPrefs()}) async {
   final fixtures = pageFixtures();
   final session = AppSession(FixtureAccounts(FixtureCampusGateway(readText: (name) async => fixtures[name]!), signedIn: true));
   await session.restore();
   final nav = QuickNav(memory: FileQuickNavMemory.memory(prefs));
-  await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, services: AppServices(quickNav: nav, features: features)));
+  await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, services: AppServices(quickNav: nav)));
   await tester.pumpAndSettle();
   return (nav, session);
 }
@@ -115,7 +102,7 @@ void main() {
     });
   });
 
-  testWidgets('今天页顶栏两侧圆钮、日期居中；点左边拉出侧栏，常用是默认那几个（看不见的跳过），点压暗处关上', (tester) async {
+  testWidgets('今天页顶栏两侧圆钮、日期居中；点左边拉出侧栏，常用是默认那几个，点压暗处关上', (tester) async {
     final (_, session) = await _app(tester);
     final menu = tester.getCenter(find.byTooltip('侧栏')), sync = tester.getCenter(find.byTooltip('同步'));
     final width = tester.getSize(find.byType(TodayPage)).width;
@@ -123,10 +110,9 @@ void main() {
     await _open(tester);
     expect(_drawer(tester).isOpen, isTrue);
     expect(find.descendant(of: find.byTooltip('侧栏'), matching: find.byType(CampusMenuGlyph)), findsOneWidget, reason: '左上角是同 Claude 的三道横线');
-    for (final title in ['常用', '课表', '成绩', '学习通签到', '快递', '视频解析', '游乐场']) {
+    for (final title in ['常用', '课表', '成绩', '学习通签到', '住理生活', '快递', '视频解析', '游乐场']) {
       expect(find.text(title), findsOneWidget, reason: title);
     }
-    expect(find.text('住理生活'), findsNothing, reason: '灰度没开的不列');
     expect(find.text('最近'), findsNothing, reason: '还没进过任何一页');
     expect(find.text('林同学'), findsNothing, reason: '底部没有「我的」那一行（11-23 用户嫌冗余删掉）');
     await tester.tapAt(Offset(width - 12, 400));
@@ -195,20 +181,20 @@ void main() {
   });
 
   testWidgets('编辑常用：取消勾选、勾上的接到末尾、拖动排序，点了就存；看不见的原样留在末尾；回来还开着侧栏', (tester) async {
-    final (nav, session) = await _app(tester, prefs: const QuickNavPrefs(pinned: ['/toolbox/life/zhuli', '/schedule', '/grades']));
+    // 看不见的用一个已下架的入口代替（隐藏的与不在目录里的同样处理）。
+    final (nav, session) = await _app(tester, prefs: const QuickNavPrefs(pinned: ['/toolbox/retired', '/schedule', '/grades']));
     await _open(tester);
     expect(find.text('课表'), findsOneWidget);
     await tester.tap(find.text('编辑'));
     await tester.pumpAndSettle();
     expect(find.byType(QuickEditPage), findsOneWidget);
-    expect(find.text('住理生活'), findsNothing);
     await tester.tap(find.text('课表'));
     await tester.pumpAndSettle();
-    expect(nav.prefs.pinned, ['/grades', '/toolbox/life/zhuli']);
+    expect(nav.prefs.pinned, ['/grades', '/toolbox/retired']);
     await tester.scrollUntilVisible(find.text('快递'), 120, scrollable: find.descendant(of: find.byType(QuickEditPage), matching: find.byType(Scrollable)));
     await tester.tap(find.text('快递'));
     await tester.pumpAndSettle();
-    expect(nav.prefs.pinned, ['/grades', '/toolbox/express', '/toolbox/life/zhuli']);
+    expect(nav.prefs.pinned, ['/grades', '/toolbox/express', '/toolbox/retired']);
     await tester.scrollUntilVisible(find.text('成绩'), -120, scrollable: find.descendant(of: find.byType(QuickEditPage), matching: find.byType(Scrollable)));
     final handle = find.byType(ReorderableDragStartListener);
     // 同开屏画作播放顺序页的测法：按住把手分两步往上拖过上一张。
@@ -220,7 +206,7 @@ void main() {
     await tester.pump();
     await gesture.up();
     await tester.pumpAndSettle();
-    expect(nav.prefs.pinned, ['/toolbox/express', '/grades', '/toolbox/life/zhuli']);
+    expect(nav.prefs.pinned, ['/toolbox/express', '/grades', '/toolbox/retired']);
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     expect(_drawer(tester).isOpen, isTrue, reason: '编辑页不合上侧栏');
@@ -272,9 +258,9 @@ void main() {
   });
 
   testWidgets('下拉进搜索：到位松手展开成整屏、出输入框；按名字与别名搜并写分组，搜不到写一行；关闭钮与返回键先退回列表', (tester) async {
-    final (_, session) = await _app(tester, features: _Gate({lifeFlag.id, zhuliFlag.id}));
+    final (_, session) = await _app(tester);
     await _open(tester);
-    expect(find.text('住理生活'), findsOneWidget, reason: '灰度开着就列出来（默认常用里有它）');
+    expect(find.text('住理生活'), findsOneWidget, reason: '默认常用里有它');
     await tester.drag(find.text('课表'), const Offset(0, 40));
     await tester.pumpAndSettle();
     expect(_drawer(tester).expanded.value, isFalse, reason: '没拉到位不进搜索');

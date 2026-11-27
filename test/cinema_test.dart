@@ -2548,11 +2548,6 @@ void main() {
       expect(toolboxVisible(plain), isTrue);
     });
 
-    test('电影院登记了开关 toolbox.cinema（默认关）', () {
-      expect(featureFlags, contains(cinemaFlag));
-      expect((cinemaFlag.id, cinemaFlag.fallback), ('toolbox.cinema', false));
-    });
-
     testWidgets('解析在开关 toolbox.cinema.parse 后面（默认关）：关着只有找片、没有切换，开着才有，页面开着时被关掉就回到找片', (tester) async {
       expect(featureFlags, contains(cinemaParseFlag));
       expect((cinemaParseFlag.id, cinemaParseFlag.fallback), ('toolbox.cinema.parse', false));

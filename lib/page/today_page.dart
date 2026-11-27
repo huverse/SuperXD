@@ -18,6 +18,7 @@ import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/theme/campus_marquee.dart';
 import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/campus_rolling_text.dart';
 import 'package:superxd/theme/campus_side_drawer.dart';
@@ -881,21 +882,26 @@ class _ClassNowState extends State<_ClassNow> {
       ],
     ]);
     // 收起后的一条：课名 · 教室在左、剩余时长在右，下面一道同卡片的进度（课间与上课中才有）；不同字号按行中线对齐。
-    // 放不下时先省略课名、教室照写（去哪上课最要紧，课名看头几个字就认得）：课名至少留三个字加省略号的宽，其余给教室，教室再长也只省略它自己
-    // （模拟器上「思想道德与法治 · 综…」后改的）。
+    // 放不下时整段「课名 · 教室」滚动播放（跑马灯，用户 11-27 截图「大学体育…」后选定，人工决策见 theme 的 campus_marquee.dart）。
+    // 减少动画等不能动时照旧先省略课名、教室照写（去哪上课最要紧，课名看头几个字就认得）：课名至少留三个字加省略号的宽，其余给教室，
+    // 教室再长也只省略它自己（模拟器上「思想道德与法治 · 综…」后改的）。
     final titleStyle = Theme.of(context).textTheme.titleMedium;
     // 右边「49秒 后上课」三段坐同一条基线：以前数字连单位按基线、整组却和「后上课」各自居中，大数字把整组撑高，「秒」比「后上课」低约 2dp（用户 11-26 截图指出）。
     // 数字按单位那行 14 号字的行框排版（强制 strut），整组只有 14 号字那么高，居中后 14 号字与课名按中线对齐，大数字按基线坐在上面、不再把单位往下压。
     final strut = StrutStyle.fromTextStyle(DefaultTextStyle.of(context).style.merge(unit), forceStrutHeight: true);
     final strip = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Row(children: [
-        Expanded(child: LayoutBuilder(builder: (context, constraints) => Row(children: [
-          Flexible(child: Text(course.courseName, maxLines: 1, overflow: TextOverflow.ellipsis, style: titleStyle)),
-          if (place.isNotEmpty) ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: math.max(constraints.maxWidth / 2, constraints.maxWidth - campusTextWidth(context, '课程名…', style: titleStyle))),
-            child: Text(' · $place', maxLines: 1, overflow: TextOverflow.ellipsis, style: titleStyle),
-          ),
-        ]))),
+        Expanded(child: CampusMarquee(
+          place.isEmpty ? course.courseName : '${course.courseName} · $place',
+          style: titleStyle,
+          child: LayoutBuilder(builder: (context, constraints) => Row(children: [
+            Flexible(child: Text(course.courseName, maxLines: 1, overflow: TextOverflow.ellipsis, style: titleStyle)),
+            if (place.isNotEmpty) ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: math.max(constraints.maxWidth / 2, constraints.maxWidth - campusTextWidth(context, '课程名…', style: titleStyle))),
+              child: Text(' · $place', maxLines: 1, overflow: TextOverflow.ellipsis, style: titleStyle),
+            ),
+          ])),
+        )),
         const SizedBox(width: CampusGap.medium),
         Row(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
           remainingOf(const TextStyle(fontSize: 20, fontWeight: FontWeight.w600, height: 1.2, fontFeatures: figures), strut: strut),

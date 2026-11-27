@@ -81,7 +81,7 @@ export const developerNotesFileMaxBytes = 1024 * 1024;
 export const rolloutConfigPerHour = 600;
 
 // 分批更新的健康回报与意见反馈（人工决策见 src/modules/app_health/app_health_rules.ts）：都匿名、不带账号与设备号，按来源限流。
-// 健康回报每台每天最多一次（客户端），中转每个来源每小时最多 healthReportPerSourcePerHour 次（校园网 NAT 下一个出口很多人）；只收最近 healthReportMaxAgeDays 天的。
+// 健康回报每台每天每个用过的版本最多一次（客户端），中转每个来源每小时最多 healthReportPerSourcePerHour 次（校园网 NAT 下一个出口很多人）；只收最近 healthReportMaxAgeDays 天的。
 // 自动暂停：最近 healthWindowDays 天里新旧两版各至少 healthMinSamples 份，新版致命率超过旧版的 healthPauseRatio 倍且高出 healthPauseMargin 才停。
 // 意见每个来源每小时 feedbackPerSourcePerHour 条、每条最多 feedbackTextMax 字。健康汇总与意见保留 healthKeepDays 天，暂停记录保留 healthPauseKeepDays 天。
 export const healthReportPerSourcePerHour = 60;
