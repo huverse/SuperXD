@@ -11,7 +11,7 @@ import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_module.dart';
 
 // [人工决策-2026-11-22 18:46:09] 生活的第一个子模块住理生活（洗浴、充值、买券、余额与券、订单；资料 ~/Projects/SelfProjects/API/shenghuo/zhuli，
-// 11-22 用户两轮选项）：灰度开关 toolbox.life.zhuli 默认关、先点名给开发者；沿用快递的立场接受公开仓库接住理私有接口的风险；
+// 11-22 用户两轮选项）：灰度开关 toolbox.life.zhuli 默认关、先点名给开发者（11-23 全量、11-27 删掉开关，见 domain/feature_flags.dart）；沿用快递的立场接受公开仓库接住理私有接口的风险；
 // 不用资料里靠测试手机号触发的 mp.whxinna.com 调试转发，staff_id 只填自己，资料列出的越权点一个都不碰。
 // 用户选了：充值与买券接支付宝 SDK（tobias，微信支付按应用签名认 AppID 做不了）；常用设备与最近使用分两份（最近 6 台、收藏最多 20 台，都只存本机）；
 // 自定义充值 0.01–500 元、最多两位小数（服务端只拒负数）；余额与券只显示服务端的真实结果（服务端按券的 use_order 自己扣，客户端没法选券）；

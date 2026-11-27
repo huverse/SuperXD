@@ -1,6 +1,6 @@
 # toolbox 百宝箱
 
-定位：设备级工具集，不需要教务登录，只依赖 domain 与 theme，不依赖教务相关的任何层，不读取教务凭据或 cookie；切换账号时下载任务不销毁。当前注册了五个工具：视频解析与下载、学习通签到、快递（拼多多身份码与快递查询）、电影院（功能开关开着才出现，11-23 起灰度配置全量）、生活（校园生活服务的子模块列表，现在有住理生活，开关同电影院）。工具可以带子模块（规则见 toolbox_module.dart 的人工决策）。学习通的文件与规则在 chaoxing/CLAUDE.md，快递在 express/CLAUDE.md，电影院在 cinema/CLAUDE.md，住理生活在 life/zhuli/CLAUDE.md（生活下面的子模块同层互不依赖，test/project_structure_test.dart 守护），download 与 short_video 两个子目录登记在本文件。
+定位：设备级工具集，不需要教务登录，只依赖 domain 与 theme，不依赖教务相关的任何层，不读取教务凭据或 cookie；切换账号时下载任务不销毁。当前注册了五个工具：视频解析与下载、学习通签到、快递（拼多多身份码与快递查询）、电影院、生活（校园生活服务的子模块列表，现在有住理生活；两者 11-27 起不经功能开关，人工决策见 domain/feature_flags.dart）。工具可以带子模块（规则见 toolbox_module.dart 的人工决策）。学习通的文件与规则在 chaoxing/CLAUDE.md，快递在 express/CLAUDE.md，电影院在 cinema/CLAUDE.md，住理生活在 life/zhuli/CLAUDE.md（生活下面的子模块同层互不依赖，test/project_structure_test.dart 守护），download 与 short_video 两个子目录登记在本文件。
 
 # 文件职责
 
@@ -56,7 +56,7 @@
 # 测试
 
 - toolbox_widget_test.dart、toolbox_download_test.dart：首页、注册表与下载管理。
-- toolbox_submodule_test.dart：子模块框架（真实注册表的 id 与路径不撞、段落不登记服务与入口、电影院两段与生活的开关；路径与有自己路由的模块；显隐与路由门禁回上一层；清除父模块逐个清子模块；列表页与左滑清除）；子模块的快捷入口在 app_shortcuts_test.dart。
+- toolbox_submodule_test.dart：子模块框架（真实注册表的 id 与路径不撞、段落不登记服务与入口、电影院两段、电影院与生活不经开关；路径与有自己路由的模块；显隐与路由门禁回上一层；清除父模块逐个清子模块；列表页与左滑清除）；子模块的快捷入口在 app_shortcuts_test.dart。
 - background_transfer_test.dart：安卓后台传输的插件状态换算、失败原因日志、进度与交给插件的任务参数（插件本身与原生下载只有设备实测）。
 - http_transfer_test.dart：iOS 传输（整段下载、跳转只认 https、失败状态、Range 续传、中途断开、不能续传不给暂停、接在下载管理上走完导出）。
 - toolbox_media_features_test.dart：短视频库迁移、旧下载记录兼容、按工具清空下载、清除数据、分享卡片按注册表打开。

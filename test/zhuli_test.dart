@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -7,7 +6,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-import 'package:superxd/domain/feature_flags.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_client.dart';
@@ -503,15 +501,12 @@ void main() {
       await tester.pump(const Duration(seconds: 61));
     });
 
-    test('生活登记了住理生活：两层开关都开着才显示，id 与路由是 life.zhuli 与 /toolbox/life/zhuli', () {
+    test('生活登记了住理生活：不经开关、一直显示（11-27 删掉开关），id 与路由是 life.zhuli 与 /toolbox/life/zhuli', () {
       final life = toolboxCatalog(fixture.runtime).singleWhere((module) => module.id == 'life');
       final zhuli = life.children.single;
-      expect((zhuli.id, zhuli.flag, zhuli.clearedData.isNotEmpty), (ZhuliService.serviceId, zhuliFlag, true));
-      expect((zhuliFlag.id, zhuliFlag.fallback), ('toolbox.life.zhuli', false));
-      expect(toolboxVisible(life, features: _Gate({lifeFlag.id})), isFalse);
-      expect(toolboxVisible(life, features: _Gate({lifeFlag.id, zhuliFlag.id})), isTrue);
-      expect(toolboxRedirect([life], '/toolbox/life/zhuli', features: _Gate({lifeFlag.id})), '/toolbox');
-      expect(toolboxRedirect([life], '/toolbox/life/zhuli', features: _Gate({lifeFlag.id, zhuliFlag.id})), isNull);
+      expect((zhuli.id, zhuli.flag, zhuli.clearedData.isNotEmpty), (ZhuliService.serviceId, null, true));
+      expect(toolboxVisible(life), isTrue);
+      expect(toolboxRedirect([life], '/toolbox/life/zhuli'), isNull);
     });
   });
 }
@@ -524,13 +519,4 @@ Future<void> _settle(WidgetTester tester) async {
     await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
     await tester.pump(const Duration(milliseconds: 100));
   }
-}
-
-class _Gate implements FeatureGate {
-  _Gate(this.on);
-  final Set<String> on;
-  @override
-  bool isOn(FeatureFlag flag) => on.contains(flag.id);
-  @override
-  Stream<void> get changes => const Stream.empty();
 }

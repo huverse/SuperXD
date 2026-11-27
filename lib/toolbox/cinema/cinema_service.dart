@@ -22,7 +22,7 @@ import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_module.dart';
 
 // [人工决策-2026-11-19 22:42:37] 百宝箱新增电影院（灰度测试，用户四项选择）：
-// - 灰度：功能开关 toolbox.cinema（domain/feature_flags.dart 的 cinemaFlag），可按比例放量与点名，没登录应用账号的设备也能被比例抽中；
+// - 灰度：功能开关 toolbox.cinema，可按比例放量与点名，没登录应用账号的设备也能被比例抽中（11-23 全量、11-27 删掉开关，见 domain/feature_flags.dart）；
 // - 积分授权预接好、不启用：以后按「有效期」卖（花积分买 N 天，到期时刻记在服务器、续买往后叠加），规则见服务端 src/modules/unlock/unlock_rules.ts；
 // - 片源规则不进公开仓库：维护者本机签名后经中转下发（/v1/app/cinema，签名内容类型 cinema），应用不内置，第一次打开时拉取并缓存；
 // - 播放器用 media_kit（libmpv，Kazumi 同款）。11-21 用户改：安卓默认系统播放器 ExoPlayer、可以自己换回 mpv（人工决策见 cinema_engine.dart 文件头）。

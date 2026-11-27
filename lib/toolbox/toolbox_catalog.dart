@@ -54,7 +54,7 @@ List<ToolboxModule> toolboxCatalog(ToolboxRuntime runtime) => [
       ToolboxShortcut(id: ExpressPage.identityShortcut, label: '取件身份码', icon: CampusIcons.qrCode, builder: (context) => ExpressPage(runtime: runtime, openIdentity: true)),
     ],
   ),
-  // 电影院（灰度测试，人工决策见 cinema/cinema_service.dart 文件头）：功能开关开着才出现。
+  // 电影院（人工决策见 cinema/cinema_service.dart 文件头）。
   ToolboxModule(
     id: CinemaService.serviceId,
     name: '电影院',
@@ -69,22 +69,20 @@ List<ToolboxModule> toolboxCatalog(ToolboxRuntime runtime) => [
       relay: runtime.relayUrl,
     ),
     clearedData: '片源规则、片源同意与看过的记录（再用要重新同意）',
-    flag: cinemaFlag,
     // 首页里的几段（子模块，人工决策见 cinema_page.dart 的 _sections）：共用电影院的服务与数据，不各自登记服务与快捷入口。
     children: [
       ToolboxModule(id: CinemaSearchSection.sectionId, name: '找片', icon: CampusIcons.search, builder: (context) => const CinemaSearchSection()),
       ToolboxModule(id: CinemaParseSection.sectionId, name: '解析', icon: CampusIcons.parse, builder: (context) => const CinemaParseSection(), flag: cinemaParseFlag),
     ],
   ),
-  // 生活（灰度，人工决策见 domain/feature_flags.dart 的 lifeFlag）：校园生活服务的子模块列表，页面由框架列出（规则见 toolbox_module.dart）；
+  // 生活（11-22 两层灰度、11-27 删掉开关，人工决策见 domain/feature_flags.dart）：校园生活服务的子模块列表，页面由框架列出（规则见 toolbox_module.dart）；
   // 一个看得见的子模块都没有时不出现。子模块在 lib/toolbox/life 下，各自登记在这里的 children。
   ToolboxModule(
     id: 'life',
     name: '生活',
     icon: CampusIcons.life,
-    flag: lifeFlag,
     children: [
-      // 住理生活（灰度，人工决策见 life/zhuli/zhuli_service.dart 文件头）。
+      // 住理生活（人工决策见 life/zhuli/zhuli_service.dart 文件头）。
       ToolboxModule(
         id: ZhuliService.serviceId,
         name: '住理生活',
@@ -92,7 +90,6 @@ List<ToolboxModule> toolboxCatalog(ToolboxRuntime runtime) => [
         builder: (context) => ZhuliPage(runtime: runtime),
         openService: ZhuliService.open,
         clearedData: '住理账号与密码、常用设备与最近使用（再用要重新登录）',
-        flag: zhuliFlag,
         shortcuts: [
           ToolboxShortcut(id: ZhuliPage.scanShortcut, label: '扫码洗浴', icon: CampusIcons.bath, builder: (context) => ZhuliPage(runtime: runtime, scanOnOpen: true)),
         ],

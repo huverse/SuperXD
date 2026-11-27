@@ -1,6 +1,6 @@
 # toolbox/cinema 电影院
 
-定位：百宝箱里的在线影视（功能开关 toolbox.cinema 开着才出现，11-23 起灰度配置全量、开关留作远程急停）：多源搜索、选集、播放与云解析（解析先不开放，在开关 toolbox.cinema.parse 后面，默认关，规则包第 4 版起没有解析源，人工决策见 domain/feature_flags.dart），规则写法借鉴 Kazumi（GPL-3.0，出处见 assets/third_party_notices.txt）。搜索、选集、解析与取流在手机上直连第三方片源（国内连不上的源的搜索与选集经开发者部署在 Cloudflare 上的境外转发，Worker 在 server/edge/cinema_forward.ts，人工决策见 cinema_rule.dart 的 CinemaRule.forward），自建中转只发签名的片源规则包，另替片名目录型的源（不给按片名搜的，如 wsy）查片名对应的编号（服务端 src/modules/cinema_catalog）；规则包不进公开仓库，维护者本机签名后上传（tool/cinema_rules.dart、tool/cinema_publish.sh）。四项用户选择与服务器负担的取舍见 cinema_service.dart 文件头的人工决策。
+定位：百宝箱里的在线影视（11-27 起不经功能开关、一直显示，人工决策见 domain/feature_flags.dart）：多源搜索、选集、播放与云解析（解析先不开放，在开关 toolbox.cinema.parse 后面，默认关，规则包第 4 版起没有解析源，人工决策见 domain/feature_flags.dart），规则写法借鉴 Kazumi（GPL-3.0，出处见 assets/third_party_notices.txt）。搜索、选集、解析与取流在手机上直连第三方片源（国内连不上的源的搜索与选集经开发者部署在 Cloudflare 上的境外转发，Worker 在 server/edge/cinema_forward.ts，人工决策见 cinema_rule.dart 的 CinemaRule.forward），自建中转只发签名的片源规则包，另替片名目录型的源（不给按片名搜的，如 wsy）查片名对应的编号（服务端 src/modules/cinema_catalog）；规则包不进公开仓库，维护者本机签名后上传（tool/cinema_rules.dart、tool/cinema_publish.sh）。四项用户选择与服务器负担的取舍见 cinema_service.dart 文件头的人工决策。
 
 # 文件职责
 
