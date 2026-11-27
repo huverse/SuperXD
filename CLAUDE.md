@@ -4,13 +4,13 @@
 
 - [人工决策-2026-09-29 21:40:28] 索引采用仓库内分层 CLAUDE.md（根目录加 lib 各模块），授权 AI 创建，并在每次改动时同步维护。用户全局 CLAUDE.md 仍由 AI 只提建议、由人工修改。
 - [人工决策-2026-10-17 13:25:26] 索引按官方与大厂做法重整（用户四项都选推荐）：本文件控制在 200 行内，只放全局原则、命令与流程，具体超时、上限与测试清单下沉到模块文件；application 与学习通各建模块索引；守护测试按最近的 CLAUDE.md 登记；文件条目一两行，写职责、约束与人工决策位置，行为细节以代码为准。
-- 模块索引共 17 个：lib 下 domain、edu、local、gateway、device、application、page、theme、toolbox、relay、social、playground 各一个，外加 lib/toolbox/chaoxing、lib/toolbox/express、lib/toolbox/cinema、lib/toolbox/life/zhuli 与 lib/playground/puzzle。lib 根目录的 main.dart、app_services.dart、app_lifecycle.dart、app_shell.dart、router.dart、app_session.dart、app_diagnostics.dart、app_shortcuts.dart、app_background_sync.dart 登记在本文件。私信中转服务端在 server 目录，说明见 server/README.md；电影院的境外转发（Cloudflare Worker）在 server/edge，说明在同一份 README。
+- 模块索引共 18 个：lib 下 domain、edu、local、gateway、device、application、page、theme、toolbox、relay、social、playground 各一个，外加 lib/toolbox/chaoxing、lib/toolbox/express、lib/toolbox/cinema、lib/toolbox/life/zhuli、lib/toolbox/life/pangguai 与 lib/playground/puzzle。lib 根目录的 main.dart、app_services.dart、app_lifecycle.dart、app_shell.dart、router.dart、app_session.dart、app_diagnostics.dart、app_shortcuts.dart、app_background_sync.dart 登记在本文件。私信中转服务端在 server 目录，说明见 server/README.md；电影院的境外转发（Cloudflare Worker）在 server/edge，说明在同一份 README。
 - test/project_structure_test.dart 兜底两条：lib 下每个 dart 文件按文件名登记在最近的 CLAUDE.md（从所在目录往上找到 lib 为止，都没有就是本文件）；索引里提到的 dart 或 kt 文件必须真实存在。
 - 写法：纯文字，只用 # 标题、- 列表与 1. 编号；不写会随提交变化的数字（测试条数、提交号、库版本号），常量写名字或指到定义处。
 
 # 定位
 
-- 校园课表与成绩 Flutter 应用，Android 与 iOS 两端（iOS 适配 11-19 用户确认已完成，自签安装与验证边界见「已知约束」），对接单所学校的 Kingo 教务系统；另有免教务登录的百宝箱（视频解析与下载、学习通签到、快递，以及电影院：在线搜片与播放，片源在手机上直连，国内连不上的源的搜索与选集经开发者部署在 Cloudflare 上的境外转发；另有生活，是校园生活服务的子模块列表，第一个子模块住理生活对接校园水控：登录、余额与优惠券、订单、洗浴（云端与蓝牙开关水）、充值与买券（支付宝 SDK））。
+- 校园课表与成绩 Flutter 应用，Android 与 iOS 两端（iOS 适配 11-19 用户确认已完成，自签安装与验证边界见「已知约束」），对接单所学校的 Kingo 教务系统；另有免教务登录的百宝箱（视频解析与下载、学习通签到、快递，以及电影院：在线搜片与播放，片源在手机上直连，国内连不上的源的搜索与选集经开发者部署在 Cloudflare 上的境外转发；另有生活，是校园生活服务的子模块列表，第一个子模块住理生活对接校园水控：登录、余额与优惠券、订单、洗浴（云端与蓝牙开关水）、充值与买券（支付宝 SDK）；第二个胖乖生活对接共享洗衣机与吹风机：短信登录、扫码或按附近门店找设备、选档、下单与支付宝付款，饮水机打开胖乖的网页，有自己的开关、默认关）。
 - 功能性私信：扫码互加好友后分享课表、短视频等卡片（界面配置卡片 11-16 删掉），没有文字聊天；要登录应用账号、每个应用账号一份（换手机可以接管）；经自建中转（server 目录，NestJS + MySQL + Redis）端到端加密转交；另有只走蓝牙的面对面私信（两人都打开面对面页时互发同样的卡片，不要中转与应用账号，见 lib/social/nearby_service.dart）。学习通代签的凭据包、应用内更新的版本清单与安装包、按需下载的衬线字体包也放在这个中转；应用账号（自己的账号体系：用户名加密码、恢复码，与教务各管各的）、开发者的话、灰度配置、电影院的签名片源规则包、游乐场挑战与积分（含预接好未启用的积分时长券）、节日抽签、匿名健康回报也在这里。
 - 公开 Alpha 测试，仓库公开、以 GPL-3.0 开源（curve_geometry.dart 例外，见 README 许可一节）。Flutter 与 Dart 版本以 CI 配置和 pubspec.yaml 为准，依赖锁定在 pubspec.lock。
 - 相关文档：设计语言 UITEMP/design_language.md；README.md（定位、全部功能按用户定的轻重分档写、现状与已知限制、数据去向、架构与从源码构建，分档的 [人工决策] 在文件顶部注释；工具的操作细节链到 docs）；百宝箱说明 docs/toolbox.md、常见问题 docs/faq.md，README 截图与首屏拼图在 docs/images（tool/readme_demo.dart 的合成数据拍）；发布、签名与贡献约定 CONTRIBUTING.md；变更记录 CHANGELOG.md。功能、数据流向或隐私政策变了，README 的功能小节、现状与已知限制、数据去向与 docs 两页一起看要不要改。
@@ -67,8 +67,8 @@
 5. 课表版本：编辑、恢复和确认覆盖都带 expectedRevisionId，在同一事务里核对当前 head，不一致返回 REVISION_CONFLICT；每学期版本数有上限，当前 head 与最近一次教务基线受保护（规则见 lib/domain/CLAUDE.md）。
 6. 时间：绝对时刻一律存 UTC 的 ISO 字符串；校园时区只在 domain/campus_clock.dart 的 campusTimeZone 一处定义，今天、周次、倒计时等业务日界都经 campus_clock 计算；展示时间用 formatCampusRelative（按远近写到分钟）。
 7. 凭据：用户明确勾选记住账号且认证成功后才写入系统安全存储（关闭后在账号页重新开启也要先登录核对成功）；业务 SQLite、账号索引和日志一律不存密码；用户关闭记住账号或主动退出时立即删除凭据。应用账号的密码与恢复码在本机用中转公钥封装后才发出，中转只存 scrypt 哈希；教务密码与摘要都不出手机（人工决策见 domain/app_account.dart）。
-8. 设备级数据：百宝箱、下载任务、游乐场的本机成绩与联网偏好、显示设置（配色、字体、字号、深浅色、玻璃、自定义壁纸）与下载的字体包、学习通账号与收藏、住理生活账号、应用更新的检查记录与下载中的安装包、协议与政策的同意与已读修订号、开发者设置与本机日志都属于设备，切换教务账号时保留。私信身份与好友 11-14 起属于应用账号（每个应用账号在这台手机上一份，见 lib/social/CLAUDE.md），切换或退出教务、退出应用账号都不清本机，注销应用账号才清。面对面私信的身份与库属于设备（并进应用账号的好友只在登录那个账号时显示，注销时删）。
-   - 系统安全存储的每个命名空间（记住账号、私信身份、应用账号、学习通、拼多多、住理生活）、本机日志目录、下载的字体包目录 font_packs 与开发者设置 developer.json 都排除出云备份与设备迁移，新增命名空间要同时加进两份备份规则，iOS 上还要给同名的 IOSOptions（仅本机级别），排除的目录同步加进 main.dart 的 excludeFromBackup，test/legal_page_test.dart 守护。
+8. 设备级数据：百宝箱、下载任务、游乐场的本机成绩与联网偏好、显示设置（配色、字体、字号、深浅色、玻璃、自定义壁纸）与下载的字体包、学习通账号与收藏、住理生活与胖乖生活账号、应用更新的检查记录与下载中的安装包、协议与政策的同意与已读修订号、开发者设置与本机日志都属于设备，切换教务账号时保留。私信身份与好友 11-14 起属于应用账号（每个应用账号在这台手机上一份，见 lib/social/CLAUDE.md），切换或退出教务、退出应用账号都不清本机，注销应用账号才清。面对面私信的身份与库属于设备（并进应用账号的好友只在登录那个账号时显示，注销时删）。
+   - 系统安全存储的每个命名空间（记住账号、私信身份、应用账号、学习通、拼多多、住理生活、胖乖生活）、本机日志目录、下载的字体包目录 font_packs 与开发者设置 developer.json 都排除出云备份与设备迁移，新增命名空间要同时加进两份备份规则，iOS 上还要给同名的 IOSOptions（仅本机级别），排除的目录同步加进 main.dart 的 excludeFromBackup，test/legal_page_test.dart 守护。
    - 桌面小组件显示的是当前账号的课，跟着账号切换，退出登录即清空；只有它的配色跟随设备设置。
    - 自定义壁纸只经系统照片选择器读用户选中的一张，复制到应用私有目录，不上传、不申请存储权限。
    - 百宝箱不读取教务凭据或 cookie；学习通密码与 cookie 只进系统安全存储，本机不存签到记录。学习通的设备信息与 OAID 只在登录、补用户信息时现取，加密后只发给学习通，不落库。
@@ -77,7 +77,7 @@
    - 第三方解析来源逐个来源、按授权版本单独征得同意，自动模式只尝试已启用且已同意的来源。
    - 开发者的话的本机记录（最近的信、读过与弹过的编号）与节日的本机记录（近 30 天打开过的日期、播过抽过的节日、奖品）属于设备；节日抽奖要登录应用账号、按人只抽一次（人工决策见 domain/festival.dart）。
 9. 对外网络：
-   - 每个外部请求都有显式超时与响应上限，只发必要字段；具体数值写在所属模块（教务 edu、解析 toolbox、代签 chaoxing、电影院 cinema、私信 social、应用账号与它签名的节日抽签、挑战、解锁等 relay、应用更新、开发者的话、灰度配置、诊断包上传与字体包下载 device）。
+   - 每个外部请求都有显式超时与响应上限，只发必要字段；具体数值写在所属模块（教务 edu、解析 toolbox、代签 chaoxing、电影院 cinema、住理生活 zhuli、胖乖生活 pangguai、私信 social、应用账号与它签名的节日抽签、挑战、解锁等 relay、应用更新、开发者的话、灰度配置、诊断包上传与字体包下载 device）。
    - 除会话自动恢复后的一次重放、时钟偏差校正后的一次重发、私信中转不认这台设备时重新挂到应用账号后的一次重放外，不自动重试；私信收取的长轮询是持续接收通道，失败后退避继续；自动同步按间隔来，没连上网的隔 15 分钟后再试，都不算重试，后台任务也不交给系统重试。
    - 教务默认只在用户点同步时访问；自动同步是用户开启后的例外（默认关闭），登录过期时只暂停、不转登录页。
    - CampusSync 每个实例内按顺序逐项请求，今天页和成绩页各持有一个实例；成绩同步与其他教务网络请求互斥（SYNC_BUSY）；教务限流时报 RATE_LIMITED，本轮立即停止。

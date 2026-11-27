@@ -9,6 +9,8 @@ import 'package:superxd/toolbox/cinema/cinema_service.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_service.dart';
 import 'package:superxd/toolbox/express/express_page.dart';
 import 'package:superxd/toolbox/express/express_service.dart';
+import 'package:superxd/toolbox/life/pangguai/pangguai_page.dart';
+import 'package:superxd/toolbox/life/pangguai/pangguai_service.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_page.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_service.dart';
 import 'package:superxd/toolbox/short_video/short_video_page.dart';
@@ -93,6 +95,16 @@ List<ToolboxModule> toolboxCatalog(ToolboxRuntime runtime) => [
         shortcuts: [
           ToolboxShortcut(id: ZhuliPage.scanShortcut, label: '扫码洗浴', icon: CampusIcons.bath, builder: (context) => ZhuliPage(runtime: runtime, scanOnOpen: true)),
         ],
+      ),
+      // 胖乖生活（人工决策见 life/pangguai/pangguai_service.dart 文件头）：碰真钱，开关默认关、先点名给开发者测。
+      ToolboxModule(
+        id: PangguaiService.serviceId,
+        name: '胖乖生活',
+        icon: CampusIcons.wallet,
+        builder: (context) => PangguaiPage(runtime: runtime),
+        openService: PangguaiService.open,
+        clearedData: '胖乖账号的登录凭据与最近使用（再用要重新登录）',
+        flag: pangguaiFlag,
       ),
     ],
   ),

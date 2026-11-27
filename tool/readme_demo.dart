@@ -52,10 +52,10 @@ import 'package:superxd/toolbox/express/express_http.dart';
 import 'package:superxd/toolbox/express/express_models.dart';
 import 'package:superxd/toolbox/express/express_service.dart';
 import 'package:superxd/toolbox/express/express_vault.dart';
+import 'package:superxd/toolbox/life/life_alipay.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_client.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_devices.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_http.dart';
-import 'package:superxd/toolbox/life/zhuli/zhuli_pay.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_protocol.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_service.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_vault.dart';
@@ -296,7 +296,7 @@ Future<ZhuliService> _demoZhuli() async {
 }
 
 // 演示里不付钱。
-class _DemoPayer implements ZhuliPayer {
+class _DemoPayer implements LifeAlipay {
   @override
   Future<String> pay(String orderContent) => Completer<String>().future;
 }

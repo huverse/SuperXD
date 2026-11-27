@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:superxd/toolbox/life/life_money.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_field_table.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
@@ -413,7 +414,7 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label, style: secondary),
-          Text('¥${zhuliYuan(cents)}', style: const TextStyle(fontSize: CampusFontSize.title, fontWeight: FontWeight.w600)),
+          Text('¥${lifeYuan(cents)}', style: const TextStyle(fontSize: CampusFontSize.title, fontWeight: FontWeight.w600)),
         ],
       ),
     );
@@ -427,9 +428,9 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
             const SizedBox(height: CampusGap.medium),
             DotSeparatedText(
               [
-                _stage == _Stage.running || _stage == _Stage.ending ? '已预扣 ¥${zhuliYuan(rule.prepaid)}' : '开水先预扣 ¥${zhuliYuan(rule.prepaid)}',
+                _stage == _Stage.running || _stage == _Stage.ending ? '已预扣 ¥${lifeYuan(rule.prepaid)}' : '开水先预扣 ¥${lifeYuan(rule.prepaid)}',
                 '关水后按用量多退少补',
-                if (rule.price case final price? when rule.metering) '¥${zhuliYuan(price)}/升',
+                if (rule.price case final price? when rule.metering) '¥${lifeYuan(price)}/升',
               ].join(' · '),
               style: secondary,
             ),
@@ -490,7 +491,7 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
               Text(_elapsed(_now().difference(_startedAt!)), style: const TextStyle(fontSize: CampusFontSize.headline, fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()])),
               // 住理给了用量才写；11-22 真机上云端设备开着水时住理一直不更新、关水才回来，没有数时同蓝牙一样写「用量在关水时结算」。
               if (!bluetooth && bill != null && bill.status == 'consuming' && (bill.liters > 0 || bill.money > 0))
-                DotSeparatedText('${bill.liters.toStringAsFixed(2)} 升 · ¥${zhuliYuan(bill.money)}', style: secondary)
+                DotSeparatedText('${bill.liters.toStringAsFixed(2)} 升 · ¥${lifeYuan(bill.money)}', style: secondary)
               else if (!waiting)
                 Text('用量在关水时结算', style: secondary),
               const SizedBox(height: CampusGap.large),
@@ -507,7 +508,7 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
         );
       case _Stage.done:
         final bill = _bill!;
-        final from = [if (bill.fromCoupon > 0) '券 ¥${zhuliYuan(bill.fromCoupon)}', if (bill.fromBalance > 0) '余额 ¥${zhuliYuan(bill.fromBalance)}', if (bill.fromPay > 0) '${zhuliPayChannel(bill.payChannel)} ¥${zhuliYuan(bill.fromPay)}'];
+        final from = [if (bill.fromCoupon > 0) '券 ¥${lifeYuan(bill.fromCoupon)}', if (bill.fromBalance > 0) '余额 ¥${lifeYuan(bill.fromBalance)}', if (bill.fromPay > 0) '${zhuliPayChannel(bill.payChannel)} ¥${lifeYuan(bill.fromPay)}'];
         return CampusSurface(
           padding: const EdgeInsets.all(20),
           child: Column(
@@ -517,9 +518,9 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
               const SizedBox(height: CampusGap.medium),
               CampusFieldTable(rows: [
                 ('用水', '${bill.liters.toStringAsFixed(2)} 升 · ${bill.seconds} 秒'),
-                ('实扣', '¥${zhuliYuan(bill.money)}'),
-                if (bill.prepaid > 0) ('预扣', '¥${zhuliYuan(bill.prepaid)}'),
-                if (bill.refund > 0) ('退回', '¥${zhuliYuan(bill.refund)}'),
+                ('实扣', '¥${lifeYuan(bill.money)}'),
+                if (bill.prepaid > 0) ('预扣', '¥${lifeYuan(bill.prepaid)}'),
+                if (bill.refund > 0) ('退回', '¥${lifeYuan(bill.refund)}'),
                 if (from.isNotEmpty) ('扣款', from.join('、')),
                 ('订单号', bill.orderId),
               ]),

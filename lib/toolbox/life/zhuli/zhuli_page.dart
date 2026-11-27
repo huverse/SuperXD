@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:superxd/toolbox/life/life_money.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_animated_list.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
@@ -303,7 +304,7 @@ class _ZhuliPageState extends State<ZhuliPage> {
         children: [
           Text(label, style: TextStyle(color: palette.onSurfaceVariant)),
           const SizedBox(height: CampusGap.tight),
-          Text('¥${zhuliYuan(cents)}', style: const TextStyle(fontSize: CampusFontSize.headline, fontWeight: FontWeight.w600)),
+          Text('¥${lifeYuan(cents)}', style: const TextStyle(fontSize: CampusFontSize.headline, fontWeight: FontWeight.w600)),
           if (note != null) Text(note, style: TextStyle(color: palette.onSurfaceVariant)),
         ],
       ),
@@ -321,7 +322,7 @@ class _ZhuliPageState extends State<ZhuliPage> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              amount('余额', profile.balance, profile.frozen > 0 ? '冻结 ¥${zhuliYuan(profile.frozen)}' : null),
+              amount('余额', profile.balance, profile.frozen > 0 ? '冻结 ¥${lifeYuan(profile.frozen)}' : null),
               const SizedBox(width: CampusGap.large),
               amount('券余额', coupons.balance, '${coupons.count} 张可用'),
             ],

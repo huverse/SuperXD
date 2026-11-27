@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:superxd/toolbox/life/life_money.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_field_table.dart';
 import 'package:superxd/theme/campus_icons.dart';
@@ -171,7 +172,7 @@ class _ZhuliOrdersPageState extends State<ZhuliOrdersPage> {
                 ],
               ),
             ),
-            Text('¥${zhuliYuan(money)}', style: const TextStyle(fontSize: CampusFontSize.cardTitle, fontWeight: FontWeight.w600)),
+            Text('¥${lifeYuan(money)}', style: const TextStyle(fontSize: CampusFontSize.cardTitle, fontWeight: FontWeight.w600)),
             const SizedBox(width: CampusGap.small),
             const CampusIcon(CampusIcons.next),
           ],
@@ -240,10 +241,10 @@ class _BillSheet extends StatelessWidget {
       ('位置', bill.place),
       ('开始', zhuliShownTime(bill.createAt)),
       if (bill.consumeType == 'bath') ('用水', '${bill.liters.toStringAsFixed(2)} 升 · ${bill.seconds} 秒'),
-      if (bill.prepaid > 0) ('预扣', '¥${zhuliYuan(bill.prepaid)}'),
-      ('实扣', '¥${zhuliYuan(bill.money)}'),
-      if (bill.refund > 0) ('退回', '¥${zhuliYuan(bill.refund)}'),
-      ('扣款', [if (bill.fromCoupon != 0) '券 ¥${zhuliYuan(bill.fromCoupon)}', if (bill.fromBalance != 0) '余额 ¥${zhuliYuan(bill.fromBalance)}', if (bill.fromPay != 0) '支付 ¥${zhuliYuan(bill.fromPay)}'].join('、')),
+      if (bill.prepaid > 0) ('预扣', '¥${lifeYuan(bill.prepaid)}'),
+      ('实扣', '¥${lifeYuan(bill.money)}'),
+      if (bill.refund > 0) ('退回', '¥${lifeYuan(bill.refund)}'),
+      ('扣款', [if (bill.fromCoupon != 0) '券 ¥${lifeYuan(bill.fromCoupon)}', if (bill.fromBalance != 0) '余额 ¥${lifeYuan(bill.fromBalance)}', if (bill.fromPay != 0) '支付 ¥${lifeYuan(bill.fromPay)}'].join('、')),
       ('状态', zhuliConsumeStatus(bill.status)),
       ('订单号', bill.orderId),
     ],
@@ -261,12 +262,12 @@ class _RechargeSheet extends StatelessWidget {
     title: '充值详情',
     read: () => service.run(phone, (session) => service.client.rechargeOrder(session, outTradeNo)),
     rows: (order) => [
-      ('金额', '¥${zhuliYuan(order.value)}'),
+      ('金额', '¥${lifeYuan(order.value)}'),
       ('状态', zhuliRechargeStatus(order.status)),
       if (order.rechargeType != null) ('支付方式', zhuliPayChannel(order.rechargeType)),
       ('下单', zhuliShownTime(order.createAt)),
       if (order.paid && zhuliMoment(order.payTime) != null) ('到账', zhuliShownTime(order.payTime)),
-      if (order.paid && order.balance != null) ('到账后余额', '¥${zhuliYuan(order.balance!)}'),
+      if (order.paid && order.balance != null) ('到账后余额', '¥${lifeYuan(order.balance!)}'),
       ('订单号', order.outTradeNo),
       if (order.tradeNo.isNotEmpty) ('交易号', order.tradeNo),
     ],

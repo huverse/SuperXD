@@ -10,7 +10,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import 'package:superxd/domain/campus_log.dart';
-import 'package:superxd/toolbox/chaoxing/chaoxing_location.dart';
+import 'package:superxd/domain/china_coordinates.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_map_view.dart';
 
 // [人工决策-2026-11-10 13:09:42] 学习通位置签到的地图改用网页版高德（内嵌网页加高德 JS API 2.0），删掉高德原生地图 SDK（用户选定）：
@@ -271,7 +271,7 @@ class _WebMapEngine with WidgetsBindingObserver implements ChaoxingMapEngine {
         _listener.onStatus(ChaoxingMapStatus.failed);
       case ChaoxingMapTapped(:final point):
         _listener.onTap(point);
-      // 系统给的是 WGS-84，在本机按公开的 GCJ-02 算法换算（同提交前的换算，chaoxing_location.dart），不把位置发给高德去转；
+      // 系统给的是 WGS-84，在本机按公开的 GCJ-02 算法换算（同提交前的换算，domain/china_coordinates.dart），不把位置发给高德去转；
       // 换好的交回网页画当前位置的点（原生地图时定位图层自己画）。
       case ChaoxingMapLocated(:final latitude, :final longitude, :final accuracy):
         final converted = wgs84ToGcj02(latitude, longitude);

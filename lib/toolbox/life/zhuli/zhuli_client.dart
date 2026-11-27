@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:timezone/timezone.dart' as tz;
 
+import 'package:superxd/toolbox/life/life_money.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_http.dart';
@@ -181,7 +182,7 @@ class ZhuliClient {
     await _call(session, '/webapi/v1/recharge/createorder', {
       'rechargerecord': {
         'user_id': session.userId,
-        'recharge_value': num.parse(zhuliYuan(cents)),
+        'recharge_value': num.parse(lifeYuan(cents)),
         'staff_id': '',
         'isminiprogram': 'False',
         'trade_type': 'APP',

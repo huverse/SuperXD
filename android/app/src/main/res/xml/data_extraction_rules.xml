@@ -28,6 +28,9 @@
         <exclude domain="sharedpref" path="FlutterSecureKeyStorage:superxd_pdd.xml" />
         <exclude domain="sharedpref" path="superxd_zhuli.xml" />
         <exclude domain="sharedpref" path="FlutterSecureKeyStorage:superxd_zhuli.xml" />
+        <!-- 胖乖生活的登录凭据（等同登录态）同样只属于这台设备。 -->
+        <exclude domain="sharedpref" path="superxd_pangguai.xml" />
+        <exclude domain="sharedpref" path="FlutterSecureKeyStorage:superxd_pangguai.xml" />
         <!-- 应用账号的设备密钥同样只属于这台设备（一台设备一把，与私信身份分开），不随备份与换机迁移。 -->
         <exclude domain="sharedpref" path="superxd_account.xml" />
         <exclude domain="sharedpref" path="FlutterSecureKeyStorage:superxd_account.xml" />
@@ -64,6 +67,9 @@
         <exclude domain="sharedpref" path="FlutterSecureKeyStorage:superxd_pdd.xml" />
         <exclude domain="sharedpref" path="superxd_zhuli.xml" />
         <exclude domain="sharedpref" path="FlutterSecureKeyStorage:superxd_zhuli.xml" />
+        <!-- 胖乖生活的登录凭据（等同登录态）同样只属于这台设备。 -->
+        <exclude domain="sharedpref" path="superxd_pangguai.xml" />
+        <exclude domain="sharedpref" path="FlutterSecureKeyStorage:superxd_pangguai.xml" />
         <!-- 应用账号的设备密钥同样只属于这台设备（一台设备一把，与私信身份分开），不随备份与换机迁移。 -->
         <exclude domain="sharedpref" path="superxd_account.xml" />
         <exclude domain="sharedpref" path="FlutterSecureKeyStorage:superxd_account.xml" />

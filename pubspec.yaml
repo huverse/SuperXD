@@ -88,6 +88,7 @@ dependencies:
   flutter_svg: ^2.5.0
   tobias: ^6.0.0
   wakelock_plus: ^1.8.0
+  geolocator: ^14.1.2
 
 dev_dependencies:
   flutter_test:

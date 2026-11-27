@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:superxd/toolbox/life/life_money.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_icons.dart';
@@ -145,11 +146,11 @@ class _ZhuliCouponsPageState extends State<ZhuliCouponsPage> {
               children: [
                 Text(coupon.name.isEmpty ? '优惠券' : coupon.name, style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: CampusGap.tight),
-                Text('¥${zhuliYuan(coupon.balance)}', style: const TextStyle(fontSize: CampusFontSize.headline, fontWeight: FontWeight.w600)),
+                Text('¥${lifeYuan(coupon.balance)}', style: const TextStyle(fontSize: CampusFontSize.headline, fontWeight: FontWeight.w600)),
                 const SizedBox(height: CampusGap.tight),
                 DotSeparatedText(
                   [
-                    '面额 ¥${zhuliYuan(coupon.total)}',
+                    '面额 ¥${lifeYuan(coupon.total)}',
                     if (coupon.useLimit.isNotEmpty) '适用${coupon.useLimit.map(zhuliConsumeType).join('、')}',
                     coupon.couponFirst ? '优先用券' : '优先用余额',
                   ].join(' · '),
@@ -248,8 +249,8 @@ class _CouponRecordsSheetState extends State<_CouponRecordsSheet> {
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
-                              Text(zhuliYuan(record.value)),
-                              Text('余 ${zhuliYuan(record.couponBalance)}', style: TextStyle(color: palette.onSurfaceVariant)),
+                              Text(lifeYuan(record.value)),
+                              Text('余 ${lifeYuan(record.couponBalance)}', style: TextStyle(color: palette.onSurfaceVariant)),
                             ],
                           ),
                         ],

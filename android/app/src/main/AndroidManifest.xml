@@ -55,6 +55,8 @@
              不走前台服务，用 replace 固定成 dataSync（merge 会把两边的类型并起来）。 -->
         <service android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="dataSync" tools:node="merge" tools:replace="android:foregroundServiceType"/>
+        <!-- 定位插件 geolocator 自带一个后台持续定位的前台服务：胖乖生活只在找附近门店与下单时取一次位置、不在后台定位，移除。 -->
+        <service android:name="com.baseflow.geolocator.GeolocatorLocationService" tools:node="remove"/>
         <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
         <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">
             <intent-filter>

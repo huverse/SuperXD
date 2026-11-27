@@ -1,21 +1,17 @@
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:superxd/domain/china_coordinates.dart';
+
 // 位置签到的坐标。学习通按坐标系直接算距离，提交口径统一成 BD-09（参考项目的实测口径），
 // 地图 SDK 拿到的 WGS-84 或 GCJ-02 先在这里转换。
 enum ChaoxingCoordinateSystem { wgs84, gcj02, bd09 }
 
-const _pi = 3.1415926535897932384626;
-const _a = 6378245.0;
-const _ee = 0.00669342162296594323;
 const _xPi = 3.14159265358979324 * 3000.0 / 180.0;
-
-bool _outOfChina(double latitude, double longitude) =>
-    !(longitude > 73.66 && longitude < 135.05 && latitude > 3.86 && latitude < 53.55);
 
 // 学习通给的老师签到点能不能用：没签时网页与详情里是 -1 这类占位值，落在国内范围外的一律当没有（学习通只在国内用）。
 bool chaoxingUsablePoint(double? latitude, double? longitude) =>
-    latitude != null && longitude != null && !_outOfChina(latitude, longitude);
+    latitude != null && longitude != null && !outsideChina(latitude, longitude);
 
 // 服务端判出界时给的距离（米，可能是 1.2583E7 这样的科学计数法）写成人看的：一公里以内写米，再远写公里。
 String chaoxingDistanceLabel(String meters) {
@@ -23,42 +19,6 @@ String chaoxingDistanceLabel(String meters) {
   if (value == null) return '$meters 米';
   if (value < 1000) return '${value.round()} 米';
   return '${(value / 1000).toStringAsFixed(value < 10000 ? 1 : 0)} 公里';
-}
-
-double _transformLatitude(double x, double y) {
-  var ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * sqrt(x.abs());
-  ret += (20.0 * sin(6.0 * x * _pi) + 20.0 * sin(2.0 * x * _pi)) * 2.0 / 3.0;
-  ret += (20.0 * sin(y * _pi) + 40.0 * sin(y / 3.0 * _pi)) * 2.0 / 3.0;
-  ret += (160.0 * sin(y / 12.0 * _pi) + 320.0 * sin(y * _pi / 30.0)) * 2.0 / 3.0;
-  return ret;
-}
-
-double _transformLongitude(double x, double y) {
-  var ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * sqrt(x.abs());
-  ret += (20.0 * sin(6.0 * x * _pi) + 20.0 * sin(2.0 * x * _pi)) * 2.0 / 3.0;
-  ret += (20.0 * sin(x * _pi) + 40.0 * sin(x / 3.0 * _pi)) * 2.0 / 3.0;
-  ret += (150.0 * sin(x / 12.0 * _pi) + 300.0 * sin(x / 30.0 * _pi)) * 2.0 / 3.0;
-  return ret;
-}
-
-({double latitude, double longitude}) wgs84ToGcj02(double latitude, double longitude) {
-  if (_outOfChina(latitude, longitude)) return (latitude: latitude, longitude: longitude);
-  final deltaLatitude = _transformLatitude(longitude - 105.0, latitude - 35.0);
-  final deltaLongitude = _transformLongitude(longitude - 105.0, latitude - 35.0);
-  final radian = latitude / 180.0 * _pi;
-  var magic = sin(radian);
-  magic = 1 - _ee * magic * magic;
-  final sqrtMagic = sqrt(magic);
-  return (
-    latitude: latitude + (deltaLatitude * 180.0) / ((_a * (1 - _ee)) / (magic * sqrtMagic) * _pi),
-    longitude: longitude + (deltaLongitude * 180.0) / (_a / sqrtMagic * cos(radian) * _pi),
-  );
-}
-
-({double latitude, double longitude}) gcj02ToWgs84(double latitude, double longitude) {
-  if (_outOfChina(latitude, longitude)) return (latitude: latitude, longitude: longitude);
-  final converted = wgs84ToGcj02(latitude, longitude);
-  return (latitude: latitude * 2 - converted.latitude, longitude: longitude * 2 - converted.longitude);
 }
 
 ({double latitude, double longitude}) gcj02ToBd09(double latitude, double longitude) {

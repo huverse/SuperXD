@@ -15,7 +15,7 @@
   - chaoxing_signer.dart：preSign（302 或「校验失败」即不在班级；403 按会话过期报，由 accounts.run 重登一次再重发）后紧跟 analysis → analysis2；各签到类型的提交参数逐项照学习通客户端；success2 按失败处理，迟到按截止时间判断；出界认 errorLocation_ 与中文「不在可签到范围内，距教师指定签到地点X米」两种写法（距离可能是科学计数法）。
   - chaoxing_batch.dart：多人连签 ChaoxingBatchSigning：按勾选顺序逐个签、相邻间隔 200 毫秒；选了「仍然签到」的人跳过检查；位置刚出界时收紧偏移再试；连续扫码一人失败就停队，但已签过、不在班级、登录过期只跳过这个人。
   - chaoxing_lessons.dart：课表推断：两份课表（本应用课表、学习通课表 kb.chaoxing.com）都换成今天的课 ChaoxingLessonSlot；用哪份见 ChaoxingLessonSource 的人工决策（主源加自动备用，默认本应用课表，代签账号只用它自己的学习通课表）；正在上的课（前后半小时）按课名相似度对上课程，同名多班老师对得上的优先；这节课时段里发起、仍在进行的签到算「可能正在签到」（人工决策在 chaoxingLessonActivity，不知道开始时间的不算）。周次与日界按校园时区。
-  - chaoxing_location.dart：坐标模型、坐标系转换（提交口径 BD-09）、随机偏移、老师坐标能否用（chaoxingUsablePoint，只用来决定画不画范围圈）、出界距离的写法（chaoxingDistanceLabel）与位置负载。
+  - chaoxing_location.dart：坐标模型、坐标系转换（提交口径 BD-09；WGS-84 换 GCJ-02 在 domain/china_coordinates.dart，11-27 起与胖乖生活共用）、随机偏移、老师坐标能否用（chaoxingUsablePoint，只用来决定画不画范围圈）、出界距离的写法（chaoxingDistanceLabel）与位置负载。
   - chaoxing_photo.dart：拍照签到：上传前随机裁剪、旋转再裁齐（同一张照片反复用会被教师端比对出来），再传云盘拿 objectId。
   - chaoxing_qrcode.dart：课堂签到二维码的解析（SIGNIN: 内嵌串与带 enc 的链接）与过期查询（码里的 c/Code 是轮换签到码、不等于活动号时才查，人工决策在文件内）。
   - chaoxing_captcha.dart：滑块验证码：取配置与底图、按 280 宽的坐标空间提交拖动位置、换一次性 validate（按签到对象各自的会话取；三个 JSONP 接口都要带 callback）；自动找缺口 chaoxingCaptchaMatch（自写、不用模型：缺口块内部与底图逐列算归一化相关，认不准返回空，人工决策在文件内）。
