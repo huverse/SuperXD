@@ -9,6 +9,7 @@ import 'package:http/testing.dart';
 
 import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/campus_theme.dart';
+import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_bath.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_bath_page.dart';
@@ -505,10 +506,11 @@ void main() {
       await tester.runAsync(() => service.signIn(_phone, _password));
     }
 
-    testWidgets('云端设备：查完给人看设备、余额与券余额、预扣与单价；开水后等设备开、水开了计时；关水后原地显示这一单的账', (tester) async {
+    testWidgets('云端设备：查完给人看设备、余额与券余额、预扣与单价；开水后等设备开、水开了计时；关水后原地显示这一单的账；开水、关水与完成都不是提示条锚点', (tester) async {
       await signIn(tester);
       await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ZhuliBathPage(service: service, phone: _phone, deviceId: 101, clock: () => _beijing(21, 0))));
       await _settle(tester);
+      expect(find.byType(CampusToastAnchor), findsNothing, reason: '按钮跟着内容滚动，包了提示条会停到页面中间');
       expect(find.text('1号楼 2层 201'), findsOneWidget);
       expect(find.byWidgetPredicate((widget) => _dotted(widget, '设备号 101 · 空闲')), findsOneWidget);
       expect(tester.widget<CampusSegmented<int>>(find.byType(CampusSegmented<int>)).selected, 6, reason: '两用设备默认照原 App 走云端');
@@ -516,6 +518,11 @@ void main() {
       expect(find.text('¥176.35'), findsOneWidget);
       expect(find.byWidgetPredicate((widget) => _dotted(widget, '开水先预扣 ¥5.00 · 关水后按用量多退少补 · ¥0.07/升')), findsOneWidget);
       expect((await tester.runAsync(() => service.devices.load(_phone)))!.recent.single.id, 101, reason: '打开即记进最近使用');
+      await tester.tap(find.bySemanticsLabel('收藏到常用设备'));
+      await _settle(tester);
+      expect(tester.getTopLeft(find.text('已收藏到常用设备')).dy, greaterThan(tester.getBottomLeft(find.text('开水')).dy), reason: '提示条停在页面底部，不停到开水按钮上方压住余额卡');
+      hideCampusToast();
+      await _settle(tester);
       await tester.tap(find.text('开水'));
       await _settle(tester);
       expect(find.text('等设备开水'), findsOneWidget);
@@ -531,6 +538,7 @@ void main() {
       await _settle(tester);
       expect(find.text('水已开'), findsOneWidget);
       expect(findDotted('1.02 升 · ¥0.07'), findsOneWidget);
+      expect(find.byType(CampusToastAnchor), findsNothing);
       await tester.tap(find.text('关水'));
       await _settle(tester);
       await tester.tap(find.text('关水').last);
@@ -538,6 +546,7 @@ void main() {
       expect(find.text('已关水'), findsOneWidget);
       expect(find.text('¥0.14'), findsOneWidget);
       expect(find.text('券 ¥0.14'), findsOneWidget);
+      expect(find.byType(CampusToastAnchor), findsNothing);
       await tester.pumpWidget(const SizedBox());
     });
 

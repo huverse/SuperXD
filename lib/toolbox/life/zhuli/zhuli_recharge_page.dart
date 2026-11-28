@@ -285,14 +285,17 @@ class _BuySheet extends StatelessWidget {
             const SizedBox(height: CampusGap.small),
             DotSeparatedText(zhuliGoodsDetail(goods).join(' · '), style: secondary),
             const SizedBox(height: CampusGap.large),
-            ZhuliCheckout(
-              service: service,
-              phone: phone,
-              label: '用支付宝付 ¥${lifeYuan(goods.price)}',
-              order: (session) => service.client.buyCoupon(session, goods.id),
-              paid: (session, orderId) => service.client.couponPaid(session, orderId),
-              pendingHint: '付款结果还在确认，稍后在「优惠券」里看',
-              onPaid: () {},
+            // 弹层不滚动，付款区固定在弹层底部，是提示条的锚点。
+            CampusToastAnchor(
+              child: ZhuliCheckout(
+                service: service,
+                phone: phone,
+                label: '用支付宝付 ¥${lifeYuan(goods.price)}',
+                order: (session) => service.client.buyCoupon(session, goods.id),
+                paid: (session, orderId) => service.client.couponPaid(session, orderId),
+                pendingHint: '付款结果还在确认，稍后在「优惠券」里看',
+                onPaid: () {},
+              ),
             ),
           ],
         ),

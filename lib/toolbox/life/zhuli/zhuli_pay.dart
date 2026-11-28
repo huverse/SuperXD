@@ -8,7 +8,6 @@ import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_tokens.dart';
-import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_models.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_service.dart';
 
@@ -146,36 +145,35 @@ class _ZhuliCheckoutState extends State<ZhuliCheckout> with WidgetsBindingObserv
     final palette = CampusPalette.of(context);
     final secondary = TextStyle(color: palette.onSurfaceVariant);
     final error = _error;
-    return CampusToastAnchor(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: switch (_step) {
-          _Step.idle || _Step.ordering => [
-            FilledButton(
-              style: campusProminent,
-              onPressed: _step == _Step.idle && widget.enabled ? () => unawaited(_start()) : null,
-              child: CampusBusyContent(busy: _step == _Step.ordering, label: widget.label, busyLabel: '下单中', icon: const CampusIcon(CampusIcons.wallet)),
-            ),
-            if (error != null) Padding(padding: const EdgeInsets.only(top: CampusGap.medium), child: Text(error, style: TextStyle(color: palette.danger))),
-          ],
-          _Step.paying => [
-            Text('在支付宝里付款，付完回到这里', style: secondary),
-            const SizedBox(height: CampusGap.medium),
-            FilledButton.icon(onPressed: () => unawaited(_check()), icon: const CampusIcon(CampusIcons.check), label: const Text('我已付款，查结果')),
-          ],
-          _Step.checking => [
-            FilledButton(onPressed: null, child: CampusBusyContent(busy: true, label: '确认中', busyLabel: '确认中', icon: const CampusIcon(CampusIcons.check))),
-          ],
-          _Step.paid => [
-            Text('付款成功', style: Theme.of(context).textTheme.titleMedium),
-          ],
-          _Step.pending => [
-            Text(widget.pendingHint, style: secondary),
-            const SizedBox(height: CampusGap.medium),
-            FilledButton.icon(onPressed: () => unawaited(_check()), icon: const CampusIcon(CampusIcons.sync), label: const Text('再查一次')),
-          ],
-        },
-      ),
+    // 不在这里包提示条锚点：充值页里它跟着内容滚动，包了提示条会停到页面中间；固定在底部的（买券弹层）由调用方包。
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: switch (_step) {
+        _Step.idle || _Step.ordering => [
+          FilledButton(
+            style: campusProminent,
+            onPressed: _step == _Step.idle && widget.enabled ? () => unawaited(_start()) : null,
+            child: CampusBusyContent(busy: _step == _Step.ordering, label: widget.label, busyLabel: '下单中', icon: const CampusIcon(CampusIcons.wallet)),
+          ),
+          if (error != null) Padding(padding: const EdgeInsets.only(top: CampusGap.medium), child: Text(error, style: TextStyle(color: palette.danger))),
+        ],
+        _Step.paying => [
+          Text('在支付宝里付款，付完回到这里', style: secondary),
+          const SizedBox(height: CampusGap.medium),
+          FilledButton.icon(onPressed: () => unawaited(_check()), icon: const CampusIcon(CampusIcons.check), label: const Text('我已付款，查结果')),
+        ],
+        _Step.checking => [
+          FilledButton(onPressed: null, child: CampusBusyContent(busy: true, label: '确认中', busyLabel: '确认中', icon: const CampusIcon(CampusIcons.check))),
+        ],
+        _Step.paid => [
+          Text('付款成功', style: Theme.of(context).textTheme.titleMedium),
+        ],
+        _Step.pending => [
+          Text(widget.pendingHint, style: secondary),
+          const SizedBox(height: CampusGap.medium),
+          FilledButton.icon(onPressed: () => unawaited(_check()), icon: const CampusIcon(CampusIcons.sync), label: const Text('再查一次')),
+        ],
+      },
     );
   }
 }
