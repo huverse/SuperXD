@@ -332,7 +332,7 @@ void main() {
       accounts.dispose();
     });
 
-    test('出示中改用密码登录：之后回来的批准同样不认；刷新换下的旧票据作废了，新票据照常问', () async {
+    test('刷新换下的旧票据作废了、新票据照常问到批准并登录；出示中改用密码登录，之后回来的批准同样不认', () async {
       var tickets = 0;
       final expires = DateTime.now().add(const Duration(minutes: 5)).millisecondsSinceEpoch;
       relay.reply = (request) => switch ((request.method, request.path)) {
@@ -345,12 +345,280 @@ void main() {
       await client.cancelJoin(first);
       final second = await client.startJoin();
       await expectLater(client.joinState(first), throwsA(isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.joinExpired)));
+      // 刷新后的新票据：问到批准就存下、登录（审查原文里这一步没有真的做到）。
+      final session = await client.joinState(second);
+      expect(session?.username, 'tester_one');
+      expect((await client.accountOf())?.username, 'tester_one');
+      expect(relay.requests.where((request) => request.method == 'GET').map((request) => request.path), ['/v1/account/joins/${'2'.padLeft(22, 'T')}'], reason: '旧票据没发请求');
       final third = await client.startJoin();
+      final fourth = await client.startJoin();
       await client.login('tester_two', 'synthetic-pass');
-      for (final join in [second, third]) {
+      for (final join in [third, fourth]) {
         await expectLater(client.joinState(join), throwsA(isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.joinExpired)));
       }
       expect((await client.accountOf())?.username, 'tester_two');
+    });
+  });
+
+  // 11-28 Codex 复核 F01、F03、F04：审查列出的窗口逐个造出来——安全存储读、写、删的中间，与在路上的回复晚到。
+  group('交错：安全存储的读写与晚到的回复', () {
+    const second = 'BBBBBBBBBBBBBBBBBBBBBB';
+    late _Relay relay;
+    late _GatedVault vault;
+    late RelayAppAccountClient client;
+    setUp(() async {
+      relay = _Relay();
+      vault = _GatedVault();
+      final sealPair = await X25519().newKeyPairFromSeed(List<int>.generate(32, (index) => index + 1));
+      client = RelayAppAccountClient(vault: vault, transport: relay, sealKey: (await sealPair.extractPublicKey()).bytes, serverKeys: FakeRelay.serverKeys);
+    });
+    Future<RelayIdentity> signIn(String accountId, String username) async {
+      final key = await RelayIdentity.generate();
+      await vault.inner.write(appAccountSlot, AppAccountKey(identity: key, accountId: accountId, username: username));
+      return key;
+    }
+    AppAccountRef ref(String accountId) => AppAccountRef(accountId: accountId, slot: appAccountSlot);
+    final errors = RelayErrors(
+      signedOut: const AppAccountException(AppAccountFailure.notSignedIn, 'signed out'),
+      network: const AppAccountException(AppAccountFailure.network, 'network'),
+      rateLimited: const AppAccountException(AppAccountFailure.rateLimited, 'limited'),
+      failed: (code) => AppAccountException(AppAccountFailure.failed, code),
+    );
+    final notSignedIn = throwsA(isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.notSignedIn));
+    // 让某一类请求停在路上：返回它到了没有与放行用的回复。
+    (Completer<void>, Completer<RelayResponse>) holdRequests(bool Function(_Request request) match, RelayResponse Function(_Request request) otherwise) {
+      final arrived = Completer<void>(), late = Completer<RelayResponse>();
+      relay.asyncReply = (request) async {
+        if (!match(request)) return otherwise(request);
+        if (!arrived.isCompleted) arrived.complete();
+        return late.future;
+      };
+      return (arrived, late);
+    }
+
+    test('F01：读甲的密钥时（安全存储还没读出来）槽换成了乙：读出来是乙，甲的请求不发', () async {
+      await signIn(_accountId, 'tester_one');
+      final gate = Completer<void>(), reading = Completer<void>();
+      vault.beforeRead = () async {
+        reading.complete();
+        await gate.future;
+      };
+      final pending = AccountRelay(vault: vault, transport: relay).signedCall(ref(_accountId), 'GET', '/v1/points', errors: errors);
+      await reading.future;
+      vault.beforeRead = null;
+      await signIn(second, 'tester_two');
+      gate.complete();
+      await expectLater(pending, notSignedIn);
+      expect(relay.requests, isEmpty);
+    });
+
+    test('F01：读到甲的密钥、请求在路上时换成了乙：回复不交给调用方（签名请求算没登录，send 与 exchange 为空）', () async {
+      final account = AccountRelay(vault: vault, transport: relay);
+      final calls = <String, Future<Object?> Function()>{
+        'signedCall': () => account.signedCall(ref(_accountId), 'GET', '/v1/points', errors: errors),
+        'send': () => account.send(ref(_accountId), 'GET', '/v1/unlocks'),
+        'exchange': () => account.exchange(ref(_accountId), 'GET', '/v1/flags/mine'),
+      };
+      for (final MapEntry(key: name, value: call) in calls.entries) {
+        await signIn(_accountId, 'tester_one');
+        final (arrived, late) = holdRequests((_) => true, (_) => const RelayResponse(204, {}));
+        final pending = call();
+        await arrived.future;
+        await signIn(second, 'tester_two');
+        late.complete(const RelayResponse(200, {'balance': 1}));
+        if (name == 'signedCall') {
+          await expectLater(pending, notSignedIn, reason: name);
+        } else {
+          expect(await pending, isNull, reason: name);
+        }
+      }
+      expect(relay.requests, hasLength(3), reason: '请求照常发出，只是回复不交');
+    });
+
+    test('F01：同一账号重新登录换了新密钥：旧密钥那条回复不交；之后按新密钥照常', () async {
+      final old = await signIn(_accountId, 'tester_one');
+      final account = AccountRelay(vault: vault, transport: relay);
+      final (arrived, late) = holdRequests((_) => true, (_) => const RelayResponse(204, {}));
+      final pending = account.signedCall(ref(_accountId), 'GET', '/v1/points', errors: errors);
+      await arrived.future;
+      final fresh = await signIn(_accountId, 'tester_one');
+      late.complete(const RelayResponse(200, {'balance': 1}));
+      await expectLater(pending, notSignedIn);
+      relay.asyncReply = null;
+      relay.reply = (request) => const RelayResponse(200, {'balance': 2});
+      final reply = await account.signedCall(ref(_accountId), 'GET', '/v1/points', errors: errors);
+      expect(reply.body['balance'], 2);
+      expect(reply.identity.deviceId, fresh.deviceId);
+      expect(relay.requests.map((request) => request.headers['x-sxd-device']), [old.deviceId, fresh.deviceId]);
+    });
+
+    test('F01：请求在路上时退出了：回复不交', () async {
+      await signIn(_accountId, 'tester_one');
+      final (arrived, late) = holdRequests((_) => true, (_) => const RelayResponse(204, {}));
+      final pending = AccountRelay(vault: vault, transport: relay).signedCall(ref(_accountId), 'GET', '/v1/points', errors: errors);
+      await arrived.future;
+      await vault.inner.delete(appAccountSlot);
+      late.complete(const RelayResponse(200, {'balance': 1}));
+      await expectLater(pending, notSignedIn);
+    });
+
+    test('F03：乙登录正在写安全存储时，甲的核对迟到回 404：删的那一步排在写后面、槽里已是乙，什么也不删', () async {
+      await signIn(_accountId, 'tester_one');
+      final (checkArrived, checkLate) = holdRequests((request) => request.method == 'GET' && request.path == '/v1/account', (_) => const RelayResponse(200, {'accountId': second, 'username': 'tester_two'}));
+      final checking = client.summary().then<Object?>((_) => null, onError: (Object error) => error);
+      await checkArrived.future;
+      final writeGate = Completer<void>(), writing = Completer<void>();
+      vault.beforeWrite = () async {
+        writing.complete();
+        await writeGate.future;
+      };
+      final login = client.login('tester_two', 'synthetic-pass');
+      await writing.future;
+      vault.beforeWrite = null;
+      checkLate.complete(const RelayResponse(404, {'code': 'ACCOUNT_NOT_FOUND'}));
+      await pumpEventQueue();
+      expect(vault.operations, isNot(contains('delete')), reason: '写着的时候删不进来');
+      writeGate.complete();
+      await login;
+      expect(await checking, isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.notSignedIn));
+      expect((await client.accountOf())?.username, 'tester_two');
+      expect(vault.operations, isNot(contains('delete')));
+    });
+
+    test('F03：同一账号重新登录换了新密钥，旧密钥的核对迟到回 404 或 UNAUTHORIZED：新密钥不删', () async {
+      for (final late in [const RelayResponse(404, {'code': 'ACCOUNT_NOT_FOUND'}), const RelayResponse(401, {'code': 'UNAUTHORIZED'})]) {
+        await signIn(_accountId, 'tester_one');
+        final (arrived, reply) = holdRequests((_) => true, (_) => const RelayResponse(204, {}));
+        final checking = client.summary().then<Object?>((_) => null, onError: (Object error) => error);
+        await arrived.future;
+        final fresh = await signIn(_accountId, 'tester_one');
+        reply.complete(late);
+        expect(await checking, isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.notSignedIn), reason: late.body['code'] as String);
+        expect((await vault.inner.read(appAccountSlot))?.identity.deviceId, fresh.deviceId, reason: late.body['code'] as String);
+      }
+    });
+
+    test('F03：甲的核对在路上时换成了乙，回来说甲已注销（带服务器签名）：乙照常登录着，被注销的甲的本机私信照样交出去清掉', () async {
+      final key = await signIn(_accountId, 'tester_one');
+      final deleted = <AppAccountRef>[];
+      final accounts = AppAccounts(client: client, onDeleted: deleted.add);
+      await accounts.load();
+      final (arrived, late) = holdRequests((request) => request.method == 'GET' && request.path == '/v1/account', (_) => const RelayResponse(200, {'accountId': second, 'username': 'tester_two'}));
+      String? nonce;
+      relay.asyncReply = (request) async {
+        if (request.method == 'GET' && request.path == '/v1/account') {
+          nonce = request.headers['x-sxd-nonce'];
+          arrived.complete();
+          return late.future;
+        }
+        return const RelayResponse(200, {'accountId': second, 'username': 'tester_two'});
+      };
+      final checking = accounts.check(force: true);
+      await arrived.future;
+      expect(await accounts.login('tester_two', 'synthetic-pass'), isA<AppAccountDone>());
+      final proof = base64UrlNoPad(await FakeRelay().serverSign(accountDeletedCanonical(key.deviceId, nonce!)));
+      late.complete(RelayResponse(410, {'code': 'ACCOUNT_DELETED', 'proof': proof}));
+      await checking;
+      expect(accounts.username, 'tester_two');
+      expect((await client.accountOf())?.username, 'tester_two');
+      expect(deleted, [ref(_accountId)]);
+      accounts.dispose();
+    });
+
+    test('F03：退出时删服务端那把的请求在路上、这时登录了乙：退出回来只删它自己那把，乙还在', () async {
+      await signIn(_accountId, 'tester_one');
+      final (arrived, late) = holdRequests((request) => request.method == 'DELETE' && request.path == '/v1/devices', (_) => const RelayResponse(200, {'accountId': second, 'username': 'tester_two'}));
+      final signingOut = client.signOut();
+      await arrived.future;
+      await client.login('tester_two', 'synthetic-pass');
+      late.complete(const RelayResponse(204, {}));
+      await signingOut;
+      expect((await client.accountOf())?.username, 'tester_two');
+    });
+
+    // 扫码登录：出示一张票据，问批准时回批准了；默认别的请求（登录、作废）照常回。
+    Future<AppAccountJoin> joinApproved() async {
+      final expires = DateTime.now().add(const Duration(minutes: 5)).millisecondsSinceEpoch;
+      relay.asyncReply = (request) async => switch ((request.method, request.path)) {
+        ('POST', '/v1/account/joins') => RelayResponse(200, {'ticketId': _ticketId, 'code': '123456', 'expiresAt': expires}),
+        ('GET', _) => const RelayResponse(200, {'state': 'approved', 'account': {'accountId': _accountId, 'username': 'tester_one'}}),
+        ('POST', '/v1/account/login') => const RelayResponse(200, {'accountId': second, 'username': 'tester_two'}),
+        _ => const RelayResponse(204, {}),
+      };
+      return client.startJoin();
+    }
+    // 下一次写安全存储时停住。
+    (Completer<void>, Completer<void>) holdNextWrite() {
+      final writing = Completer<void>(), gate = Completer<void>();
+      vault.beforeWrite = () async {
+        vault.beforeWrite = null;
+        writing.complete();
+        await gate.future;
+      };
+      return (writing, gate);
+    }
+
+    test('F04：批准已核对、正在写安全存储时离开了出示页：写完放回写之前那条、不登录，中转那台多出来的设备删掉', () async {
+      // 槽里原来有一条（比如被顶掉后留下的旧记录），撤回时放回它。
+      final previous = AppAccountKey(identity: await RelayIdentity.generate(), accountId: 'CCCCCCCCCCCCCCCCCCCCCC', username: 'tester_old');
+      await vault.inner.write(appAccountSlot, previous);
+      final join = await joinApproved();
+      final accounts = AppAccounts(client: client);
+      final (writing, gate) = holdNextWrite();
+      final polling = accounts.pollJoin(join);
+      await writing.future;
+      await accounts.cancelJoin(join);
+      gate.complete();
+      expect(await polling, isA<AppAccountError>());
+      expect(accounts.current, isNull);
+      expect((await vault.inner.read(appAccountSlot))?.identity.deviceId, previous.identity.deviceId);
+      await pumpEventQueue();
+      expect(relay.requests.where((request) => request.method == 'DELETE').map((request) => request.path), ['/v1/account/joins/$_ticketId', '/v1/devices']);
+      accounts.dispose();
+    });
+
+    test('F04：批准已核对、正在写安全存储时改用密码登录了乙：扫码这把写完就撤回，乙排在后面写进去，最后是乙', () async {
+      final join = await joinApproved();
+      final (writing, gate) = holdNextWrite();
+      final polling = client.joinState(join).then<Object?>((session) => session, onError: (Object error) => error);
+      await writing.future;
+      final login = client.login('tester_two', 'synthetic-pass');
+      await pumpEventQueue();
+      gate.complete();
+      expect(await polling, isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.joinExpired));
+      expect((await login).username, 'tester_two');
+      expect((await client.accountOf())?.username, 'tester_two');
+      expect(vault.operations.where((operation) => operation != 'read'), ['write', 'delete', 'write'], reason: '扫码这把写进去、撤回（原来是空的就删）、乙写进去');
+    });
+
+    test('F04：批准已核对、排队等着写的时候就离开了出示页：根本不写、不登录，中转那台设备删掉', () async {
+      // 槽里有一条旧记录，查看账号回 404 时删它（删之前在锁里读一次，停在那里占着锁；这一步不碰扫码票据）。
+      final stale = AppAccountKey(identity: await RelayIdentity.generate(), accountId: 'CCCCCCCCCCCCCCCCCCCCCC', username: 'tester_old');
+      await vault.inner.write(appAccountSlot, stale);
+      final join = await joinApproved();
+      final approved = relay.asyncReply!;
+      relay.asyncReply = (request) async => request.method == 'GET' && request.path == '/v1/account' ? const RelayResponse(404, {'code': 'ACCOUNT_NOT_FOUND'}) : approved(request);
+      final gate = Completer<void>(), holding = Completer<void>();
+      var reads = 0;
+      vault.beforeRead = () async {
+        // 第一次是查看账号读密钥，第二次是删之前在锁里核对。
+        if (++reads != 2) return;
+        holding.complete();
+        await gate.future;
+      };
+      final checking = client.summary().then<Object?>((_) => null, onError: (Object error) => error);
+      await holding.future;
+      final polling = client.joinState(join).then<Object?>((session) => session, onError: (Object error) => error);
+      await pumpEventQueue();
+      await client.cancelJoin(join);
+      vault.beforeRead = null;
+      gate.complete();
+      expect(await polling, isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.joinExpired));
+      expect(await checking, isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.notSignedIn));
+      expect(vault.operations, isNot(contains('write')), reason: '一次也没写');
+      expect(await client.accountOf(), isNull, reason: '旧记录按 404 删了，扫码的没写进来');
+      await pumpEventQueue();
+      expect(relay.requests.where((request) => request.method == 'DELETE').map((request) => request.path), ['/v1/account/joins/$_ticketId', '/v1/devices']);
     });
   });
 
@@ -1102,4 +1370,34 @@ class _NoteFeed implements DeveloperNoteFeed {
       DeveloperNote(id: 'a', title: '第一封', publishedAt: now.subtract(const Duration(days: 30)), body: '第一封的正文'),
     ];
   }
+}
+
+// 可以在读、写、删之前停住的安全存储（交错测试用），记下做过的操作；其余同内存版。
+class _GatedVault implements AppAccountVault {
+  final inner = MemoryAppAccountVault();
+  final operations = <String>[];
+  Future<void> Function()? beforeRead;
+  Future<void> Function()? beforeWrite;
+  @override
+  Future<AppAccountKey?> read(String slot) async {
+    await beforeRead?.call();
+    operations.add('read');
+    return inner.read(slot);
+  }
+
+  @override
+  Future<void> write(String slot, AppAccountKey key) async {
+    await beforeWrite?.call();
+    operations.add('write');
+    await inner.write(slot, key);
+  }
+
+  @override
+  Future<void> delete(String slot) async {
+    operations.add('delete');
+    await inner.delete(slot);
+  }
+
+  @override
+  Future<List<String>> slots() => inner.slots();
 }

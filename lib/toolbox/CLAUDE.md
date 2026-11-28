@@ -17,11 +17,11 @@
 - life 生活根目录（子模块共用，子模块之间不互引）：
   - life_money.dart：金额换算 lifeCents（数或十进制文本按文本换成分、四舍五入，不经浮点）与 lifeYuan（分写成两位小数的元）。
   - life_alipay.dart：支付宝付款端口 LifeAlipay 与插件实现 TobiasLifeAlipay（tobias，内含支付宝 SDK；结果码只作提示，到账只认服务方；iOS 回调不一定回得来，各子模块回到前台也去查）。
-  - life_http_brake.dart：各子模块统一的请求策略（11-28 用户选「都照住理：不限并发」，[人工决策] 在文件头）：不排队、不限并发、不固定间隔，超时与上限各子模块给、不自动重试；刹车 LifeHttpBrake：回 403、405、429 就停这个域名 30 秒（11-28 用户由 15 分钟改来），期间在本机直接拒掉、提示写还要等几秒。
+  - life_http_brake.dart：各子模块统一的请求策略（11-28 用户选「都照住理：不限并发」，[人工决策] 在文件头）：不排队、不限并发、不固定间隔，超时与上限各子模块给、不自动重试；空闲连接留 lifeKeepIdle（50 秒，挑档位再下单的停顿后不用重新握手）；刹车 LifeHttpBrake：回 403、405、429 就停这个域名 30 秒（11-28 用户由 15 分钟改来），期间在本机直接拒掉、提示写还要等几秒。
 - download 下载：
   - toolbox_download_manager.dart：通用下载管理 ToolboxDownloadManager，不认识任何工具的数据（[人工决策] 在 enqueue）。按工具 id 与 identity 加每项 id 去重；负责入队、暂停、继续、取消、校验、导出与清理，clearTool 清除一个工具的下载数据（已导出的文件不动）。每组 1–100 项、待处理任务组最多 10 个、同时传输最多 2 个。
   - background_transfer.dart：安卓用的后台传输 BackgroundTransfer，基于 background_downloader；没有通知权限时改用普通 WorkManager 任务，避免 ANR。
-  - http_transfer.dart：iOS 用的传输 HttpTransfer，在应用自己的进程里用 package:http 边收边写。自签包里系统后台下载建不了文件，所以不走它（[人工决策] 在文件头）。逐跳只认公网 https，等响应头与两块数据之间各 30 秒超时；逐块写文件、写完一块才收下一块（磁盘背压），写盘出错立即按失败结束并取消上游（11-28 审查 F08）；暂停或中途断开时留着已下的部分，继续时按 Range 加 If-Range 续传，不能续传的不给暂停，不自动重试；只在前台下载，不发通知，状态只在内存里。
+  - http_transfer.dart：iOS 用的传输 HttpTransfer，在应用自己的进程里用 package:http 边收边写。自签包里系统后台下载建不了文件，所以不走它（[人工决策] 在文件头）。逐跳只认公网 https，等响应头与两块数据之间各 30 秒超时；逐块写文件、写完一块才收下一块（磁盘背压），写盘出错立即按失败结束并取消上游（11-28 审查 F08；写盘出错不当成被挂起，能续传也按失败报，11-28 复核）；暂停或中途断开时留着已下的部分，继续时按 Range 加 If-Range 续传，不能续传的不给暂停，不自动重试；只在前台下载，不发通知，状态只在内存里。
   - channel_file_publisher.dart：经通道 superxd/toolbox_files 调原生导出：安卓 ToolboxFileExporter.kt 导出到 Download/SuperXD；iOS ToolboxFileExporter.swift 把图片与视频存进相册（只申请添加，webp 先转 JPEG；相册按文件扩展名认资源，下载临时文件是 .part，所以先在临时目录硬链接成带正确扩展名的文件名再交给相册，存完删掉；返回 ph:// 条目号，打开时进相册），其余进「文件」App 的 SuperXD（同名即算存好），日志包弹系统分享面板（[人工决策] 在文件头）。publish 是下载管理的导出（source 限定下载目录），失败时记下原生错误码与系统错误号；publishExternal 是一次性导出（source 只认应用缓存目录、只放行图片与诊断日志包 zip 的 mime（日志包由 device/diagnostic_device.dart 经同一原生通道导出）、文件名按名幂等且不得含分隔符与控制字符）。
   - downloads_page.dart：下载管理页 DownloadsPage，只列给定工具 id 的任务，按组展示，整组操作在⋯里，条目顺序稳定；给了 reopenLabel 时失败任务可交回调用方重做。
   - download_status.dart：结果页与下载页共用的状态文案、进度条 DownloadProgress 与操作按钮 downloadActions。
@@ -62,7 +62,7 @@
 - toolbox_widget_test.dart、toolbox_download_test.dart：首页、注册表与下载管理。
 - toolbox_submodule_test.dart：子模块框架（真实注册表的 id 与路径不撞、段落不登记服务与入口、电影院两段、电影院与生活不经开关；路径与有自己路由的模块；显隐与路由门禁回上一层；清除父模块逐个清子模块；列表页与左滑清除）；子模块的快捷入口在 app_shortcuts_test.dart。
 - background_transfer_test.dart：安卓后台传输的插件状态换算、失败原因日志、进度与交给插件的任务参数（插件本身与原生下载只有设备实测）。
-- http_transfer_test.dart：iOS 传输（整段下载、跳转只认 https、失败状态、Range 续传、中途断开、不能续传不给暂停、接在下载管理上走完导出）。
+- http_transfer_test.dart：iOS 传输（整段下载、跳转只认 https、失败状态、Range 续传、中途断开、不能续传不给暂停、接在下载管理上走完导出；写盘途中经 IOOverrides 换成按脚本写的文件：写进一块后磁盘满、慢磁盘背压、写到一半取消、关文件出错）。
 - toolbox_media_features_test.dart：短视频库迁移、旧下载记录兼容、按工具清空下载、清除数据、分享卡片按注册表打开。
 - short_video_parser_test.dart、media_image_test.dart、toolbox_image_test.dart（小网络图按显示大小解码、只认公网 https、上限与时限、失败不留缓存、模块共用一份、同时取的上限与播放优先）；支撑在 toolbox_test_support.dart。
 - 手动入口：tool/verify_toolbox.dart（Android 原生下载与导出）。

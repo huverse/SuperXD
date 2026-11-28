@@ -167,17 +167,33 @@ class RelayAppAccountClient implements AppAccountClient {
     if (state == 'pending') return null;
     if (state == 'approved') {
       if (account case {'accountId': final String accountId, 'username': final String name} when _accountIdPattern.hasMatch(accountId) && _usernamePattern.hasMatch(name)) {
-        // 这一问在路上时离开了出示页、刷新了或登录了别的：不存这把密钥、不登录，顺手请中转删掉批准时登记的这台设备（不等，失败只记日志）。
-        if (!identical(_joins[join.ticketId], key)) {
-          campusLog('[AppAccount] action=join_state result=stale');
-          unawaited(_relay.signedWith(key, 'DELETE', '/v1/devices', errors: _errors).then<void>((_) {}, onError: (Object error, StackTrace stack) => campusLog('[AppAccount] action=drop_stale_join errorType=${error.runtimeType}\n$stack')));
-          throw _joinGone;
-        }
-        _joins.remove(join.ticketId);
-        return _save(key, accountId, name);
+        bool current() => identical(_joins[join.ticketId], key);
+        // 这一问在路上时离开了出示页、刷新了或登录了别的：不存这把密钥、不登录。
+        if (!current()) throw _dropStale(key);
+        // 11-28 复核 F04：核对、写入与写后复核在同一个队里做完，票据写完才拿掉。排队等着写、或正在写安全存储时离开了出示页（cancelJoin）
+        // 或改用别的方式登录（_credential），写之前就不写；已经写了的放回写之前的那条（锁还在手里，没别人动过槽），都不登录。
+        return _vaultLock.synchronized(() async {
+          if (!current()) throw _dropStale(key);
+          // 原来那条认不出（坏了）就当没有，同以前直接覆盖。
+          final previous = await vault.read(appAccountSlot).then<AppAccountKey?>((saved) => saved, onError: (Object error) => error is FormatException || error is RelayCryptoException ? null : throw error);
+          await vault.write(appAccountSlot, AppAccountKey(identity: key, accountId: accountId, username: name));
+          if (!current()) {
+            await (previous == null ? vault.delete(appAccountSlot) : vault.write(appAccountSlot, previous));
+            throw _dropStale(key);
+          }
+          _joins.remove(join.ticketId);
+          return AppAccountSession(account: AppAccountRef(accountId: accountId, slot: appAccountSlot), username: name);
+        });
       }
     }
     throw _bad('join_state');
+  }
+
+  // 作废了的扫码登录晚到的批准：顺手请中转删掉批准时登记的这台设备（不等，失败只记日志），交出「二维码已过期」。
+  AppAccountException _dropStale(RelayIdentity key) {
+    campusLog('[AppAccount] action=join_state result=stale');
+    unawaited(_relay.signedWith(key, 'DELETE', '/v1/devices', errors: _errors).then<void>((_) {}, onError: (Object error, StackTrace stack) => campusLog('[AppAccount] action=drop_stale_join errorType=${error.runtimeType}\n$stack')));
+    return _joinGone;
   }
 
   // 离开出示页或刷新：先在本机作废（之后回来的批准不再认），再用那把临时密钥请中转作废这张票据（中转只作废还没批准的）；批准过（密钥已存）或没出示过不发。

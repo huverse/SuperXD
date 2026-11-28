@@ -2,12 +2,12 @@ import { createDecipheriv, createHash, createPrivateKey, createPublicKey, diffie
 import { NestExpressApplication } from '@nestjs/platform-express';
 import Redis from 'ioredis';
 import { createConnection, Connection } from 'mysql2/promise';
-import { mkdir, rm, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { PassThrough } from 'node:stream';
 import request from 'supertest';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 
 import { createRelayApp } from 'src/relay_app';
 import { env } from 'src/config/env';
@@ -634,5 +634,153 @@ describe('资格与发放', () => {
     await database.query('UPDATE reward_campaign SET starts_at = ?, ends_at = ? WHERE campaign_key = ?', [new Date(ended.getTime() - hour), ended, key]);
     await app.get(RewardRetentionTask).sweep();
     expect(Number(((await database.query('SELECT COUNT(*) AS count FROM reward_audience WHERE account_id = ?', [second.accountId])) as { count: string }[])[0].count)).toBe(0);
+  });
+});
+
+// 11-28 Codex 复核 F07：每档计数的回滚、并发、迁移回填与执行计划要有对应的证据，不能只靠结构一致。
+describe('每档的库存计数：回滚、并发、迁移与执行计划', () => {
+  const create = async (prizes: number) => {
+    const key = campaignKey();
+    const now = Date.now();
+    await runRewardAdmin(admin, ['create', key, '--from', new Date(now - hour / 2).toISOString(), '--to', new Date(now + 23.5 * hour).toISOString(), '--distribution', 'all', '--min-account-days', '0'], lines(''));
+    if (prizes > 0) await runRewardAdmin(admin, ['import', key], lines(Array.from({ length: prizes }, (_, index) => `口令\t口令${index}`).join('\n')));
+    return key;
+  };
+  const campaignId = async (key: string) => ((await database.query('SELECT id FROM reward_campaign WHERE campaign_key = ?', [key])) as { id: string }[])[0].id;
+  const counters = async (key: string) =>
+    ((await database.query('SELECT s.tier, s.stock, s.given FROM reward_tier_stock s JOIN reward_campaign c ON c.id = s.campaign_id WHERE c.campaign_key = ? ORDER BY s.tier', [key])) as { tier: number; stock: number; given: number }[]).map(
+      (row) => ({ tier: Number(row.tier), stock: Number(row.stock), given: Number(row.given) }),
+    );
+  // 奖品表按档汇总（计数应当等于它）。
+  const actual = async (key: string) =>
+    ((await database.query('SELECT p.tier, COUNT(*) AS stock, COUNT(p.draw_id) AS given FROM reward_prize p JOIN reward_campaign c ON c.id = p.campaign_id WHERE c.campaign_key = ? GROUP BY p.tier ORDER BY p.tier', [key])) as { tier: number; stock: string; given: string }[]).map(
+      (row) => ({ tier: Number(row.tier), stock: Number(row.stock), given: Number(row.given) }),
+    );
+
+  it('导入第一批 1000 份已经写进事务、第 1002 行不对：整个导入回滚，奖品与计数都不变', async () => {
+    const key = await create(2);
+    const valid = Array.from({ length: 1001 }, (_, index) => `口令\t大批${index}`);
+    await expect(runRewardAdmin(admin, ['import', key], lines([...valid, '红包\t不认识'].join('\n')))).rejects.toThrow('第 1002 行');
+    expect(await actual(key)).toEqual([{ tier: 0, stock: 2, given: 0 }]);
+    expect(await counters(key)).toEqual([{ tier: 0, stock: 2, given: 0 }]);
+  });
+
+  it('抽中时最后一步（加已发计数）之后出错：整次抽签回滚，奖品没发出、计数不变、不留抽签记录；再抽照常', async () => {
+    const key = await create(1);
+    const device = await registered();
+    const original = EntityManager.prototype.query;
+    const spy = vi.spyOn(EntityManager.prototype, 'query').mockImplementation(async function (this: EntityManager, ...args: Parameters<EntityManager['query']>) {
+      const result = await original.apply(this, args);
+      if (String(args[0]).startsWith('UPDATE reward_tier_stock SET given')) throw new Error('synthetic failure after given');
+      return result;
+    });
+    try {
+      expect((await draw(device, key, { activeDays: 0 })).status).toBe(500);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await counters(key)).toEqual([{ tier: 0, stock: 1, given: 0 }]);
+    expect(await actual(key)).toEqual([{ tier: 0, stock: 1, given: 0 }]);
+    expect(Number(((await database.query('SELECT COUNT(*) AS count FROM reward_draw WHERE campaign_id = ?', [await campaignId(key)])) as { count: string }[])[0].count)).toBe(0);
+    expect((await draw(device, key, { activeDays: 0 })).body.result).toBe('won');
+    expect(await counters(key)).toEqual([{ tier: 0, stock: 1, given: 1 }]);
+  });
+
+  it('导入与抽签同时进行：发出的不超过库存、一份不发两次，结束后计数与奖品表一致', async () => {
+    const key = await create(3);
+    const devices = await Promise.all(Array.from({ length: 8 }, () => registered()));
+    const importing = runRewardAdmin(admin, ['import', key], lines(Array.from({ length: 1500 }, (_, index) => `口令\t并发${index}`).join('\n')));
+    const drawing = Promise.all(devices.map((device) => draw(device, key, { activeDays: 0 })));
+    const [, responses] = await Promise.all([importing, drawing]);
+    const won = responses.filter((response) => response.body.result === 'won').length;
+    expect(won + responses.filter((response) => response.body.result === 'sold_out').length).toBe(8);
+    expect(await counters(key)).toEqual(await actual(key));
+    expect(await counters(key)).toEqual([{ tier: 0, stock: 1503, given: won }]);
+    const [duplicates] = (await database.query('SELECT COUNT(*) AS count FROM (SELECT draw_id FROM reward_prize WHERE campaign_id = ? AND draw_id IS NOT NULL GROUP BY draw_id HAVING COUNT(*) > 1) d', [await campaignId(key)])) as { count: string }[];
+    expect(Number(duplicates.count)).toBe(0);
+  });
+
+  it('活动过了保留期：计数行与奖品、抽签记录一起删', async () => {
+    const key = await create(2);
+    await draw(await registered(), key, { activeDays: 0 });
+    const id = await campaignId(key);
+    const ended = new Date(Date.now() - (rewardKeepDays + 1) * 86400_000);
+    await database.query('UPDATE reward_campaign SET starts_at = ?, ends_at = ? WHERE id = ?', [new Date(ended.getTime() - hour), ended, id]);
+    await app.get(RewardRetentionTask).sweep();
+    expect(await database.query('SELECT id FROM reward_tier_stock WHERE campaign_id = ?', [id])).toHaveLength(0);
+    expect(await database.query('SELECT id FROM reward_prize WHERE campaign_id = ?', [id])).toHaveLength(0);
+  });
+
+  // 线上的升级顺序（server/README.md「表结构升级台账」与部署一节）：先跑 upgrade_2026_11_28.sql 回填、再换新版；换版期间旧版发出的份数不加计数，换完再跑一次校正。
+  it('迁移回填：按奖品表算出每档计数；旧版在换版期间又发出的，再跑一次就校正；重复执行结果不变', async () => {
+    const statements = (await readFile(join(__dirname, '..', 'sql', 'upgrade_2026_11_28.sql'), 'utf8'))
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('--'))
+      .join('\n')
+      .split(';')
+      .map((statement) => statement.trim())
+      .filter((statement) => statement !== '');
+    expect(statements).toHaveLength(2);
+    const upgrade = async () => {
+      for (const statement of statements) await database.query(statement);
+    };
+    const key = await create(3);
+    await runRewardAdmin(admin, ['import', key, '--tier', '1'], lines('口令\t大额0'));
+    await draw(await registered(), key, { activeDays: 0 });
+    const id = await campaignId(key);
+    const before = await counters(key);
+    // 升级之前的库：还没有这几行计数。
+    await database.query('DELETE FROM reward_tier_stock WHERE campaign_id = ?', [id]);
+    await upgrade();
+    expect(await counters(key)).toEqual(before);
+    expect(await counters(key)).toEqual(await actual(key));
+    // 换版期间旧版发出一份：只改奖品行、不加计数。
+    const [{ prizeId }] = (await database.query('SELECT id AS prizeId FROM reward_prize WHERE campaign_id = ? AND tier = 0 AND draw_id IS NULL LIMIT 1', [id])) as { prizeId: string }[];
+    await database.query('UPDATE reward_prize SET draw_id = 999999999 WHERE id = ?', [prizeId]);
+    expect(await counters(key)).not.toEqual(await actual(key));
+    await upgrade();
+    expect(await counters(key)).toEqual(await actual(key));
+    await upgrade();
+    expect(await counters(key)).toEqual(await actual(key));
+  });
+
+  it('五万份库存时抽中的两条查询都走索引、实际只读一两行（不随库存增长）；还剩多少只读每档一行', async () => {
+    const key = await create(0);
+    const id = await campaignId(key);
+    // 一次插入五万份合成奖品（十个数字自连五次再截取），计数行同步写上。
+    await database.query(
+      `INSERT INTO reward_prize (campaign_id, tier, kind, content, note, create_time, update_time)
+       SELECT ?, 0, 'password', CONCAT('批量', seq.n), '', NOW(3), NOW(3) FROM (
+         SELECT a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 AS n
+         FROM (SELECT 0 n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) a
+         CROSS JOIN (SELECT 0 n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) b
+         CROSS JOIN (SELECT 0 n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) c
+         CROSS JOIN (SELECT 0 n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) d
+         CROSS JOIN (SELECT 0 n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4) e
+       ) seq`,
+      [id],
+    );
+    await database.query('INSERT INTO reward_tier_stock (campaign_id, tier, stock, given, create_time, update_time) VALUES (?, 0, 50000, 0, NOW(3), NOW(3))', [id]);
+    await database.query('ANALYZE TABLE reward_prize, reward_tier_stock');
+    // EXPLAIN ANALYZE 给出每一步实际读的行数（rows=）。
+    const readRows = async (sql: string, params: unknown[]) => {
+      const [row] = (await database.query(`EXPLAIN ANALYZE ${sql}`, params)) as Record<string, string>[];
+      const plan = Object.values(row)[0];
+      const rows = [...plan.matchAll(/actual time=[^)]*rows=(\d+)/g)].map((match) => Number(match[1]));
+      expect(rows.length, plan).toBeGreaterThan(0);
+      if (process.env.SHOW_PLANS !== undefined) await writeFile(process.env.SHOW_PLANS, plan + '\n\n', { flag: 'a' });
+      return { plan, rows };
+    };
+    const tiers = await readRows('SELECT tier, stock, given FROM reward_tier_stock WHERE campaign_id = ?', [id]);
+    expect(tiers.plan).toContain('uk_reward_tier_stock');
+    expect(Math.max(...tiers.rows), tiers.plan).toBeLessThanOrEqual(1);
+    const prize = await readRows('SELECT id, kind, content, note FROM reward_prize WHERE campaign_id = ? AND tier = ? AND draw_id IS NULL ORDER BY id LIMIT 1', [id, 0]);
+    expect(prize.plan).toContain('idx_campaign_tier_draw');
+    expect(Math.max(...prize.rows), prize.plan).toBeLessThanOrEqual(1);
+    const left = await readRows('SELECT COALESCE(SUM(stock - given), 0) AS count FROM reward_tier_stock WHERE campaign_id = ?', [id]);
+    expect(Math.max(...left.rows), left.plan).toBeLessThanOrEqual(1);
+    // 真抽一次：拿到第一份，计数加一。
+    expect((await draw(await registered(), key, { activeDays: 0 })).body.result).toBe('won');
+    expect(await counters(key)).toEqual([{ tier: 0, stock: 50000, given: 1 }]);
   });
 });

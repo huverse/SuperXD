@@ -14,7 +14,7 @@ import 'package:superxd/toolbox/life/zhuli/zhuli_protocol.dart';
 // 请求策略同生活下面的其他子模块（人工决策见 life_http_brake.dart）：不排队、不限并发，回 403、405、429 就停这个域名 30 秒（11-28 起，原来没有这一道）；
 // 日志只记路径与住理的错误码，不记查询串（里面有手机号、密码与签名）、不记回复内容。
 class ZhuliHttp {
-  ZhuliHttp({http.Client? client, this.timeout = const Duration(seconds: 15)}) : _http = CampusHttp('zhuli', client: client);
+  ZhuliHttp({http.Client? client, this.timeout = const Duration(seconds: 15)}) : _http = CampusHttp('zhuli', client: client, keepIdle: lifeKeepIdle);
 
   static const payloadLimit = 1024 * 1024;
 

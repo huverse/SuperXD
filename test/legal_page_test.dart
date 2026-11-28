@@ -49,7 +49,7 @@ void main() {
       ('十、百宝箱：生活', '打开洗浴页和点「关水」时先连上，20 秒没用就断开'),
       ('十、百宝箱：生活', '付款信息开发者拿不到'),
       ('十、百宝箱：生活', '手机号和短信验证码直接发给胖乖生活（userapi.qiekj.com）'),
-      ('十、百宝箱：生活', '找附近门店和下单时读一次手机位置，只发给胖乖'),
+      ('十、百宝箱：生活', '找附近门店和打开设备时读一次手机位置，下单时才发给胖乖'),
       ('十、百宝箱：生活', '水卡的充值档位从胖乖的合作方 apwork.cn 读取'),
       ('十一、更新、开发者的话与匿名回报', '只发构建渠道和处理器架构'),
       ('十一、更新、开发者的话与匿名回报', '不带账号、设备编号和错误内容'),
@@ -74,7 +74,7 @@ void main() {
       ('附录一 第三方 SDK 与服务', '本应用关掉了它的崩溃与日志上报'),
       ('附录一 第三方 SDK 与服务', '胖乖生活（qiekj.com）和它的饮水机合作方 apwork.cn'),
       ('附录二 系统权限', '相机：扫码（加好友、签到二维码、代签码、住理生活和胖乖生活的设备码）'),
-      ('附录二 系统权限', '位置：学习通位置签到、胖乖生活找附近门店和下单，仅使用期间、用到时读一次'),
+      ('附录二 系统权限', '位置：学习通位置签到、胖乖生活找附近门店和打开设备，仅使用期间、用到时读一次'),
       ('附录二 系统权限', '安卓 11 上扫描蓝牙'),
       ('附录二 系统权限', 'Wi-Fi 状态与厂商标识服务'),
       ('附录三 保存期限', '课表：每学期最多 100 个历史版本'),
@@ -201,7 +201,7 @@ void main() {
   test('Alpha版本、并装、默认开发与非debug发布配置一致', () {
     final pubspec = File('pubspec.yaml').readAsStringSync();
     final gradle = File('android/app/build.gradle.kts').readAsStringSync();
-    expect(pubspec, contains('version: 1.0.0-alpha.46+46'));
+    expect(pubspec, contains('version: 1.0.0-alpha.47+47'));
     expect(pubspec, contains('default-flavor: production'));
     expect(gradle, contains('applicationIdSuffix = ".alpha"'));
     expect(gradle, contains('Release signing is required'));

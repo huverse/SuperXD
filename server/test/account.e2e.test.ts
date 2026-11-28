@@ -13,9 +13,16 @@ import { accountDeletedCanonical, decodeBase64url, ed25519Key, verifyEd25519, x2
 import { AccountKeys, accountSealKeyId, accountSealKeyOf, openAccountSeal } from 'src/modules/account/account_keys';
 import { AccountRetentionTask } from 'src/modules/account/account_retention.task';
 import { AccountRepository } from 'src/modules/account/account.repository';
-import { DiagnosticStore } from 'src/modules/diagnostic/diagnostic.store';
+import { AccountDataHooks } from 'src/modules/account/account_data_hooks';
+import { DiagnosticStore, newDiagnosticId } from 'src/modules/diagnostic/diagnostic.store';
 import { claimHash } from 'src/modules/diagnostic/diagnostic.service';
 import { DiagnosticUploadRepository } from 'src/modules/diagnostic/diagnostic_upload.repository';
+import { ChallengeRepository } from 'src/modules/challenge/challenge.repository';
+import { UnlockRepository } from 'src/modules/unlock/unlock.repository';
+import { PassRepository } from 'src/modules/pass/pass.repository';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { env } from 'src/config/env';
 import { IpRegion } from 'src/common/ip_region';
 import { createInviteKeys, helloOf, inviteProof, socialBindBody, TestDevice } from './test_device';
 
@@ -450,6 +457,13 @@ describe('退出、注销与保留', () => {
   });
 });
 
+// 一个屏障：arrive() 处停住并通知 arrived，等 release 才放行。
+const barrier = () => {
+  let release!: () => void, reached!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve)), arrived = new Promise<void>((resolve) => (reached = resolve));
+  return { arrived, release: () => release(), arrive: async () => { reached(); await gate; } };
+};
+
 // 11-28 Codex 审查 F02、F05：照审查的确定性复现写成反过来的断言（只在核对完成处、写入之前设屏障，不替换判定结果）。
 describe('并发：凭据版本与注销门禁', () => {
   // 在 AccountKeys.verify 核对完 match 这份秘密后停住，等 release 才放行。
@@ -511,6 +525,133 @@ describe('并发：凭据版本与注销门禁', () => {
     }
   });
 
+  // 11-28 Codex 复核 F02：改密是「查账号 → 算哈希 → 写入」，原来写入只按账号号，迟到的改密会把重设后的新密码改回去。
+  it('登录着的旧设备改密码算哈希时，账号凭恢复码重设、把它踢下线了：迟到的改密回没有登录应用账号，密码仍是重设后的', async () => {
+    const owner = new TestDevice(server), recovery = new TestDevice(server);
+    const username = name(), code = recoveryCode();
+    expect((await register(owner, username, 'synthetic-pass', code)).status).toBe(200);
+    const pause = barrier();
+    const keysService = app.get(AccountKeys), original = keysService.hash.bind(keysService);
+    const spy = vi.spyOn(keysService, 'hash').mockImplementation(async (secret) => {
+      const hashed = await original(secret);
+      if (secret === 'synthetic-stale-pass') await pause.arrive();
+      return hashed;
+    });
+    try {
+      const pending = owner.call('POST', '/v1/account/password', { sealed: seal({ password: 'synthetic-stale-pass' }, owner.deviceId) }).then((response) => response);
+      await pause.arrived;
+      expect((await recover(recovery, username, code, 'synthetic-recovered', recoveryCode())).status).toBe(200);
+      pause.release();
+      const response = await pending;
+      expect(response.status).toBe(404);
+      expect(response.body.code).toBe('ACCOUNT_NOT_FOUND');
+      expect((await login(new TestDevice(server), username, 'synthetic-stale-pass')).body.code).toBe('CREDENTIALS_INVALID');
+      expect((await login(new TestDevice(server), username, 'synthetic-recovered')).status).toBe(200);
+    } finally {
+      pause.release();
+      spy.mockRestore();
+    }
+  });
+
+  it('批准方占住票据、还没登记新设备时，账号凭恢复码重设把批准方踢下线了：批准回没有登录应用账号，新设备进不了账号', async () => {
+    const owner = new TestDevice(server), recovery = new TestDevice(server), fresh = new TestDevice(server);
+    const username = name(), code = recoveryCode();
+    expect((await register(owner, username, 'synthetic-pass', code)).status).toBe(200);
+    const { ticketId, code: joinCode } = (await fresh.call('POST', '/v1/account/joins', keys(fresh))).body as { ticketId: string; code: string };
+    const pause = barrier();
+    const accounts = app.get(AccountRepository), original = accounts.link.bind(accounts);
+    const spy = vi.spyOn(accounts, 'link').mockImplementation(async (...args) => {
+      if ('approver' in args[3]) await pause.arrive();
+      return original(...args);
+    });
+    try {
+      const pending = owner.call('POST', `/v1/account/joins/${ticketId}/approve`, { code: joinCode }).then((response) => response);
+      await pause.arrived;
+      expect((await recover(recovery, username, code, 'synthetic-recovered', recoveryCode())).status).toBe(200);
+      pause.release();
+      expect((await pending).body.code).toBe('ACCOUNT_NOT_FOUND');
+      expect((await fresh.call('GET', '/v1/account')).status).toBe(404);
+      expect((await recovery.call('GET', '/v1/account')).body.deviceCount).toBe(1);
+    } finally {
+      pause.release();
+      spy.mockRestore();
+    }
+  });
+
+  it('反过来：旧密码的登录先登记上，之后才凭恢复码重设：重设照样把它踢下线，账号下只留重设那台', async () => {
+    const owner = new TestDevice(server), stale = new TestDevice(server), recovery = new TestDevice(server);
+    const username = name(), code = recoveryCode();
+    expect((await register(owner, username, 'synthetic-pass', code)).status).toBe(200);
+    const pause = pauseAfterVerify((secret) => secret === code);
+    try {
+      const recovering = recover(recovery, username, code, 'synthetic-recovered', recoveryCode()).then((response) => response);
+      await pause.arrived;
+      expect((await login(stale, username)).status, '重设核对完、还没写入时登录照常成功').toBe(200);
+      pause.release();
+      expect((await recovering).status).toBe(200);
+      expect((await stale.call('GET', '/v1/account')).status).toBe(404);
+      expect((await recovery.call('GET', '/v1/account')).body.deviceCount).toBe(1);
+    } finally {
+      pause.release();
+      pause.restore();
+    }
+  });
+
+  it('重设的事务中途出错（收回私信那一步失败）：整个回滚，旧密码、旧恢复码与原来的设备照旧，发起的设备没登记上', async () => {
+    const owner = new TestDevice(server), recovery = new TestDevice(server);
+    const username = name(), code = recoveryCode();
+    expect((await register(owner, username, 'synthetic-pass', code)).status).toBe(200);
+    const spy = vi.spyOn(app.get(AccountDataHooks), 'revoke').mockRejectedValueOnce(new Error('synthetic revoke failure'));
+    try {
+      expect((await recover(recovery, username, code, 'synthetic-recovered', recoveryCode())).status).toBe(500);
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await owner.call('GET', '/v1/account')).body.deviceCount).toBe(1);
+    expect((await recovery.call('GET', '/v1/account')).status).toBe(404);
+    expect((await login(new TestDevice(server), username, 'synthetic-recovered')).body.code).toBe('CREDENTIALS_INVALID');
+    expect((await login(new TestDevice(server), username)).status).toBe(200);
+    expect((await recover(new TestDevice(server), username, code, 'synthetic-again', recoveryCode())).status, '旧恢复码还能用').toBe(200);
+  });
+
+  it('两个服务实例（同一个库与 Redis）同时用同一份恢复码：仍只有一次成功', async () => {
+    const second = await createRelayApp();
+    await second.listen(0, '127.0.0.1');
+    try {
+      const otherServer = await second.getUrl();
+      const owner = new TestDevice(server), first = new TestDevice(server), other = new TestDevice(otherServer);
+      const username = name(), code = recoveryCode();
+      expect((await register(owner, username, 'synthetic-pass', code)).status).toBe(200);
+      // 两个实例各自的 AccountKeys：都核对完再一起放行。
+      let release!: () => void, count = 0, reached!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve)), arrived = new Promise<void>((resolve) => (reached = resolve));
+      const spies = [app, second].map((instance) => {
+        const keysService = instance.get(AccountKeys), original = keysService.verify.bind(keysService);
+        return vi.spyOn(keysService, 'verify').mockImplementation(async (secret, stored) => {
+          const valid = await original(secret, stored);
+          if (secret === code) {
+            if (++count === 2) reached();
+            await gate;
+          }
+          return valid;
+        });
+      });
+      try {
+        const pending = Promise.all([recover(first, username, code, 'synthetic-first-pass', recoveryCode()), recover(other, username, code, 'synthetic-other-pass', recoveryCode())]);
+        await arrived;
+        release();
+        expect((await pending).map((response) => response.status).sort()).toEqual([200, 403]);
+        const [{ total }] = (await database.query('SELECT COUNT(*) AS total FROM account_device d JOIN app_account a ON a.account_id = d.account_id WHERE a.username = ?', [username])) as { total: string }[];
+        expect(Number(total)).toBe(1);
+      } finally {
+        release();
+        for (const spy of spies) spy.mockRestore();
+      }
+    } finally {
+      await second.close();
+    }
+  });
+
   it('认领核对完、写入之前账号注销了：认领回没有登录应用账号，库里不留已注销账号的记录', async () => {
     const { device, accountId } = await registered();
     const store = app.get(DiagnosticStore), uploads = app.get(DiagnosticUploadRepository), redis = app.get<Redis>(REDIS);
@@ -540,24 +681,140 @@ describe('并发：凭据版本与注销门禁', () => {
     }
   });
 
-  it('写入门禁按账号行串行：写事务拿着共享锁时注销等它提交后连它写的一起删；注销之后到的写入过不了门禁', async () => {
+  // 注销（或闲置清理）正停在给账号行加排他锁那一句、等别的事务的共享锁：同一个数据库用户看得到自己的连接正在执行什么（不用 PROCESS 权限）。
+  const lockWaiting = async (pattern: string) => {
+    for (let attempt = 0; attempt < 300; attempt++) {
+      const rows = (await database.query('SELECT ID FROM information_schema.PROCESSLIST WHERE INFO LIKE ?', [pattern])) as unknown[];
+      if (rows.length > 0) return true;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    return false;
+  };
+  const accountLockPattern = 'SELECT account_id FROM app_account WHERE account_id IN (%) FOR UPDATE';
+  const settled = <T>(promise: Promise<T>) => {
+    const state = { done: false };
+    void promise.then(() => (state.done = true), () => (state.done = true));
+    return state;
+  };
+
+  it('写入门禁按账号行串行：写事务拿着共享锁时，注销停在锁账号行那一句等它（看得到在等、还没回）；写入提交后注销连它写的一起删；之后的写入过不了门禁', async () => {
     const { device, accountId } = await registered();
     const accounts = app.get(AccountRepository);
-    let release!: () => void, reached!: () => void;
-    const gate = new Promise<void>((resolve) => (release = resolve)), arrived = new Promise<void>((resolve) => (reached = resolve));
+    const pause = barrier();
     const writing = database.transaction(async (manager) => {
       await accounts.hold(manager, accountId);
-      reached();
-      await gate;
+      await pause.arrive();
       await manager.query('INSERT INTO diagnostic_upload (diagnostic_id, account_id, bytes, create_time, update_time) VALUES (?, ?, 1, NOW(), NOW())', ['A0D0T002', accountId]);
     });
-    await arrived;
+    await pause.arrived;
     const deleting = device.call('DELETE', '/v1/account').then((response) => response);
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    release();
+    const state = settled(deleting);
+    expect(await lockWaiting(accountLockPattern), '注销在等账号行的锁').toBe(true);
+    expect(state.done, '写入没提交之前注销回不来').toBe(false);
+    pause.release();
     await writing;
     expect((await deleting).status).toBe(204);
     expect(await database.query('SELECT diagnostic_id FROM diagnostic_upload WHERE account_id = ?', [accountId])).toHaveLength(0);
     await expect(database.transaction((manager) => accounts.hold(manager, accountId))).rejects.toMatchObject({ code: 'ACCOUNT_NOT_FOUND' });
+  });
+
+  it('400 天不活跃的清理同样按账号行等在途写入：写入提交后连它写的一起删', async () => {
+    const { device, accountId } = await registered();
+    await database.query('UPDATE app_account SET last_seen_time = ? WHERE account_id = ?', [new Date(Date.now() - 401 * 86400_000), accountId]);
+    const accounts = app.get(AccountRepository);
+    const pause = barrier();
+    const writing = database.transaction(async (manager) => {
+      await accounts.hold(manager, accountId);
+      await pause.arrive();
+      await manager.query('INSERT INTO diagnostic_upload (diagnostic_id, account_id, bytes, create_time, update_time) VALUES (?, ?, 1, NOW(), NOW())', ['A0D0T003', accountId]);
+    });
+    await pause.arrived;
+    const sweeping = app.get(AccountRetentionTask).sweep();
+    const state = settled(sweeping);
+    expect(await lockWaiting(accountLockPattern)).toBe(true);
+    expect(state.done).toBe(false);
+    pause.release();
+    await writing;
+    await sweeping;
+    expect((await device.call('GET', '/v1/account')).status).toBe(404);
+    expect(await database.query('SELECT diagnostic_id FROM diagnostic_upload WHERE account_id = ?', [accountId])).toHaveLength(0);
+  });
+
+  it('注销提交之后才到的写入：挑战开局、解锁购买与抽中、时长券、诊断包认领一律过不了门禁，整个事务回滚、什么也不留', async () => {
+    const { device, accountId } = await registered();
+    expect((await device.call('DELETE', '/v1/account')).status).toBe(204);
+    const hold = app.get(AccountRepository).hold, now = new Date();
+    const charged: string[] = [];
+    const attempts: [string, () => Promise<unknown>][] = [
+      ['challenge', () => app.get(ChallengeRepository).insertRun({ runId: 'synthetic-run-0001', accountId, challengeId: 'synthetic', active: true, deadline: now, plan: '{}', progress: '{}', ending: null, points: null, awarded: null, endTime: null }, now, hold, async () => void charged.push('challenge'))],
+      ['unlock buy', () => app.get(UnlockRepository).buy(accountId, 'game.synthetic', 10, now, hold, async () => void charged.push('unlock'))],
+      ['unlock drawn', () => app.get(UnlockRepository).insertDrawn(accountId, ['game.synthetic'], now, hold)],
+      ['pass', () => app.get(PassRepository).extend(accountId, 'toolbox.synthetic', 10, 1, now, hold, async () => void charged.push('pass'))],
+      ['diagnostic', () => app.get(DiagnosticUploadRepository).claim('A0D0T004', accountId, 1, now, hold)],
+    ];
+    for (const [label, attempt] of attempts) await expect(attempt(), label).rejects.toMatchObject({ code: 'ACCOUNT_NOT_FOUND' });
+    expect(charged, '门禁先于扣积分').toEqual([]);
+    for (const table of ['challenge_run', 'account_unlock', 'account_pass', 'diagnostic_upload', 'points_entry']) {
+      expect(await database.query(`SELECT id FROM ${table} WHERE account_id = ?`, [accountId]), table).toHaveLength(0);
+    }
+  });
+
+  it('挂私信的请求核对完账号、写入之前账号注销了：回没有登录应用账号，不留挂接、不登记那台私信设备', async () => {
+    const { device } = await registered();
+    const social = new TestDevice(server);
+    const accounts = app.get(AccountRepository), original = accounts.accountOf.bind(accounts);
+    const pause = barrier();
+    let calls = 0;
+    const spy = vi.spyOn(accounts, 'accountOf').mockImplementation(async (deviceId) => {
+      const result = await original(deviceId);
+      // 第一次是按发请求的账号密钥认账号，之后停住。
+      if (++calls === 1) await pause.arrive();
+      return result;
+    });
+    try {
+      const pending = device.call('POST', '/v1/account/social', socialBindBody(social, device.deviceId)).then((response) => response);
+      await pause.arrived;
+      spy.mockImplementation(original);
+      expect((await device.call('DELETE', '/v1/account')).status).toBe(204);
+      pause.release();
+      expect((await pending).body.code).toBe('ACCOUNT_NOT_FOUND');
+      expect(await database.query('SELECT id FROM account_social WHERE device_id = ?', [social.deviceId])).toHaveLength(0);
+      expect(await database.query('SELECT device_id FROM device WHERE device_id = ?', [social.deviceId])).toHaveLength(0);
+    } finally {
+      pause.release();
+      spy.mockRestore();
+    }
+  });
+
+  it('注销的事务回滚时诊断包文件还在、认领记录也在；提交之后才删文件', async () => {
+    const { device, accountId } = await registered();
+    const store = app.get(DiagnosticStore), redis = app.get<Redis>(REDIS);
+    // 每次一个新编号（中途失败留下的记录不挡下一次）。
+    const id = newDiagnosticId(), token = 'AAAAAAAAAAAAAAAAAAAAAA';
+    await store.save(id, Readable.from([Buffer.alloc(100)]), (await store.reserve(100))!);
+    await redis.set(RedisKeys.diagnosticClaim(id), claimHash(token), 'EX', 60);
+    try {
+      expect((await device.call('POST', `/v1/account/diagnostics/${id}/claim`, { claim: token })).status).toBe(200);
+      const file = join(env().diagnosticsDir, id);
+      const hooks = app.get(AccountDataHooks), original = hooks.run.bind(hooks);
+      // 各模块的删除都做完了（诊断包那一步已删记录），事务提交前出错。
+      const spy = vi.spyOn(hooks, 'run').mockImplementationOnce(async (...args) => {
+        await original(...args);
+        throw new Error('synthetic failure after hooks');
+      });
+      try {
+        expect((await device.call('DELETE', '/v1/account')).status).toBe(500);
+      } finally {
+        spy.mockRestore();
+      }
+      expect(existsSync(file), '回滚后文件还在').toBe(true);
+      expect(await database.query('SELECT diagnostic_id FROM diagnostic_upload WHERE account_id = ?', [accountId])).toHaveLength(1);
+      expect((await device.call('DELETE', '/v1/account')).status).toBe(204);
+      expect(existsSync(file), '提交后删了文件').toBe(false);
+      expect(await database.query('SELECT diagnostic_id FROM diagnostic_upload WHERE account_id = ?', [accountId])).toHaveLength(0);
+    } finally {
+      await store.remove([id]);
+      await app.get(DiagnosticUploadRepository).forget([id]);
+    }
   });
 });

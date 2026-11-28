@@ -6,7 +6,7 @@ import { EntityManager, Repository } from 'typeorm';
 import { RelayCode, RelayError } from 'src/common/relay_error';
 import { accountDeviceLimit, deviceRemovalChunk } from 'src/common/relay_limits';
 import { AppAccountEntity } from 'src/modules/account/account.entity';
-import { AccountDataHooks } from 'src/modules/account/account_data_hooks';
+import { AccountDataHooks, AfterCommit } from 'src/modules/account/account_data_hooks';
 
 export type AccountSummary = { accountId: string; username: string; deviceCount: number; createTime: Date };
 export type AccountCredentials = { accountId: string; passwordHash: string; recoveryHash: string };
@@ -15,6 +15,8 @@ export type AccountCredentials = { accountId: string; passwordHash: string; reco
 export type LinkGuard = { passwordHash: string } | { approver: string };
 // 账号写入门禁（见 holdIn）：过不了抛「没有登录应用账号」。
 export type AccountHold = (manager: EntityManager, accountId: string) => Promise<void>;
+// 一批账号的写入门禁（见 holdAllIn）：返回还在的那些账号号。
+export type AccountHoldAll = (manager: EntityManager, accountIds: string[]) => Promise<Set<string>>;
 
 // 账号存储端口：服务只依赖这个抽象。用户名一律是规范写法（小写），唯一。
 export abstract class AccountRepository {
@@ -22,8 +24,9 @@ export abstract class AccountRepository {
   abstract register(username: string, passwordHash: string, recoveryHash: string, deviceId: string, now: Date): Promise<string | null>;
   // 这个用户名的账号号与两个哈希（登录、用恢复码重设时核对）；没有返回 null。
   abstract credentialsOf(username: string): Promise<AccountCredentials | null>;
-  // 登录着的设备改密码或恢复码的哈希（不给的不改）；账号不在了返回 false。
-  abstract updateSecrets(accountId: string, secrets: { passwordHash?: string; recoveryHash?: string }, now: Date): Promise<boolean>;
+  // 登录着的设备改密码或恢复码的哈希（不给的不改）：锁住账号行后核对发起的这把密钥还登记在账号下才改（11-28 复核 F02：改密在算哈希时，
+  // 账号凭恢复码重设、把这台踢下线了，迟到的改密不能把重设后的新密码改回去）；账号不在了或这把密钥已不在账号下返回 false。
+  abstract updateSecrets(accountId: string, deviceId: string, secrets: { passwordHash?: string; recoveryHash?: string }, now: Date): Promise<boolean>;
   // 把一把设备密钥登记到已有账号下（登录、扫码登录；原来属于别的账号就改过来，超过上限删最久没用的），顺带记最后活跃。账号不在了或 guard 不成立返回 false。
   abstract link(accountId: string, deviceId: string, now: Date, guard: LinkGuard): Promise<boolean>;
   // 凭恢复码重设，一个事务做完（11-28 审查 F02）：锁住账号行，恢复码哈希还是核对过的那份（verifiedRecoveryHash）才换上新密码与新恢复码、
@@ -37,6 +40,10 @@ export abstract class AccountRepository {
   readonly hold: AccountHold = async (manager, accountId) => {
     if (!(await this.holdIn(manager, accountId))) throw new RelayError(RelayCode.accountNotFound, HttpStatus.NOT_FOUND, '没有登录应用账号');
   };
+  // 定时任务一次写一批账号（解锁下架退积分、积分到期，11-28 复核 F05）：按账号号顺序给这些账号行加共享锁，返回还在的；同 holdIn 必须先于别的加锁语句。
+  // 调用方只给还在的账号写，已注销的跳过。一批最多 cleanupBatch 个账号，按主键锁。
+  abstract holdAllIn(manager: EntityManager, accountIds: string[]): Promise<Set<string>>;
+  readonly holdAll: AccountHoldAll = (manager, accountIds) => this.holdAllIn(manager, accountIds);
   // 这把密钥所在账号的建立时刻；没登录返回 null。
   abstract createdOf(deviceId: string): Promise<Date | null>;
   // 这把密钥所在的账号，顺带记最后活跃；没登录返回 null。
@@ -85,9 +92,14 @@ export class TypeormAccountRepository extends AccountRepository {
     return rows[0] ?? null;
   }
 
-  async updateSecrets(accountId: string, secrets: { passwordHash?: string; recoveryHash?: string }, now: Date) {
-    const updated = await this.accounts.update({ accountId }, { ...secrets, updateTime: now });
-    return updated.affected === 1;
+  updateSecrets(accountId: string, deviceId: string, secrets: { passwordHash?: string; recoveryHash?: string }, now: Date) {
+    return this.accounts.manager.transaction(async (manager) => {
+      // 同 recover、link 锁同一行，三者先后串行；登记按 uk_device 查。
+      if (((await manager.query('SELECT account_id FROM app_account WHERE account_id = ? FOR UPDATE', [accountId])) as unknown[]).length === 0) return false;
+      if (((await manager.query('SELECT id FROM account_device WHERE device_id = ? AND account_id = ?', [deviceId, accountId])) as unknown[]).length === 0) return false;
+      await manager.update(AppAccountEntity, { accountId }, { ...secrets, updateTime: now });
+      return true;
+    });
   }
 
   link(accountId: string, deviceId: string, now: Date, guard: LinkGuard) {
@@ -123,6 +135,12 @@ export class TypeormAccountRepository extends AccountRepository {
     return ((await manager.query('SELECT account_id FROM app_account WHERE account_id = ? FOR SHARE', [accountId])) as unknown[]).length === 1;
   }
 
+  async holdAllIn(manager: EntityManager, accountIds: string[]) {
+    if (accountIds.length === 0) return new Set<string>();
+    const rows = (await manager.query('SELECT account_id AS accountId FROM app_account WHERE account_id IN (?) ORDER BY account_id FOR SHARE', [[...new Set(accountIds)]])) as { accountId: string }[];
+    return new Set(rows.map((row) => row.accountId));
+  }
+
   async createdOf(deviceId: string) {
     const rows = (await this.accounts.query('SELECT a.create_time AS createTime FROM account_device d JOIN app_account a ON a.account_id = d.account_id WHERE d.device_id = ? LIMIT 1', [deviceId])) as { createTime: Date }[];
     return rows[0]?.createTime ?? null;
@@ -156,11 +174,11 @@ export class TypeormAccountRepository extends AccountRepository {
     return linked[0]?.accountId ?? null;
   }
 
-  deleteOf(deviceId: string) {
-    return this.accounts.manager.transaction(async (manager) => {
+  async deleteOf(deviceId: string) {
+    const after = await this.accounts.manager.transaction(async (manager) => {
       const linked = (await manager.query('SELECT account_id AS accountId FROM account_device WHERE device_id = ?', [deviceId])) as { accountId: string }[];
       const accountId = linked[0]?.accountId;
-      if (accountId === undefined) return false;
+      if (accountId === undefined) return null;
       // 先锁账号行（写入门禁的另一头，见 holdIn）：在途的写入先提交，之后的写入等这里提交后看不到账号。
       await this.lockAccounts(manager, [accountId]);
       // 墓碑：这个账号的每把密钥一行（最多 accountDeviceLimit 行），之后再来的回 ACCOUNT_DELETED。
@@ -169,9 +187,11 @@ export class TypeormAccountRepository extends AccountRepository {
         'INSERT INTO account_tombstone (device_id, create_time, update_time) SELECT device_id, ?, ? FROM account_device WHERE account_id = ? ON DUPLICATE KEY UPDATE create_time = VALUES(create_time), update_time = VALUES(update_time)',
         [now, now, accountId],
       );
-      await this.removeAccounts(manager, [accountId]);
-      return true;
+      return this.removeAccounts(manager, [accountId]);
     });
+    if (after === null) return false;
+    await this.afterCommit(after);
+    return true;
   }
 
   async deletedOf(deviceId: string) {
@@ -197,17 +217,30 @@ export class TypeormAccountRepository extends AccountRepository {
     // 账号下的私信设备连带它的好友关系与信箱一起删（每台约 2000 行，见 AccountDataHooks），同不活跃设备按 deviceRemovalChunk 个一个事务，单个事务行数有界。
     for (let start = 0; start < idle.length; start += deviceRemovalChunk) {
       const chunk = idle.slice(start, start + deviceRemovalChunk).map((row) => row.accountId);
-      await this.accounts.manager.transaction((manager) => this.removeAccounts(manager, chunk));
+      await this.afterCommit(await this.accounts.manager.transaction((manager) => this.removeAccounts(manager, chunk)));
     }
     return idle.length;
   }
 
   // 账号下的积分、挑战、解锁、诊断包认领与私信设备由登记的删除函数在同一事务里删（AccountDataHooks）；400 天没活跃的账号，积分流水早已满 13 个月删掉，剩下的行有界。
+  // 返回各模块交回的提交后收尾（删文件）。
   private async removeAccounts(manager: EntityManager, accountIds: string[]) {
     await this.lockAccounts(manager, accountIds);
-    await this.hooks.run(manager, accountIds);
+    const after = await this.hooks.run(manager, accountIds);
     await manager.query('DELETE FROM account_device WHERE account_id IN (?)', [accountIds]);
     await manager.query('DELETE FROM app_account WHERE account_id IN (?)', [accountIds]);
+    return after;
+  }
+
+  // 删账号的事务提交后才做的收尾：账号已经删了，收尾失败（删文件出错）只记堆栈、不报失败，留下的文件由各模块自己的保留期清掉。
+  private async afterCommit(after: AfterCommit[]) {
+    for (const done of after) {
+      try {
+        await done();
+      } catch (error) {
+        console.error(error);
+      }
+    }
   }
 
   // 删账号之前给账号行加排他锁（写入门禁见 holdIn），按主键、行数有界。

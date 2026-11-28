@@ -1,4 +1,5 @@
 import 'package:superxd/domain/app_account.dart';
+import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/relay/app_account_vault.dart';
 import 'package:superxd/relay/relay_client.dart';
 import 'package:superxd/relay/relay_crypto.dart';
@@ -45,12 +46,23 @@ class AccountRelay {
   // 本机时钟与服务器的差（毫秒）。
   int get clockOffset => _relay.clockOffset;
 
+  // 11-28 复核 F01：回复回来时，这个账号在本机的密钥已经不是发请求的那把（请求在路上时换了账号、退出了、同一账号重新登录换了新密钥），
+  // 这条回复属于已经结束的那次登录：不交给调用方（签名请求算没登录、send 与 exchange 返回空），免得旧登录的结果写进新登录的状态。
+  // 请求本身已经发出、中转那边已经做了，按密钥的设备号比（一次登录一把）；出错的回复照常抛（「账号已注销」这类要按原账号处理）。
+  Future<bool> _current(AppAccountRef account, RelayIdentity identity, String method) async {
+    if ((await vault.keyOf(account))?.identity.deviceId == identity.deviceId) return true;
+    campusLog('[AccountRelay] action=drop_stale_reply method=$method');
+    return false;
+  }
+
   // 用这个应用账号在本机的设备密钥（安全存储里 account.slot 指的那把，账号号也要对得上，见 keyOf）签名发一个请求；没有这把密钥抛 errors.missingKey、不发请求，
-  // 中转的错误码按 errors 换成本模块的异常。limit 为空用传输的默认响应上限。
+  // 回来时密钥已经换了同样抛（见 _current）；中转的错误码按 errors 换成本模块的异常。limit 为空用传输的默认响应上限。
   Future<SignedReply> signedCall(AppAccountRef account, String method, String path, {Map<String, Object?>? payload, int? limit, required RelayErrors errors}) async {
     final saved = await vault.keyOf(account);
     if (saved == null) throw errors.missingKey ?? errors.signedOut;
-    return (body: await signedWith(saved.identity, method, path, payload: payload, limit: limit, errors: errors), identity: saved.identity);
+    final body = await signedWith(saved.identity, method, path, payload: payload, limit: limit, errors: errors);
+    if (!await _current(account, saved.identity, method)) throw errors.missingKey ?? errors.signedOut;
+    return (body: body, identity: saved.identity);
   }
 
   // 用给定的密钥签名（应用账号注册、登录与扫码出示时新生成的那把，或登录着的那把），中转的错误码按 errors 换成本模块的异常。
@@ -66,13 +78,15 @@ class AccountRelay {
   Future<SignedReply?> send(AppAccountRef account, String method, String path, {Map<String, Object?>? payload, int? limit}) async {
     final saved = await vault.keyOf(account);
     if (saved == null) return null;
-    return (body: await _relay.request(saved.identity, method, path, payload: payload, limit: limit), identity: saved.identity);
+    final body = await _relay.request(saved.identity, method, path, payload: payload, limit: limit);
+    return await _current(account, saved.identity, method) ? (body: body, identity: saved.identity) : null;
   }
 
   // 同 send，另可加请求头、拿整条回复（304 算成功）：给条件请求（灰度点名带上次的版本号）。
   Future<RelayResponse?> exchange(AppAccountRef account, String method, String path, {Map<String, String> headers = const {}, int? limit}) async {
     final saved = await vault.keyOf(account);
     if (saved == null) return null;
-    return _relay.exchange(saved.identity, method, path, limit: limit, headers: headers);
+    final response = await _relay.exchange(saved.identity, method, path, limit: limit, headers: headers);
+    return await _current(account, saved.identity, method) ? response : null;
   }
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -67,6 +68,12 @@ class _FakePangguai {
   final dropped = <String>{};
   // 失效的凭据（回业务码 2）。
   final expired = <String>{};
+  // 给了就把试算的回复压到它完成（造「试算还在路上」）。
+  Completer<void>? holdPreview;
+  // 给了且返回真，这一次试算断掉（只断一次）。
+  bool Function()? failPreviewOnce;
+  // 给了就把设备详情的回复压到它完成。
+  Completer<void>? holdDetails;
   var tokenCounter = 0;
   var orderCounter = 0;
   final orders = <String, Map<String, Object?>>{};
@@ -127,6 +134,12 @@ class _FakePangguai {
     final fields = _fields(request);
     requests.add(_Request(request.url.host, request.url.path, request.headers, fields));
     final path = request.url.path;
+    if (path == '/trade/preview/v4' && holdPreview != null) await holdPreview!.future;
+    if (path == '/goods/normal/details' && holdDetails != null) await holdDetails!.future;
+    if (path == '/trade/preview/v4' && (failPreviewOnce?.call() ?? false)) {
+      failPreviewOnce = null;
+      throw http.ClientException('dropped');
+    }
     if (dropped.contains(path)) throw http.ClientException('dropped');
     if (blocked.contains(path)) return http.Response('<html>blocked</html>', 405);
     if (request.url.host == 'apwork.cn') {
@@ -252,9 +265,12 @@ class _FakeLocator implements PangguaiLocator {
   PangguaiLocationProblem? problem;
   final asked = <bool>[];
   final opened = <PangguaiLocationProblem>[];
+  // 给了就等它完成才回（造「定位还在取」）。
+  Completer<void>? hold;
   @override
   Future<PangguaiPosition> current({required bool ask}) async {
     asked.add(ask);
+    if (hold case final hold?) await hold.future;
     if (problem case final problem?) throw PangguaiLocationException(problem);
     return (latitude: 36.123456, longitude: 117.654321);
   }
@@ -480,6 +496,47 @@ void main() {
       expect(kit.fake.paths().where((path) => path == '/trade/create'), hasLength(1));
     });
 
+    test('下单带上页面试算过的 items：试算与详情、档位一起发，对得上只试算一次；详情变了（items 不一样）按新的再试算、下单用新的；先发的那次出错但用不上时不逃出来', () async {
+      final kit = _Kit();
+      await kit.signIn();
+      final (:device, :skus) = await kit.service.inspect(_phone, _dryer);
+      final sku = skus.firstWhere((each) => each.id == '2101');
+      final quoted = pangguaiItems(device, sku, 3);
+      kit.fake.requests.clear();
+      await kit.service.place(_phone, goodsId: _dryer, skuId: '2101', minutes: 3, expected: 66, quotedItems: quoted);
+      expect(kit.fake.paths().take(3).toSet(), {'/goods/normal/details', '/goods/normal/skus', '/trade/preview/v4'});
+      expect(kit.fake.paths().skip(3), ['/trade/create']);
+      expect(kit.fake.requests.last.fields['items'], quoted);
+
+      // 页面那份和按刚取的详情算出的不一样（这里直接改一个数造出来）：先发的不算数，按新的再试算一次。
+      final stale = quoted.replaceFirst('"num":"3"', '"num":"9"');
+      expect(stale, isNot(quoted));
+      kit.fake.requests.clear();
+      await kit.service.place(_phone, goodsId: _dryer, skuId: '2101', minutes: 3, expected: 66, quotedItems: stale);
+      final previews = kit.fake.requests.where((request) => request.path == '/trade/preview/v4').toList();
+      expect(previews.map((request) => request.fields['items']), [stale, quoted]);
+      expect(kit.fake.requests.last.path, '/trade/create');
+      expect(kit.fake.requests.last.fields['items'], quoted);
+
+      // 先发的试算断了，但 items 变了用不上它：照常按新的试算、下单，没有没人处理的错误。
+      kit.fake.requests.clear();
+      var calls = 0;
+      kit.fake.failPreviewOnce = () => ++calls == 1;
+      await kit.service.place(_phone, goodsId: _dryer, skuId: '2101', minutes: 3, expected: 66, quotedItems: stale);
+      expect(kit.fake.requests.last.path, '/trade/create');
+    });
+
+    test('下单带上页面试算过的 items 且对得上，但这次试算断了：照常报连不上，不下单', () async {
+      final kit = _Kit();
+      await kit.signIn();
+      final (:device, :skus) = await kit.service.inspect(_phone, _dryer);
+      final quoted = pangguaiItems(device, skus.firstWhere((each) => each.id == '2101'), 3);
+      kit.fake.requests.clear();
+      kit.fake.failPreviewOnce = () => true;
+      await expectLater(kit.service.place(_phone, goodsId: _dryer, skuId: '2101', minutes: 3, expected: 66, quotedItems: quoted), throwsA(isA<PangguaiException>()));
+      expect(kit.fake.paths(), isNot(contains('/trade/create')));
+    });
+
     test('付款前重查订单与金额、只走支付宝渠道；首页的进行中只列使用中与 10 分钟内没付的', () async {
       final kit = _Kit();
       await kit.signIn();
@@ -580,20 +637,29 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('洗衣机：选程序后按钮写服务端的实付（连点几个程序只算最后一个），下单换成订单页并开始付，付好是使用中、写预计几点结束', (tester) async {
+    testWidgets('洗衣机：选程序马上试算，按钮写服务端的实付；算着时又连点了几下，回来只按最后选的再算一次；下单换成订单页并开始付，付好是使用中、写预计几点结束', (tester) async {
       await tester.runAsync(kit.signIn);
       kit.alipay.onPay = () => kit.fake.pay(kit.fake.orders.keys.single);
       await show(tester, PangguaiDevicePage(service: kit.service, phone: _phone, goodsId: _washer));
       expect(find.text('合成楼-201'), findsOneWidget);
       expect(find.text('选好再下单'), findsOneWidget);
       final before = kit.fake.requests.length;
-      for (final program in ['标准洗', '桶自洁', '标准洗', '桶自洁']) {
+      final held = kit.fake.holdPreview = Completer<void>();
+      await tester.tap(find.text('标准洗'));
+      await tester.pump();
+      expect(kit.fake.requests.skip(before).map((request) => request.path), ['/trade/preview/v4'], reason: '选了马上算，不等');
+      for (final program in ['桶自洁', '标准洗', '桶自洁']) {
         await tester.tap(find.text(program));
-        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump();
       }
       expect(find.text('正在算价'), findsOneWidget);
+      expect(kit.fake.requests.skip(before).where((request) => request.path == '/trade/preview/v4'), hasLength(1), reason: '算着时不叠请求');
+      kit.fake.holdPreview = null;
+      held.complete();
       await _settle(tester);
-      expect(kit.fake.requests.skip(before).map((request) => request.path), ['/trade/preview/v4'], reason: '停下来之前改的不发试算');
+      final previews = kit.fake.requests.skip(before).where((request) => request.path == '/trade/preview/v4').toList();
+      expect(previews, hasLength(2));
+      expect(previews.last.fields['items'], contains('1102'), reason: '第二次按最后选的桶自洁算');
       expect(find.text('下单并付款 ¥1.00'), findsOneWidget);
       await tester.tap(find.text('下单并付款 ¥1.00'));
       await _settle(tester);
@@ -601,6 +667,53 @@ void main() {
       expect(kit.alipay.paid, hasLength(1));
       expect(find.text('使用中'), findsOneWidget);
       expect(find.byWidgetPredicate((widget) => widget is DotSeparatedText && widget.text.startsWith('预计 21:44 结束 · ')), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    // 11-28 夜再提速：试算与重取详情、档位一起发（少等一个来回），下单仍等三个都核对过。
+    testWidgets('点下单时试算与重取详情、档位同时在路上（详情还没回来试算已经发出）；详情没回来不下单，回来对得上才下单、只试算一次', (tester) async {
+      await tester.runAsync(kit.signIn);
+      kit.alipay.onPay = () => kit.fake.pay(kit.fake.orders.keys.single);
+      await show(tester, PangguaiDevicePage(service: kit.service, phone: _phone, goodsId: _washer));
+      await tester.tap(find.text('桶自洁'));
+      await _settle(tester);
+      final before = kit.fake.requests.length;
+      final held = kit.fake.holdDetails = Completer<void>();
+      await tester.tap(find.text('下单并付款 ¥1.00'));
+      await _settle(tester);
+      final inFlight = kit.fake.requests.skip(before).map((request) => request.path).toList();
+      expect(inFlight.toSet(), {'/goods/normal/details', '/goods/normal/skus', '/trade/preview/v4'}, reason: '详情还压着时三个都已发出');
+      expect(inFlight, isNot(contains('/trade/create')), reason: '详情没回来不下单');
+      kit.fake.holdDetails = null;
+      held.complete();
+      await _settle(tester);
+      await _settle(tester);
+      final sent = kit.fake.requests.skip(before).map((request) => request.path).toList();
+      expect(sent.where((path) => path == '/trade/preview/v4'), hasLength(1));
+      expect(sent.indexOf('/trade/create'), greaterThan(sent.indexOf('/trade/preview/v4')));
+      expect(find.text('使用中'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    // 用户 11-28 晚选定（人工决策见 PangguaiService.warmLocation）：诊断包 NNK5V9VD 里点下单后现取定位用了 1.9 秒。
+    testWidgets('打开设备页就以不弹授权的方式先读一次位置；还没回来时点下单，等的是同一次、不另起一次', (tester) async {
+      await tester.runAsync(kit.signIn);
+      kit.alipay.onPay = () => kit.fake.pay(kit.fake.orders.keys.single);
+      final locating = kit.locator.hold = Completer<void>();
+      await show(tester, PangguaiDevicePage(service: kit.service, phone: _phone, goodsId: _washer));
+      expect(kit.locator.asked, [false]);
+      await tester.tap(find.text('桶自洁'));
+      await _settle(tester);
+      await tester.tap(find.text('下单并付款 ¥1.00'));
+      await _settle(tester);
+      expect(kit.fake.paths().where((path) => path == '/trade/create'), isEmpty, reason: '位置还没到不下单');
+      kit.locator.hold = null;
+      locating.complete();
+      await _settle(tester);
+      await _settle(tester);
+      expect(kit.locator.asked, [false], reason: '下单等的是打开页面时那一次');
+      expect(kit.fake.paths().where((path) => path == '/trade/create'), hasLength(1));
+      expect(find.text('使用中'), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
     });
 
@@ -623,8 +736,8 @@ void main() {
       await _settle(tester);
       expect(find.text('使用中'), findsOneWidget);
       final paths = kit.fake.requests.skip(before).map((request) => request.path).toList();
-      expect(paths.take(2).toSet(), {'/goods/normal/details', '/goods/normal/skus'}, reason: '详情与档位一起取');
-      expect(paths.sublist(2, paths.indexOf('/pay/unify/prePay') + 1), ['/trade/preview/v4', '/trade/create', '/order/detail', '/payChannelRoute/againPay', '/pay/unify/prePay'], reason: '订单页刚读到的订单直接拿去付，中间不插首页刷新');
+      expect(paths.take(3).toSet(), {'/goods/normal/details', '/goods/normal/skus', '/trade/preview/v4'}, reason: '详情、档位与试算一起发');
+      expect(paths.sublist(3, paths.indexOf('/pay/unify/prePay') + 1), ['/trade/create', '/order/detail', '/payChannelRoute/againPay', '/pay/unify/prePay'], reason: '订单页刚读到的订单直接拿去付，中间不插首页刷新');
       await tester.tap(find.byTooltip('返回').last);
       await _settle(tester);
       expect(kit.fake.requests.last.path, '/order/list', reason: '订单页关掉时刷新首页');

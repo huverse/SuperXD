@@ -1,4 +1,5 @@
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { Logger } from '@nestjs/common';
 import Redis from 'ioredis';
 import { createServer, Server } from 'node:http';
 import { AddressInfo } from 'node:net';
@@ -13,6 +14,7 @@ import { REDIS } from 'src/common/redis/redis.module';
 import { cinemaCatalogEntryLimit, cinemaCatalogSearchPerHour } from 'src/common/relay_limits';
 import { CinemaCatalogRepository } from 'src/modules/cinema_catalog/cinema_catalog.repository';
 import { CinemaCatalogService } from 'src/modules/cinema_catalog/cinema_catalog.service';
+import { CinemaCatalogTask } from 'src/modules/cinema_catalog/cinema_catalog.task';
 import { catalogPageUrl, cinemaFold, decodeCatalogRules, parseCatalogPage, readPath } from 'src/modules/cinema_catalog/cinema_catalog_source';
 
 // 电影院片名目录型源的服务端索引（人工决策见 src/modules/cinema_catalog/cinema_catalog.service.ts）：
@@ -165,6 +167,113 @@ describe('片名目录', () => {
     } finally {
       counting.mockRestore();
     }
+  });
+
+  // 11-28 Codex 复核 F09：剩一点名额、同一批里重复的编号、500 个一组查已有的分组边界、日志、并发抓取与扩容后补回。
+  it('只剩一个名额：已有的照常改名，新编号按出现的先后只进第一个，其余丢掉并记日志写明丢了几个', async () => {
+    const service = app.get(CinemaCatalogService);
+    await service.sync(new Date('2026-11-20T08:00:00Z'));
+    const repository = app.get(CinemaCatalogRepository);
+    const counting = vi.spyOn(repository, 'count').mockResolvedValue(cinemaCatalogEntryLimit - 1);
+    const warned = vi.spyOn(Logger.prototype, 'warn');
+    try {
+      pages = [[{ vod_id: 201, vod_name: '新片甲' }, { vod_id: 101, vod_name: '庆余年 第二季 改名' }, { vod_id: 202, vod_name: '新片乙' }, { vod_id: 203, vod_name: '新片丙' }]];
+      await service.sync(new Date('2026-11-20T10:00:00Z'));
+      expect((await search('庆余年第二季改名')).body.ids).toEqual(['101']);
+      expect((await search('新片甲')).body.ids).toEqual(['201']);
+      expect((await search('新片乙')).body.ids).toEqual([]);
+      expect((await search('新片丙')).body.ids).toEqual([]);
+      expect(warned.mock.calls.map((call) => String(call[0])).filter((message) => message.includes('action=full'))).toEqual([expect.stringContaining('rule=wsy dropped=2')]);
+    } finally {
+      counting.mockRestore();
+      warned.mockRestore();
+    }
+  });
+
+  it('同一批里同一个编号出现两次：只算一条（取后一个名字），不重复占名额、不记丢弃', async () => {
+    const service = app.get(CinemaCatalogService);
+    await service.sync(new Date('2026-11-20T08:00:00Z'));
+    const counting = vi.spyOn(app.get(CinemaCatalogRepository), 'count').mockResolvedValue(cinemaCatalogEntryLimit - 1);
+    const warned = vi.spyOn(Logger.prototype, 'warn');
+    try {
+      // 同一页里出现两次（同一批写库）。
+      pages = [[{ vod_id: 301, vod_name: '重复片 旧名' }, { vod_id: 301, vod_name: '重复片 新名' }]];
+      await service.sync(new Date('2026-11-20T10:00:00Z'));
+      expect((await search('重复片新名')).body.ids).toEqual(['301']);
+      expect((await search('重复片旧名')).body.ids).toEqual([]);
+      expect(warned.mock.calls.filter((call) => String(call[0]).includes('action=full'))).toEqual([]);
+      expect(Number(((await database.query('SELECT COUNT(*) AS count FROM cinema_catalog WHERE rule_id = ? AND source = ?', ['wsy', '301'])) as { count: string }[])[0].count)).toBe(1);
+    } finally {
+      counting.mockRestore();
+      warned.mockRestore();
+    }
+  });
+
+  it('一批 600 条、已有的编号跨在 500 个一组的边界两侧：满了也都认得出是已有的、照常改名', async () => {
+    const service = app.get(CinemaCatalogService);
+    const now = new Date('2026-11-20T08:00:00Z');
+    // 先直接登记三条已有的（第 499、500、501 位）。
+    pages = [[{ vod_id: 'b499', vod_name: '边界甲' }, { vod_id: 'b500', vod_name: '边界乙' }, { vod_id: 'b501', vod_name: '边界丙' }]];
+    await service.sync(now);
+    const counting = vi.spyOn(app.get(CinemaCatalogRepository), 'count').mockResolvedValue(cinemaCatalogEntryLimit);
+    try {
+      pages = [Array.from({ length: 600 }, (_, index) => ({ vod_id: index === 498 ? 'b499' : index === 499 ? 'b500' : index === 500 ? 'b501' : `n${index}`, vod_name: index >= 498 && index <= 500 ? `边界改名${index}` : `批量新片${index}` }))];
+      await service.sync(new Date('2026-11-20T10:00:00Z'));
+      const renamed = (await database.query("SELECT source, folded FROM cinema_catalog WHERE rule_id = 'wsy' AND source IN ('b499', 'b500', 'b501') ORDER BY source")) as { source: string; folded: string }[];
+      expect(renamed).toEqual([
+        { source: 'b499', folded: '边界改名498' },
+        { source: 'b500', folded: '边界改名499' },
+        { source: 'b501', folded: '边界改名500' },
+      ]);
+      expect(Number(((await database.query("SELECT COUNT(*) AS count FROM cinema_catalog WHERE rule_id = 'wsy' AND source LIKE 'n%'")) as { count: string }[])[0].count), '满了新编号一个也不进').toBe(0);
+    } finally {
+      counting.mockRestore();
+    }
+  });
+
+  it('两个实例同时到点：只有抢到锁的那个抓，另一个这一轮什么也不做', async () => {
+    const service = app.get(CinemaCatalogService);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const original = service.sync.bind(service);
+    let runs = 0;
+    const spy = vi.spyOn(service, 'sync').mockImplementation(async (...args) => {
+      runs++;
+      await gate;
+      return original(...args);
+    });
+    try {
+      const task = app.get(CinemaCatalogTask);
+      const first = task.run();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      await task.run();
+      expect(runs, '第二个没抢到锁就走了').toBe(1);
+      release();
+      await first;
+      expect(runs).toBe(1);
+    } finally {
+      release();
+      spy.mockRestore();
+    }
+  });
+
+  it('满了丢掉的新编号：扩容后清空这个源的同步时刻，下一轮抓全就补回来', async () => {
+    const service = app.get(CinemaCatalogService);
+    await service.sync(new Date('2026-11-20T08:00:00Z'));
+    const counting = vi.spyOn(app.get(CinemaCatalogRepository), 'count').mockResolvedValue(cinemaCatalogEntryLimit);
+    pages = [[{ vod_id: 401, vod_name: '满时新片' }]];
+    try {
+      await service.sync(new Date('2026-11-20T10:00:00Z'));
+      expect((await search('满时新片')).body.ids).toEqual([]);
+    } finally {
+      counting.mockRestore();
+    }
+    // 扩容：条数回到上限以下；运维按日志的提示清空同步时刻。
+    await database.query('UPDATE cinema_catalog_state SET synced_at = NULL WHERE rule_id = ?', ['wsy']);
+    requests.length = 0;
+    await service.sync(new Date('2026-11-20T11:00:00Z'));
+    expect(requests[0].get('h'), '同步时刻空了就抓全').not.toBe('3');
+    expect((await search('满时新片')).body.ids).toEqual(['401']);
   });
 
   it('抓全一轮按时间预算跑：到点停在批与批之间、记下抓到第几页，下一轮接着抓到完', async () => {

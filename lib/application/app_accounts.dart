@@ -240,12 +240,14 @@ class AppAccounts extends ChangeNotifier {
     } on AppAccountException catch (error) {
       campusLog('[AppAccounts] action=check failure=${error.failure.name}');
       final gone = error.failure == AppAccountFailure.notSignedIn || error.failure == AppAccountFailure.deleted;
+      // 这一问在路上时已经换成了别的账号：只是当前账号不跟着退回未登录（11-28 复核 F03）。
       if (gone && identical(_session, session)) {
         _session = null;
-        // 只有账号已注销才清本机那个账号的私信；被顶掉、重设踢下线的再登录还能接着用（人工决策见 domain/app_account.dart 的 19:18:31 那条）。
-        if (error.failure == AppAccountFailure.deleted) onDeleted?.call(session.account);
         notifyListeners();
       }
+      // 只有账号已注销才清本机那个账号的私信；被顶掉、重设踢下线的再登录还能接着用（人工决策见 domain/app_account.dart 的 19:18:31 那条）。
+      // 注销带服务器签名才认（RelayClient），换了账号也照样清被注销的那个账号的（原来换了账号就漏清，那个账号再也登不上、私信一直留在手机上）。
+      if (error.failure == AppAccountFailure.deleted) onDeleted?.call(session.account);
     } catch (error, stack) {
       campusLog('[AppAccounts] action=check errorType=${error.runtimeType}\n$stack');
     }

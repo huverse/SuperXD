@@ -38,7 +38,11 @@ export class DiagnosticAccountService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
-    this.hooks.register(async (manager, accountIds) => this.store.remove(await this.uploads.deleteAccounts(manager, accountIds)));
+    // 记录在删账号的事务里删，文件等事务提交后再删（回滚时文件还在，11-28 复核 F05）。
+    this.hooks.register(async (manager, accountIds) => {
+      const ids = await this.uploads.deleteAccounts(manager, accountIds);
+      return () => this.store.remove(ids);
+    });
   }
 
   async claim(deviceId: string, diagnosticId: string, claim: string): Promise<dtos.DiagnosticUploadDto> {

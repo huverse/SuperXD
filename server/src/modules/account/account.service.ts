@@ -160,7 +160,8 @@ export class AccountService implements OnModuleInit {
     const accountId = await this.accountOrMissing(deviceId);
     const secret = this.secretsOf(body.sealed, deviceId, [kind] as const)[kind];
     const hashed = await this.keys.hash(secret);
-    if (!(await this.accounts.updateSecrets(accountId, kind === 'password' ? { passwordHash: hashed } : { recoveryHash: hashed }, new Date()))) {
+    // 慢的哈希在事务外算；写入时再核对这台还在账号下（算哈希期间被凭恢复码重设踢下线的不改，11-28 复核 F02）。
+    if (!(await this.accounts.updateSecrets(accountId, deviceId, kind === 'password' ? { passwordHash: hashed } : { recoveryHash: hashed }, new Date()))) {
       throw new RelayError(RelayCode.accountNotFound, HttpStatus.NOT_FOUND, '没有登录应用账号');
     }
     this.logger.log(`[Account] action=change_${kind === 'password' ? 'password' : 'recovery'} deviceId=${deviceId}`);
