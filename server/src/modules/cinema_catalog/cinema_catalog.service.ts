@@ -123,16 +123,19 @@ export class CinemaCatalogService {
     }
   }
 
-  // 写一批；条数到上限就不再加新的（上限是现在上游规模的三倍，碰到时记日志），返回写了几条。
+  // 写一批，返回写了几条：已有的编号照常更新（改名），只有新编号受条数上限约束（11-28 审查 F09：原来按「已有条数 + 这一批」超了就整批跳过，
+  // 已有影片的更新也一起丢、同步游标照样往前）。上限是现在上游规模的三倍，碰到时写得下的照写、超出的新编号丢掉并记日志（游标照常往前，
+  // 不在满了的目录上反复重抓，要人来看是上游涨了还是解析出错）。
   private async store(ruleId: string, entries: { source: string; folded: string }[], now: Date) {
     if (entries.length === 0) return 0;
-    if ((await this.catalog.count(ruleId)) + entries.length > cinemaCatalogEntryLimit) {
-      this.logger.warn(`[CinemaCatalog] action=full rule=${ruleId}`);
-      return 0;
+    const known = await this.catalog.existing(ruleId, entries.map((entry) => entry.source));
+    const fresh = entries.filter((entry) => !known.has(entry.source));
+    const room = fresh.length === 0 ? 0 : Math.max(0, cinemaCatalogEntryLimit - (await this.catalog.count(ruleId)));
+    if (fresh.length > room) this.logger.warn(`[CinemaCatalog] action=full rule=${ruleId} dropped=${fresh.length - room}`);
+    const kept = [...entries.filter((entry) => known.has(entry.source)), ...fresh.slice(0, room)];
+    for (let start = 0; start < kept.length; start += 500) {
+      await this.catalog.upsert(ruleId, kept.slice(start, start + 500), now);
     }
-    for (let start = 0; start < entries.length; start += 500) {
-      await this.catalog.upsert(ruleId, entries.slice(start, start + 500), now);
-    }
-    return entries.length;
+    return kept.length;
   }
 }
