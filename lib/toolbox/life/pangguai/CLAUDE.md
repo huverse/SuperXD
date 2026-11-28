@@ -2,7 +2,7 @@
 
 定位：百宝箱「生活」的第二个子模块（id life.pangguai，路由 /toolbox/life/pangguai），对接胖乖生活（com.qiekj.user 1.148.0）的校园共享设备：登录 → 扫码或按附近门店查看设备 → 打开设备 → 有档位的选档、没有的直接下一步 → 下单 → 支付宝付款 → 使用；品类是先付后用的洗衣机（含洗鞋、烘干）、吹风机，与扫 apwork.cn 码的饮水机（扣水卡）；原生的先用后付（饮水机、淋浴）以后再说。账号是胖乖账号（手机号加短信验证码），与教务、住理都无关。协议按用户 11-27 转交的另一个 AI 的移交包 v2.3（集成契约、Android Demo、实测记录，仓库外 ~/Projects/SelfProjects/API/shenghuo/pangguai）用 Dart 从头写。碰真钱，开关 toolbox.life.pangguai 默认关、先点名给开发者测（domain/feature_flags.dart）。框架契约（子模块、服务、清除数据）见上两级 lib/toolbox/CLAUDE.md；和住理共用的金额换算与支付宝端口在 lib/toolbox/life 根目录（登记在 lib/toolbox/CLAUDE.md）。
 
-- [人工决策] 在 pangguai_service.dart 文件头（11-27 晚用户四项选择：从头写、饮水机走原生接口、人机验证接易盾原生 SDK、系统定位自己写；其余照上一轮：多账号、第一版不用券与积分、只接支付宝、开关默认关）。
+- [人工决策] 在 pangguai_service.dart 文件头（11-27 晚用户四项选择：从头写、饮水机走原生接口、人机验证接易盾原生 SDK、系统定位自己写；其余照上一轮：多账号、第一版不用券与积分、只接支付宝、开关默认关）；11-28 起随 alpha.45 分批放量，[人工决策] 在 domain/feature_flags.dart 的 pangguaiFlag 上。
 
 # 文件职责
 

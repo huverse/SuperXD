@@ -33,6 +33,8 @@ const cinemaParseFlag = FeatureFlag('toolbox.cinema.parse', fallback: false);
 
 // [人工决策-2026-11-27 23:34:29] 胖乖生活（生活的第二个子模块，碰真钱：洗衣机、吹风机下单付款，饮水机扣水卡）照 11-27 13:14:15 那条的最后一句登记自己的开关：
 // 默认关，先在中转点名给开发者测，再看要不要放量（用户 11-27 晚确认照上一轮）。人工决策的其余部分见 toolbox/life/pangguai/pangguai_service.dart 文件头。
+// [人工决策-2026-11-28 17:01:02] 随 1.0.0-alpha.45 分批放量（用户定的起点、每隔几小时加多少与上限，写在私有灰度配置的 stages 里，不进公开仓库）：
+// 用户知情真实付款、付完开机、取水扣费与易盾弹窗还没在真机上走过，iOS 原生部分只有 CI 编译；fallback 不改，出事改配置收回、不用发版。
 const pangguaiFlag = FeatureFlag('toolbox.life.pangguai', fallback: false);
 
 const featureFlags = <FeatureFlag>[cinemaParseFlag, pangguaiFlag];
