@@ -7,7 +7,7 @@
 # 文件职责
 
 - pangguai_protocol.dart：请求协议（纯计算）：两个域名、报给胖乖的版本、渠道与 UA、请求头 phoneBrand 报 SuperXD、易盾业务 ID；签名 pangguaiSign 与下单的位置签名 pangguaiRiskSign（SHA-256，照官方 App；appSecret 是安装包里人人共用的客户端常量，同住理的平台密钥）。
-- pangguai_http.dart：请求封装 PangguaiHttp（经共用内核 CampusHttp，模块 pangguai）：全是 POST（表单，饮水机几个是 multipart），整次 15 秒、响应上限 1MB、不跟随跳转、不自动重试；凭据放请求头 Authorization 与表单 token 两处；请求策略同住理（11-28 统一，人工决策在 ../life_http_brake.dart）：不排队、不限并发（原来排队且「结束后再等 1 秒」，诊断包 TJEHRHFR 里点下单到拉起支付宝约 10 秒），回 403、405、429 就停这个域名 15 分钟；业务码整数 0 才算成、2 是登录失效，合作方 apwork 认 success；日志只记路径与业务码。
+- pangguai_http.dart：请求封装 PangguaiHttp（经共用内核 CampusHttp，模块 pangguai）：全是 POST（表单，饮水机几个是 multipart），整次 15 秒、响应上限 1MB、不跟随跳转、不自动重试；凭据放请求头 Authorization 与表单 token 两处；请求策略同住理（11-28 统一，人工决策在 ../life_http_brake.dart）：不排队、不限并发（原来排队且「结束后再等 1 秒」，诊断包 TJEHRHFR 里点下单到拉起支付宝约 10 秒），回 403、405、429 就停这个域名 30 秒；业务码整数 0 才算成、2 是登录失效，合作方 apwork 认 success；日志只记路径与业务码。
 - pangguai_models.dart：失败分类 PangguaiFailure（含不能重发的请求没等到回复的 unsure、用户关掉人机验证的 cancelled）、PangguaiException、价变了的 PangguaiPriceChanged；外部输入边界 decode*：账户、设备 PangguaiDevice（payment 分先付后用与先用后付，状态码可能是数字，不能下单的原因 unusable）、档位 PangguaiSku（洗衣机的 unit 是约几分钟、吹风机的时长档 PangguaiTier 来自 extAttr 的 perPrice、status 为假不能选）、下单的 items（pangguaiItems：洗衣一次 1、吹风写分钟数、soldType 一定带）、试算实付、下单回执、订单 PangguaiOrder（0 待付款、1 已取消（自己取消的与没付被胖乖关掉的，11-28 真机查明，原先错当待付款）、2 使用中、3 已完成，预计结束时刻只是线索）、只认支付宝 APP 支付串、附近门店、门店机型与设备（10 空闲、20 使用中）、饮水机 PangguaiWater（登录凭据与扫码给的合作方会话分开，充值标识从 redirectUrl 取）、锁机与取水状态、用水记录、水卡充值档位与跳支付宝小程序的链接 pangguaiRechargeUri；手机位置 PangguaiPosition（GCJ-02，类型放这里，客户端因此是纯 Dart、能编成命令行探针）；金额按分（lifeCents）；胖乖的时间是不带时区的北京时间（对方协议的写法，不是业务时区），pangguaiMoment 按 IANA 名 Asia/Shanghai 换成 UTC。
 - pangguai_client.dart：接口 PangguaiClient：登录三步（要不要人机验证、核对易盾结果、发短信、手机号加验证码登录）、账户、扫码、设备详情、档位、试算（不用优惠）、下单（位置与签名在请求头，没等到回复报 unsure）、订单详情与列表（页从 1 起、一页 10）、支付宝渠道与预支付、取消（cancel 把单变成已取消，接着 hidden 从列表拿掉；不是待付款的胖乖回 3122）、附近门店（GCJ-02 坐标、一页 10）、门店机型、门店设备（orgId 传 0、一页 20）、饮水机扫码、锁机（不用积分，没等到回复报 unsure）、取水状态、用水记录、水卡充值档位。
 - pangguai_vault.dart：账号的系统安全存储（命名空间 superxd_pangguai，已加进两份备份排除规则，iOS 钥匙串仅本机级别）：最多 pangguaiAccountLimit 个账号的手机号、登录凭据与昵称、当前账号；按外部输入读；测试用内存版。
@@ -29,7 +29,7 @@
 - 开机：先付后用的设备由胖乖服务器在付款成功后下发开机，客户端没有启动设备的接口；预计结束时刻会变、到点不等于完成，以订单状态为准。没付的单胖乖不给关单时刻，首页只提 10 分钟内的。
 - 提示条：三页的付款区、下单区与选择卡跟着内容滚动，不包 CampusToastAnchor（包了提示条会停到页面中间压住上面的卡片，11-28 真机截图）。
 - 饮水机：锁机后人在机器上按键出水与停止；结束状态不等于扣了费，订单与余额晚一点才出来，一次查不到别急着再锁；余额涨了也不当成某一笔充值到账的凭据。
-- 限流：请求策略同住理（不限并发），403、405、429 就停 15 分钟；新增轮询或批量请求前先想会不会撞防火墙（校园网出口共用 IP）。付款那几步之间别插没用的请求（首页刷新等关页面时再做）。
+- 限流：请求策略同住理（不限并发），403、405、429 就停这个域名 30 秒；新增轮询或批量请求前先想会不会撞防火墙（校园网出口共用 IP）。付款那几步之间别插没用的请求（首页刷新等关页面时再做）。
 - 凭据：登录凭据等同登录态，只进系统安全存储，退出账号或清除数据即删；胖乖不给过期时间，失效（业务码 2）时请用户重新收短信登录。
 - 第三方：首次发验证码前单独征得同意（consentVersion），说明有实质变化就加一档；同意记录按 life.pangguai 记，清除数据时框架撤销。隐私政策与用户协议里写胖乖、易盾 SDK、apwork 与位置，改采集或去向要同步。
 - 保留：账号最多 10 个；本机只存最近使用（每个账号 6 台），不存订单、余额与用水记录。

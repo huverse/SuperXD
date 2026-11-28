@@ -4,7 +4,6 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
-import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/campus_http.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/toolbox/life/life_http_brake.dart';
@@ -12,7 +11,7 @@ import 'package:superxd/toolbox/life/zhuli/zhuli_models.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_protocol.dart';
 
 // 住理接口的请求封装（经共用内核 CampusHttp，模块名 zhuli）：只发 GET，整次 15 秒、响应上限 1MB，不自动重试；
-// 请求策略同生活下面的其他子模块（人工决策见 life_http_brake.dart）：不排队、不限并发，回 403、405、429 就停这个域名 15 分钟（11-28 起，原来没有这一道）；
+// 请求策略同生活下面的其他子模块（人工决策见 life_http_brake.dart）：不排队、不限并发，回 403、405、429 就停这个域名 30 秒（11-28 起，原来没有这一道）；
 // 日志只记路径与住理的错误码，不记查询串（里面有手机号、密码与签名）、不记回复内容。
 class ZhuliHttp {
   ZhuliHttp({http.Client? client, this.timeout = const Duration(seconds: 15)}) : _http = CampusHttp('zhuli', client: client);
@@ -70,7 +69,7 @@ class ZhuliHttp {
 
   static const _unreadable = ZhuliException(ZhuliFailure.invalidResponse, '住理生活的返回看不懂，稍后再试');
 
-  ZhuliException _blocked(DateTime until) => ZhuliException(ZhuliFailure.blocked, '住理生活暂时拒绝访问，${formatCampusClock(until)} 以后再试');
+  ZhuliException _blocked(DateTime until) => ZhuliException(ZhuliFailure.blocked, '住理生活暂时拒绝访问，${LifeHttpBrake.secondsLeft(until)} 秒后再试');
 
   void _log(String path, String errorType, Object error, StackTrace stack) => campusLog('[Zhuli] action=http errorType=$errorType path=$path\n$stack');
 

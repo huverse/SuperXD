@@ -395,11 +395,11 @@ void main() {
       await expectLater(kit.service.signIn(_phone, '0000', dark: false), throwsA(isA<PangguaiException>().having((error) => error.message, 'message', '验证码错误')));
     });
 
-    test('回 405 就停：同一个域名这段时间里不再发任何请求，也不读拦截页', () async {
+    test('回 405 就停 30 秒：同一个域名这段时间里不再发任何请求，也不读拦截页', () async {
       final kit = _Kit();
       await kit.signIn();
       kit.fake.blocked.add('/order/list');
-      await expectLater(kit.service.ongoing(_phone), throwsA(isA<PangguaiException>().having((error) => error.failure, 'failure', PangguaiFailure.blocked)));
+      await expectLater(kit.service.ongoing(_phone), throwsA(isA<PangguaiException>().having((error) => (error.failure, error.message), 'failure', (PangguaiFailure.blocked, '胖乖生活暂时拒绝访问，30 秒后再试'))));
       final before = kit.fake.requests.length;
       await expectLater(kit.service.inspect(_phone, _washer), throwsA(isA<PangguaiException>().having((error) => error.failure, 'failure', PangguaiFailure.blocked)));
       expect(kit.fake.requests.length, before);

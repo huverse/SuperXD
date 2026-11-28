@@ -4,7 +4,6 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
-import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/campus_http.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/toolbox/life/life_http_brake.dart';
@@ -15,7 +14,7 @@ import 'package:superxd/toolbox/life/pangguai/pangguai_protocol.dart';
 typedef PangguaiRisk = ({String category, String imei, String latitude, String longitude});
 
 // 胖乖接口的请求封装（经共用内核 CampusHttp，模块名 pangguai）：全是 POST（表单，饮水机的几个是 multipart），整次 15 秒、响应上限 1MB，
-// 不跟随跳转、不自动重试。请求策略同生活下面的其他子模块（人工决策见 life_http_brake.dart）：不排队、不限并发，回 403、405、429 就停这个域名 15 分钟。
+// 不跟随跳转、不自动重试。请求策略同生活下面的其他子模块（人工决策见 life_http_brake.dart）：不排队、不限并发，回 403、405、429 就停这个域名 30 秒。
 // 11-28 诊断包 TJEHRHFR：胖乖每个请求只要 100–300 毫秒，原来排队且「上一个结束后再等 1 秒」（照移交包 Demo；移交包写明它的间隔只是测试节奏、
 // 不是平台公布的安全配额），点「下单」到拉起支付宝要 8 个请求、约 10 秒，连点几个档位时试算也排着队一个个等。
 // 凭据同时放请求头 Authorization 与表单 token（同官方 App）。日志只记路径与业务码，不记表单（有手机号、验证码、凭据）与回复。
@@ -120,7 +119,7 @@ class PangguaiHttp {
   static const _unreadable = PangguaiException(PangguaiFailure.invalidResponse, '胖乖生活的返回看不懂，稍后再试');
   static const _offline = PangguaiException(PangguaiFailure.network, '连不上胖乖生活，检查一下网络');
 
-  PangguaiException _blocked(DateTime until) => PangguaiException(PangguaiFailure.blocked, '胖乖生活暂时拒绝访问，${formatCampusClock(until)} 以后再试');
+  PangguaiException _blocked(DateTime until) => PangguaiException(PangguaiFailure.blocked, '胖乖生活暂时拒绝访问，${LifeHttpBrake.secondsLeft(until)} 秒后再试');
 
   void _log(String path, String errorType, Object error, StackTrace stack) => campusLog('[Pangguai] action=http errorType=$errorType path=$path\n$stack');
 

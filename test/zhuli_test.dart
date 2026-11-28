@@ -200,7 +200,7 @@ void main() {
       expect(() => decodeZhuliProfile(raw), throwsA(isA<ZhuliException>().having((error) => error.failure, 'failure', ZhuliFailure.invalidResponse)));
     });
 
-    test('回 403、405、429 就停（同胖乖，人工决策见 life_http_brake.dart）：这个域名这段时间里不再发请求、不读拦截页，别的域名照常', () async {
+    test('回 403、405、429 就停 30 秒（同胖乖，人工决策见 life_http_brake.dart）：这个域名这段时间里不再发请求、不读拦截页，别的域名照常', () async {
       for (final status in [403, 405, 429]) {
         final hosts = <String>[];
         final transport = ZhuliHttp(client: MockClient((request) async {
@@ -208,7 +208,7 @@ void main() {
           return request.url.host == 'zhuli999.whxinna.com' ? _reply('<html>blocked</html>', status) : _reply({'result': true}, 200);
         }));
         Future<Object?> call(String host) => transport.get(Uri.parse('https://$host'), '/x', {}, key: 'K');
-        await expectLater(call('zhuli999.whxinna.com'), throwsA(isA<ZhuliException>().having((error) => error.failure, 'failure', ZhuliFailure.blocked)), reason: '$status');
+        await expectLater(call('zhuli999.whxinna.com'), throwsA(isA<ZhuliException>().having((error) => (error.failure, error.message), 'failure', (ZhuliFailure.blocked, '住理生活暂时拒绝访问，30 秒后再试'))), reason: '$status');
         await expectLater(call('zhuli999.whxinna.com'), throwsA(isA<ZhuliException>().having((error) => error.failure, 'failure', ZhuliFailure.blocked)));
         await call('mp.whxinna.com');
         expect(hosts, ['zhuli999.whxinna.com', 'mp.whxinna.com'], reason: '停着的域名第二次没发出去：$status');
