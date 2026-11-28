@@ -51,8 +51,11 @@ class ChannelPangguaiLocator implements PangguaiLocator {
     if (!status.isGranted) throw const PangguaiLocationException(PangguaiLocationProblem.denied);
     if (await Permission.locationWhenInUse.serviceStatus == ServiceStatus.disabled) throw const PangguaiLocationException(PangguaiLocationProblem.disabled);
     final Map<String, Object?>? raw;
+    final watch = Stopwatch()..start();
     try {
       raw = await _channel.invokeMapMethod<String, Object?>('current', {'timeoutMs': 10000});
+      // 下单前要等它：记下这次现取用了多久（11-28 诊断包里看不出定位占了多少）。
+      campusLog('[Pangguai] action=locate ms=${watch.elapsedMilliseconds}');
     } on PlatformException catch (error, stack) {
       campusLog('[Pangguai] action=locate errorType=${error.code}\n$stack');
       throw PangguaiLocationException(error.code == 'disabled' ? PangguaiLocationProblem.disabled : error.code == 'denied' ? PangguaiLocationProblem.denied : PangguaiLocationProblem.unavailable);

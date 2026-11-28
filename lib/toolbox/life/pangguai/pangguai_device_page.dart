@@ -112,7 +112,10 @@ class _PangguaiDevicePageState extends State<PangguaiDevicePage> {
     return device != null && device.unusable == null && sku != null && (!device.timed || _minutes != null);
   }
 
-  Future<void> _quote() async {
+  // 连着点几个档位时只算最后选的那个：停 quoteSettle 没再改才发试算（11-28 诊断包 TJEHRHFR：每点一下排一个试算，最后的价要等前面的都发完）。
+  static const quoteSettle = Duration(milliseconds: 300);
+
+  Future<void> _quote({Duration settle = Duration.zero}) async {
     final generation = ++_quoteGeneration;
     setState(() {
       _price = null;
@@ -122,6 +125,10 @@ class _PangguaiDevicePageState extends State<PangguaiDevicePage> {
     });
     if (!_ready) return;
     setState(() => _quoting = true);
+    if (settle > Duration.zero) {
+      await Future<void>.delayed(settle);
+      if (!mounted || generation != _quoteGeneration) return;
+    }
     try {
       final price = await widget.service.quote(widget.phone, _device!, _sku!, _minutes);
       if (mounted && generation == _quoteGeneration) setState(() => _price = price);
@@ -144,7 +151,7 @@ class _PangguaiDevicePageState extends State<PangguaiDevicePage> {
       }
       if (minutes != null) _minutes = minutes;
     });
-    unawaited(_quote());
+    unawaited(_quote(settle: quoteSettle));
   }
 
   Future<void> _place() async {
