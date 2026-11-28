@@ -4,11 +4,11 @@ import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import Redis from 'ioredis';
 
 import { rateSubjectOf } from 'src/common/client_ip';
-import { REDIS, RateLimiter } from 'src/common/redis/redis.module';
+import { LockBusyError, REDIS, RateLimiter } from 'src/common/redis/redis.module';
 import { RedisKeys, RedisKeyTTL } from 'src/common/redis/redis_keys';
 import { RelayCode, RelayError } from 'src/common/relay_error';
 import { diagnosticKeepDays, diagnosticUploadMinBytes, diagnosticUploadPerHour } from 'src/common/relay_limits';
-import { DiagnosticStore, newDiagnosticId } from 'src/modules/diagnostic/diagnostic.store';
+import { DiagnosticReservationLost, DiagnosticStore, newDiagnosticId } from 'src/modules/diagnostic/diagnostic.store';
 import * as dtos from 'src/modules/diagnostic/diagnostic.dto';
 
 // 诊断包（人工决策见客户端 lib/domain/diagnostic_upload.dart）：哑信箱，只收用户确认后上传、已在本机用开发者公钥加密的日志包，
@@ -42,6 +42,11 @@ export class DiagnosticService {
     } catch (error) {
       await this.store.release(reservation);
       // 客户端中途断开（换网、看门狗中止）不是服务端的错，回什么也送不到，只记一行；写盘出错（目录不可写、磁盘满）照常带堆栈上抛。
+      // 存好时预占已经没了（超过租期、Redis 丢过）或目录锁一直被占着：这次没存下，请客户端重传（11-28 复核 F06）。
+      if (error instanceof DiagnosticReservationLost || error instanceof LockBusyError) {
+        this.logger.warn(`[Diagnostic] action=upload errorType=${error.constructor.name} bytes=${length}`);
+        throw new RelayError(RelayCode.mailboxFull, HttpStatus.SERVICE_UNAVAILABLE, '诊断包这次没存下，请重新上传');
+      }
       const code = (error as NodeJS.ErrnoException).code;
       if (code === 'ECONNRESET' || code === 'ERR_STREAM_PREMATURE_CLOSE') {
         this.logger.warn(`[Diagnostic] action=upload errorType=Aborted bytes=${length}`);

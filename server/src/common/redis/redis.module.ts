@@ -56,6 +56,28 @@ export class DistributedLock {
     }
     return true;
   }
+
+  // 互斥着做（多实例同一时刻只有一个在做，11-28 复核 F06 诊断包目录与已用量）：抢不到每 20 毫秒再试，最多等 waitMs，等不到抛 LockBusyError；
+  // 持有最长 ttlSeconds（持有者卡死也会放开），task 要远短于它。
+  async exclusive<T>(name: string, ttlSeconds: number, waitMs: number, task: () => Promise<T>): Promise<T> {
+    const token = `${process.pid}:${Date.now()}:${Math.random()}`;
+    const deadline = Date.now() + waitMs;
+    while ((await this.redis.set(RedisKeys.lock(name), token, 'EX', ttlSeconds, 'NX')) !== 'OK') {
+      if (Date.now() >= deadline) throw new LockBusyError(name);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    try {
+      return await task();
+    } finally {
+      await this.redis.eval(unlockScript, 1, RedisKeys.lock(name), token);
+    }
+  }
+}
+
+export class LockBusyError extends Error {
+  constructor(name: string) {
+    super(`lock ${name} busy`);
+  }
 }
 
 @Injectable()

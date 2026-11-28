@@ -10,10 +10,10 @@ import { DataSource } from 'typeorm';
 
 import { createRelayApp } from 'src/relay_app';
 import { env } from 'src/config/env';
-import { REDIS } from 'src/common/redis/redis.module';
+import { DistributedLock, REDIS } from 'src/common/redis/redis.module';
 import { RedisKeys } from 'src/common/redis/redis_keys';
 import { diagnosticKeepDays, diagnosticStoreMaxBytes, diagnosticStoreMaxFiles, diagnosticUploadMaxBytes, diagnosticUploadPerHour } from 'src/common/relay_limits';
-import { DiagnosticStore } from 'src/modules/diagnostic/diagnostic.store';
+import { DiagnosticReservationLost, DiagnosticStore } from 'src/modules/diagnostic/diagnostic.store';
 import { DiagnosticRetentionTask } from 'src/modules/diagnostic/diagnostic_retention.task';
 import { insertAccount } from './account_fixture';
 import { TestDevice } from './test_device';
@@ -216,6 +216,173 @@ describe('诊断包', () => {
     await redis().zadd(RedisKeys.diagnosticReservations(), Date.now() - 1, member);
     expect(await store.reserve(1000)).not.toBeNull();
     expect(await reservations()).toEqual([1000]);
+  });
+});
+
+// 11-28 Codex 复核 F06：存好的累加与清理的整笔重写原来没有协调，清理列完目录后才存好的包会被旧统计盖掉。现在存好、删除、清理与重建在同一把锁里。
+describe('诊断包：目录与已存好的账一致', () => {
+  // 目录里实际存好的包（不含残片）。
+  const disk = async () => {
+    let bytes = 0, files = 0;
+    for (const name of await readdir(dir())) {
+      if (!/^[0-9A-HJKMNP-TV-Z]{8}$/.test(name)) continue;
+      bytes += (await stat(join(dir(), name))).size;
+      files++;
+    }
+    return { bytes: String(bytes), files: String(files) };
+  };
+  const exists = async (name: string) => (await readdir(dir())).includes(name);
+  const until = async (check: () => Promise<boolean>) => {
+    for (let attempt = 0; attempt < 300; attempt++) {
+      if (await check()) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error('timed out');
+  };
+  const settled = <T>(promise: Promise<T>) => {
+    const state = { done: false };
+    void promise.then(() => (state.done = true), () => (state.done = true));
+    return state;
+  };
+
+  it('清理正在列目录、重算（拿着锁）时存好一个包：改名与记账等清理写完再做，最后已存好的账等于目录', async () => {
+    const store = app.get(DiagnosticStore);
+    await upload(randomBytes(300)).expect(200);
+    let release!: () => void, reached!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve)), arrived = new Promise<void>((resolve) => (reached = resolve));
+    // 清理整个在锁里：别人拿着这把锁停住，就是清理正做到一半。
+    const sweeping = app.get(DistributedLock).exclusive('diagnostic_store', 60, 1000, async () => {
+      reached();
+      await gate;
+    });
+    await arrived;
+    const reservation = (await store.reserve(700))!;
+    const saving = store.save('ABCDEFGH', Readable.from([randomBytes(700)]), reservation);
+    const state = settled(saving);
+    await until(() => exists('ABCDEFGH.part'));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(state.done, '存好要等锁').toBe(false);
+    expect(await exists('ABCDEFGH'), '还没改名').toBe(false);
+    expect(await usage()).toEqual({ bytes: '300', files: '1' });
+    release();
+    await sweeping;
+    await saving;
+    expect(await usage()).toEqual(await disk());
+    await app.get(DiagnosticRetentionTask).sweep();
+    expect(await usage()).toEqual({ bytes: '1000', files: '2' });
+  });
+
+  it('存好正在记账、改名（拿着锁）时清理任务开跑：清理等它做完再列目录，最后已存好的账等于目录', async () => {
+    const store = app.get(DiagnosticStore);
+    await upload(randomBytes(300)).expect(200);
+    const client = redis(), original = client.eval.bind(client);
+    let release!: () => void, reached!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve)), arrived = new Promise<void>((resolve) => (reached = resolve));
+    vi.spyOn(client, 'eval').mockImplementation((async (...args: Parameters<Redis['eval']>) => {
+      // 记账那一句之前停住（此时拿着目录锁）。
+      if (String(args[0]).includes("redis.call('ZREM', KEYS[2], ARGV[1])")) {
+        reached();
+        await gate;
+      }
+      return original(...args);
+    }) as Redis['eval']);
+    const reservation = (await store.reserve(700))!;
+    const saving = store.save('ABCDEFGJ', Readable.from([randomBytes(700)]), reservation);
+    await arrived;
+    const sweeping = app.get(DiagnosticRetentionTask).sweep();
+    const state = settled(sweeping);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(state.done, '清理要等锁').toBe(false);
+    release();
+    await saving;
+    await sweeping;
+    expect(await usage()).toEqual(await disk());
+    expect(await usage()).toEqual({ bytes: '1000', files: '2' });
+  });
+
+  it('一起来的十几个上传、删除与几次清理交错跑完：已存好的账一笔不差地等于目录，在途预占清空', async () => {
+    const store = app.get(DiagnosticStore);
+    const kept: string[] = [];
+    for (let index = 0; index < 4; index++) kept.push((await upload(randomBytes(200 + index)).expect(200)).body.id as string);
+    const jobs: Promise<unknown>[] = [];
+    for (let index = 0; index < 14; index++) {
+      jobs.push(
+        (async () => {
+          const size = 100 + index * 37;
+          const reservation = (await store.reserve(size))!;
+          await store.save(`ABCDEF${'GHJKMNPQRSTVWXYZ'[index]}${index % 2 === 0 ? '0' : '1'}`, Readable.from([randomBytes(size)]), reservation);
+        })(),
+      );
+      if (index % 4 === 0) jobs.push(app.get(DiagnosticRetentionTask).sweep());
+      if (index % 5 === 0 && kept.length > 0) jobs.push(store.remove([kept.pop()!]));
+    }
+    await Promise.all(jobs);
+    expect(await usage()).toEqual(await disk());
+    expect(await reservations()).toEqual([]);
+  });
+
+  it('存好时那笔预占已经没了（上传超过租期、被当成过期清掉）：这次不收，不留文件与残片，已存好的账不变；接口回 503 请客户端重传', async () => {
+    const store = app.get(DiagnosticStore);
+    await upload(randomBytes(300)).expect(200);
+    const reservation = (await store.reserve(500))!;
+    await redis().zrem(RedisKeys.diagnosticReservations(), reservation);
+    await expect(store.save('ABCDEFGK', Readable.from([randomBytes(500)]), reservation)).rejects.toBeInstanceOf(DiagnosticReservationLost);
+    expect(await exists('ABCDEFGK')).toBe(false);
+    expect(await exists('ABCDEFGK.part')).toBe(false);
+    expect(await usage()).toEqual({ bytes: '300', files: '1' });
+
+    vi.spyOn(store, 'save').mockRejectedValueOnce(new DiagnosticReservationLost());
+    const response = await upload(randomBytes(400));
+    expect(response.status).toBe(503);
+    expect(response.body.code).toBe('MAILBOX_FULL');
+    expect(await reservations()).toEqual([]);
+  });
+
+  it('Redis 丢了（已存好的账与预占都没了）：下一次预占先按目录重建再判上限；在途的上传存好时预占已不在，这次不收', async () => {
+    const store = app.get(DiagnosticStore);
+    for (const size of [300, 400]) await upload(randomBytes(size)).expect(200);
+    const inFlight = (await store.reserve(600))!;
+    await redis().flushdb();
+    await expect(store.save('ABCDEFGM', Readable.from([randomBytes(600)]), inFlight)).rejects.toBeInstanceOf(DiagnosticReservationLost);
+    expect(await store.reserve(100)).not.toBeNull();
+    expect(await usage()).toEqual({ bytes: '700', files: '2' });
+    // 重建后照样按上限判：把已存好的账写到只差一点。
+    await redis().hset(RedisKeys.diagnosticUsage(), { bytes: diagnosticStoreMaxBytes - 50, files: 2 });
+    expect(await store.reserve(100)).toBeNull();
+  });
+
+  it('已存好的账在预占与存好之间过期了：存好时先按目录重建再记这一笔，账照样等于目录', async () => {
+    const store = app.get(DiagnosticStore);
+    await upload(randomBytes(300)).expect(200);
+    const reservation = (await store.reserve(800))!;
+    await redis().del(RedisKeys.diagnosticUsage());
+    await store.save('ABCDEFGN', Readable.from([randomBytes(800)]), reservation);
+    expect(await usage()).toEqual(await disk());
+    expect(await usage()).toEqual({ bytes: '1100', files: '2' });
+  });
+
+  it('删除（用户删、注销账号）在锁里减账：删完马上等于目录，不用等清理', async () => {
+    const store = app.get(DiagnosticStore);
+    const ids: string[] = [];
+    for (const size of [300, 400, 500]) ids.push((await upload(randomBytes(size)).expect(200)).body.id as string);
+    await store.remove([ids[1], 'ZZZZZZZZ']);
+    expect(await usage()).toEqual(await disk());
+    expect(await usage()).toEqual({ bytes: '800', files: '2' });
+  });
+
+  it('进程写到一半挂了（残片与预占都留着）：清理删掉一小时前的残片，过期的预占在下一次预占时丢掉，都不算进已存好的账', async () => {
+    const store = app.get(DiagnosticStore);
+    await upload(randomBytes(300)).expect(200);
+    const orphan = (await store.reserve(900))!;
+    await writeFile(join(dir(), 'ABCDEFGP.part'), randomBytes(450));
+    const old = Date.now() / 1000 - 2 * 3600;
+    await utimes(join(dir(), 'ABCDEFGP.part'), old, old);
+    await redis().zadd(RedisKeys.diagnosticReservations(), Date.now() - 1, orphan);
+    await app.get(DiagnosticRetentionTask).sweep();
+    expect(await exists('ABCDEFGP.part')).toBe(false);
+    expect(await usage()).toEqual({ bytes: '300', files: '1' });
+    expect(await store.reserve(100)).not.toBeNull();
+    expect(await reservations()).toEqual([100]);
   });
 });
 
