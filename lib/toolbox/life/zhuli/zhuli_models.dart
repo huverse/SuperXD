@@ -19,6 +19,8 @@ enum ZhuliFailure {
   notSignedIn,
   // 住理明确拒绝（密码错误、余额不足这类），message 是给用户看的话。
   rejected,
+  // 住理的防火墙拦了（HTTP 403、405、429）：这段时间里这个域名不再发请求（见 ZhuliHttp）。
+  blocked,
   // 蓝牙设备在附近找不到或连不上（多半是同房间换下来、已不在用的老设备），洗浴页据此给出「换到同房间的另一台」。
   unreachable,
 }

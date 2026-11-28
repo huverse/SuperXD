@@ -338,8 +338,9 @@ class _PangguaiPageState extends State<PangguaiPage> {
                 for (final entry in shown)
                   InkWell(
                     key: ValueKey('${entry.water}-${entry.id}'),
-                    // 设备页下单后会换成订单页，push 在换页那一刻就回来了（那时还没付）：订单页关掉时经 onClose 再刷新一次。
-                    onTap: () => unawaited(_push(entry.water ? PangguaiWaterPage(service: _service, phone: phone, hash: entry.id) : PangguaiDevicePage(service: _service, phone: phone, goodsId: entry.id, onClose: _reloadLater))),
+                    // 设备页下单后会换成订单页，push 在换页那一刻就回来了（那时还没付），所以不经 _push 刷新（刷新会插进付款的几步请求中间，11-28 诊断包 TJEHRHFR）；
+                    // 设备页或订单页关掉时经 onClose 刷新。
+                    onTap: () => unawaited(entry.water ? _push(PangguaiWaterPage(service: _service, phone: phone, hash: entry.id)) : Navigator.of(context).push<void>(CampusPageRoute(builder: (_) => PangguaiDevicePage(service: _service, phone: phone, goodsId: entry.id, onClose: _reloadLater)))),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: CampusGap.small),
                       child: Row(
