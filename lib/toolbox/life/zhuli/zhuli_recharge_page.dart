@@ -14,6 +14,7 @@ import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
+import 'package:superxd/toolbox/life/life_money.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_models.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_pay.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_service.dart';
@@ -25,7 +26,7 @@ const zhuliRechargeMax = 50000;
 // 输入的金额换成分；不是 0.01–500 元、最多两位小数的为空。
 int? zhuliRechargeCents(String text) {
   if (!RegExp(r'^\d{1,3}(\.\d{1,2})?$').hasMatch(text.trim())) return null;
-  final cents = zhuliCents(text.trim());
+  final cents = lifeCents(text.trim());
   return cents != null && cents >= zhuliRechargeMin && cents <= zhuliRechargeMax ? cents : null;
 }
 
@@ -104,7 +105,7 @@ class _ZhuliRechargePageState extends State<ZhuliRechargePage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('余额', style: TextStyle(color: CampusPalette.of(context).onSurfaceVariant)),
-        Text('¥${zhuliYuan(balance)}', style: const TextStyle(fontSize: CampusFontSize.headline, fontWeight: FontWeight.w600)),
+        Text('¥${lifeYuan(balance)}', style: const TextStyle(fontSize: CampusFontSize.headline, fontWeight: FontWeight.w600)),
       ],
     ),
   );
@@ -130,7 +131,7 @@ class _ZhuliRechargePageState extends State<ZhuliRechargePage> {
               for (final quota in quotas)
                 CampusGlassChip(
                   key: ValueKey(quota.value),
-                  label: '¥${zhuliYuan(quota.value).replaceAll('.00', '')}',
+                  label: '¥${lifeYuan(quota.value).replaceAll('.00', '')}',
                   selected: !_typing && _quota == quota.value,
                   onSelected: (_) => setState(() {
                     _typing = false;
@@ -149,18 +150,18 @@ class _ZhuliRechargePageState extends State<ZhuliRechargePage> {
               inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')), LengthLimitingTextInputFormatter(6)],
               decoration: InputDecoration(
                 labelText: '金额（元）',
-                errorText: _custom.text.isNotEmpty && cents == null ? '${zhuliYuan(zhuliRechargeMin)} 到 ${zhuliYuan(zhuliRechargeMax)} 元，最多两位小数' : null,
+                errorText: _custom.text.isNotEmpty && cents == null ? '${lifeYuan(zhuliRechargeMin)} 到 ${lifeYuan(zhuliRechargeMax)} 元，最多两位小数' : null,
               ),
               onChanged: (_) => setState(() {}),
             ),
           ],
-          if (gift != null) Padding(padding: const EdgeInsets.only(top: CampusGap.small), child: Text('送 ${gift.giftCount} 张 ¥${zhuliYuan(gift.giftMoney)} 的券', style: secondary)),
+          if (gift != null) Padding(padding: const EdgeInsets.only(top: CampusGap.small), child: Text('送 ${gift.giftCount} 张 ¥${lifeYuan(gift.giftMoney)} 的券', style: secondary)),
           const SizedBox(height: CampusGap.large),
           ZhuliCheckout(
             key: ValueKey(cents),
             service: widget.service,
             phone: widget.phone,
-            label: cents == null ? '用支付宝付' : '用支付宝付 ¥${zhuliYuan(cents)}',
+            label: cents == null ? '用支付宝付' : '用支付宝付 ¥${lifeYuan(cents)}',
             enabled: cents != null,
             order: (session) => widget.service.client.recharge(session, cents!),
             paid: (session, orderId) async => (await widget.service.client.rechargeOrder(session, orderId)).paid,
@@ -243,7 +244,7 @@ class _ZhuliShopPageState extends State<ZhuliShopPage> {
         children: [
           Text(goods.name.isEmpty ? '优惠券' : goods.name, style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: CampusGap.tight),
-          Text('¥${zhuliYuan(goods.price)}', style: const TextStyle(fontSize: CampusFontSize.headline, fontWeight: FontWeight.w600)),
+          Text('¥${lifeYuan(goods.price)}', style: const TextStyle(fontSize: CampusFontSize.headline, fontWeight: FontWeight.w600)),
           DotSeparatedText(zhuliGoodsDetail(goods).join(' · '), style: secondary),
           const SizedBox(height: CampusGap.medium),
           FilledButton.icon(
@@ -259,7 +260,7 @@ class _ZhuliShopPageState extends State<ZhuliShopPage> {
 
 // [人工决策-2026-11-23 12:47:51] 券的说明只留面额、先用谁与限购（用户：买券页与购买弹层都只要这三项，适用范围、有效期、剩余张数与使用规则这些冗余描述不要）。
 List<String> zhuliGoodsDetail(ZhuliGoods goods) => [
-  '面额 ¥${zhuliYuan(goods.money)}',
+  '面额 ¥${lifeYuan(goods.money)}',
   goods.couponFirst ? '优先用券' : '优先用余额',
   if (goods.limit > 0) '限购 ${goods.limit} 张',
 ];
@@ -287,7 +288,7 @@ class _BuySheet extends StatelessWidget {
             ZhuliCheckout(
               service: service,
               phone: phone,
-              label: '用支付宝付 ¥${zhuliYuan(goods.price)}',
+              label: '用支付宝付 ¥${lifeYuan(goods.price)}',
               order: (session) => service.client.buyCoupon(session, goods.id),
               paid: (session, orderId) => service.client.couponPaid(session, orderId),
               pendingHint: '付款结果还在确认，稍后在「优惠券」里看',

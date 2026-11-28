@@ -1,6 +1,6 @@
 # toolbox 百宝箱
 
-定位：设备级工具集，不需要教务登录，只依赖 domain 与 theme，不依赖教务相关的任何层，不读取教务凭据或 cookie；切换账号时下载任务不销毁。当前注册了五个工具：视频解析与下载、学习通签到、快递（拼多多身份码与快递查询）、电影院、生活（校园生活服务的子模块列表，现在有住理生活；两者 11-27 起不经功能开关，人工决策见 domain/feature_flags.dart）。工具可以带子模块（规则见 toolbox_module.dart 的人工决策）。学习通的文件与规则在 chaoxing/CLAUDE.md，快递在 express/CLAUDE.md，电影院在 cinema/CLAUDE.md，住理生活在 life/zhuli/CLAUDE.md（生活下面的子模块同层互不依赖，test/project_structure_test.dart 守护），download 与 short_video 两个子目录登记在本文件。
+定位：设备级工具集，不需要教务登录，只依赖 domain 与 theme，不依赖教务相关的任何层，不读取教务凭据或 cookie；切换账号时下载任务不销毁。当前注册了五个工具：视频解析与下载、学习通签到、快递（拼多多身份码与快递查询）、电影院、生活（校园生活服务的子模块列表，现在有住理生活；两者 11-27 起不经功能开关，人工决策见 domain/feature_flags.dart）。工具可以带子模块（规则见 toolbox_module.dart 的人工决策）。学习通的文件与规则在 chaoxing/CLAUDE.md，快递在 express/CLAUDE.md，电影院在 cinema/CLAUDE.md，住理生活在 life/zhuli/CLAUDE.md（生活下面的子模块同层互不依赖，test/project_structure_test.dart 守护，共用的放生活根目录），download、short_video 两个子目录与生活根目录的共用件登记在本文件。
 
 # 文件职责
 
@@ -14,6 +14,9 @@
   - toolbox_resource_manager.dart：重型按需资源的安装、校验（版本、sha256、字节数）与卸载；每个工具只留当前版本，卸载只删本工具的资源、不删用户已导出的文件。
   - toolbox_image.dart：小网络图 ToolboxRemoteImage（学习通头像与课程封面、电影院海报）：每个模块共用一份 CampusHttp（随进程存在，跨图片复用连接）、同时最多取 concurrency 张（[人工决策] 在类上；测试注入的客户端仍是每次一份、用完关掉），视频打开或卡住缓冲时经 ToolboxImageGate 先等（最多 10 秒，播放优先，[人工决策] 在类上，电影院播放页 hold 与 release）；经共用内核取字节（整次 15 秒、上限 2MB、请求记录带模块名），逐跳只认公网 https、最多跳 5 次，按铺满边长 side 物理像素的方块解码（不按原图），取失败的从图片缓存拿掉、不自动重试；lib 里不许用 Flutter 自带的 Image.network、NetworkImage（test/project_structure_test.dart 守护）。
   - toolbox_url.dart：toolboxPublicUrl 只接受公开的 http 或 https 地址（拒绝本机、内网、带凭据或非标准端口，anyPort 时不限端口（电影院的媒体地址），长度上限 8192；地址判定用 domain/campus_http.dart 的 campusPublicAddress）；shortVideoInput 从分享文案中提取唯一的作品链接。
+- life 生活根目录（子模块共用，子模块之间不互引）：
+  - life_money.dart：金额换算 lifeCents（数或十进制文本按文本换成分、四舍五入，不经浮点）与 lifeYuan（分写成两位小数的元）。
+  - life_alipay.dart：支付宝付款端口 LifeAlipay 与插件实现 TobiasLifeAlipay（tobias，内含支付宝 SDK；结果码只作提示，到账只认服务方；iOS 回调不一定回得来，各子模块回到前台也去查）。
 - download 下载：
   - toolbox_download_manager.dart：通用下载管理 ToolboxDownloadManager，不认识任何工具的数据（[人工决策] 在 enqueue）。按工具 id 与 identity 加每项 id 去重；负责入队、暂停、继续、取消、校验、导出与清理，clearTool 清除一个工具的下载数据（已导出的文件不动）。每组 1–100 项、待处理任务组最多 10 个、同时传输最多 2 个。
   - background_transfer.dart：安卓用的后台传输 BackgroundTransfer，基于 background_downloader；没有通知权限时改用普通 WorkManager 任务，避免 ANR。

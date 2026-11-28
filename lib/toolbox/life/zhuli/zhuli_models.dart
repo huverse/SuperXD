@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:superxd/toolbox/life/life_money.dart';
+
 // 住理生活的数据类型。回复全是外部输入：decode* 逐项核对类型，不对抛 ZhuliException(invalidResponse)。
 // 金额一律按「分」的整数存（服务端给的是 18.4、"13.3900" 这类数或字符串，按十进制文本换算、四舍五入到分，不经浮点运算）。
 
@@ -50,7 +52,7 @@ int _int(Map<String, Object?> json, String field, {int? fallback}) => switch (js
   _ => _bad(field),
 };
 
-int _cents(Map<String, Object?> json, String field, {bool optional = false}) => zhuliCents(json[field]) ?? (optional && json[field] == null ? 0 : _bad(field));
+int _cents(Map<String, Object?> json, String field, {bool optional = false}) => lifeCents(json[field]) ?? (optional && json[field] == null ? 0 : _bad(field));
 
 Map<String, Object?> zhuliObject(Object? value) => value is Map ? value.cast<String, Object?>() : _bad('object');
 
@@ -60,23 +62,6 @@ List<Map<String, Object?>> zhuliRows(Object? value, {String? field}) {
   if (list is! List) _bad(field ?? 'list');
   return [for (final row in list) zhuliObject(row)];
 }
-
-// 金额换成分：数或十进制文本（"13.3900"、176.35、-0.14），四舍五入到分；不是金额返回空。
-int? zhuliCents(Object? raw) {
-  final text = switch (raw) {
-    final num value => value.toString(),
-    final String value => value.trim(),
-    _ => null,
-  };
-  final match = text == null ? null : RegExp(r'^(-?)(\d{1,12})(?:\.(\d+))?$').firstMatch(text);
-  if (match == null) return null;
-  final fraction = (match[3] ?? '').padRight(3, '0');
-  final cents = int.parse(match[2]!) * 100 + int.parse(fraction.substring(0, 2)) + (int.parse(fraction[2]) >= 5 ? 1 : 0);
-  return match[1] == '-' ? -cents : cents;
-}
-
-// 分写成元，两位小数（1840 → 18.40）。
-String zhuliYuan(int cents) => '${cents < 0 ? '-' : ''}${cents.abs() ~/ 100}.${(cents.abs() % 100).toString().padLeft(2, '0')}';
 
 // 本机记着的一个住理账号：手机号与登录密码（只在系统安全存储，见 zhuli_vault.dart）。
 class ZhuliCredential {

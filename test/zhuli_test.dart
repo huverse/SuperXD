@@ -8,6 +8,7 @@ import 'package:http/testing.dart';
 
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
+import 'package:superxd/toolbox/life/life_money.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_client.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_coupons_page.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_devices.dart';
@@ -149,8 +150,8 @@ void main() {
     });
 
     test('金额按十进制文本换成分、四舍五入到分，不经浮点运算；时间按北京时间换成 UTC，占位的 0001 年当没有', () {
-      expect([zhuliCents('13.3900'), zhuliCents(176.35), zhuliCents(-0.14), zhuliCents(0.005), zhuliCents(20), zhuliCents('x'), zhuliCents(null)], [1339, 17635, -14, 1, 2000, null, null]);
-      expect([zhuliYuan(1840), zhuliYuan(-14), zhuliYuan(5)], ['18.40', '-0.14', '0.05']);
+      expect([lifeCents('13.3900'), lifeCents(176.35), lifeCents(-0.14), lifeCents(0.005), lifeCents(20), lifeCents('x'), lifeCents(null)], [1339, 17635, -14, 1, 2000, null, null]);
+      expect([lifeYuan(1840), lifeYuan(-14), lifeYuan(5)], ['18.40', '-0.14', '0.05']);
       expect(zhuliMoment('2026-11-22 13:39:57'), '2026-11-22T05:39:57.000Z');
       expect(zhuliMoment('0001-01-01 00:00:00'), isNull);
       expect(zhuliClock(DateTime.utc(2026, 11, 21, 16, 0, 5)), '2026-11-22 00:00:05');
@@ -503,7 +504,7 @@ void main() {
 
     test('生活登记了住理生活：不经开关、一直显示（11-27 删掉开关），id 与路由是 life.zhuli 与 /toolbox/life/zhuli', () {
       final life = toolboxCatalog(fixture.runtime).singleWhere((module) => module.id == 'life');
-      final zhuli = life.children.single;
+      final zhuli = life.children.singleWhere((child) => child.id == ZhuliService.serviceId);
       expect((zhuli.id, zhuli.flag, zhuli.clearedData.isNotEmpty), (ZhuliService.serviceId, null, true));
       expect(toolboxVisible(life), isTrue);
       expect(toolboxRedirect([life], '/toolbox/life/zhuli'), isNull);

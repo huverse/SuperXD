@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
+import 'package:superxd/toolbox/life/life_alipay.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_client.dart';
@@ -13,7 +14,6 @@ import 'package:superxd/toolbox/life/zhuli/zhuli_devices.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_http.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_models.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_page.dart';
-import 'package:superxd/toolbox/life/zhuli/zhuli_pay.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_protocol.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_recharge_page.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_service.dart';
@@ -85,7 +85,7 @@ class _FakePay {
 }
 
 // 假支付宝：记下交给它的支付串，回 status；never 时一直不回（iOS 上 SDK 的回调回不来）。
-class _FakePayer implements ZhuliPayer {
+class _FakePayer implements LifeAlipay {
   _FakePayer(this.status);
   String? status;
   final orders = <String>[];

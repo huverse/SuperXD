@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/toolbox/life/life_money.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_ble.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_client.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_models.dart';
@@ -69,7 +70,7 @@ class ZhuliBath {
     if (rule == null) return plan(blocked: '这台设备没设定计费规则，请联系管理员');
     if (pending > 0) return plan(blocked: '你有 $pending 笔待支付的订单，先在住理生活 App 里付清');
     if (config.minimumBalance > 0 && profile.balance < config.minimumBalance) {
-      if (!config.continueBelowMinimum) return plan(blocked: '余额不足 ¥${zhuliYuan(config.minimumBalance)}，先充值');
+      if (!config.continueBelowMinimum) return plan(blocked: '余额不足 ¥${lifeYuan(config.minimumBalance)}，先充值');
       return plan(confirm: '余额可能不够这次用水，仍要开吗？');
     }
     if (!zhuliInSupply(device.supply, _clock())) {
