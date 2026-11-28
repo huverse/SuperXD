@@ -457,12 +457,10 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               if (bluetooth) Padding(padding: const EdgeInsets.only(bottom: CampusGap.medium), child: Text('手机靠近设备、打开蓝牙', style: secondary)),
-              CampusToastAnchor(
-                child: FilledButton(
-                  style: campusProminent,
-                  onPressed: _stage == _Stage.ready ? () => unawaited(_start()) : null,
-                  child: CampusBusyContent(busy: _stage == _Stage.starting, label: '开水', busyLabel: bluetooth ? '连接设备' : '开水中', icon: const CampusIcon(CampusIcons.bath)),
-                ),
+              FilledButton(
+                style: campusProminent,
+                onPressed: _stage == _Stage.ready ? () => unawaited(_start()) : null,
+                child: CampusBusyContent(busy: _stage == _Stage.starting, label: '开水', busyLabel: bluetooth ? '连接设备' : '开水中', icon: const CampusIcon(CampusIcons.bath)),
               ),
               errorLine(),
               for (final mate in _mates)
@@ -495,12 +493,10 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
               else if (!waiting)
                 Text('用量在关水时结算', style: secondary),
               const SizedBox(height: CampusGap.large),
-              CampusToastAnchor(
-                child: FilledButton(
-                  style: campusProminent,
-                  onPressed: _stage == _Stage.running ? () => unawaited(_end()) : null,
-                  child: CampusBusyContent(busy: _stage == _Stage.ending, label: '关水', busyLabel: '关水中', icon: const CampusIcon(CampusIcons.stop)),
-                ),
+              FilledButton(
+                style: campusProminent,
+                onPressed: _stage == _Stage.running ? () => unawaited(_end()) : null,
+                child: CampusBusyContent(busy: _stage == _Stage.ending, label: '关水', busyLabel: '关水中', icon: const CampusIcon(CampusIcons.stop)),
               ),
               errorLine(),
             ],
@@ -525,9 +521,7 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
                 ('订单号', bill.orderId),
               ]),
               const SizedBox(height: CampusGap.large),
-              CampusToastAnchor(
-                child: FilledButton.icon(onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.check), label: const Text('完成')),
-              ),
+              FilledButton.icon(onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.check), label: const Text('完成')),
             ],
           ),
         );

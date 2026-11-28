@@ -8,6 +8,7 @@ import 'package:http/testing.dart';
 
 import 'package:superxd/toolbox/life/life_alipay.dart';
 import 'package:superxd/theme/campus_theme.dart';
+import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_client.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_devices.dart';
@@ -160,12 +161,13 @@ void main() {
 
     setUp(() => fake = _FakePay());
 
-    testWidgets('充值：点额度或输其他金额，用支付宝付；付完去住理查到账、刷新余额', (tester) async {
+    testWidgets('充值：点额度或输其他金额，用支付宝付；付完去住理查到账、刷新余额；付款区跟着内容滚动、不是提示条锚点', (tester) async {
       final payer = _FakePayer('9000');
       final service = await signIn(tester, payer);
       fake.paidAfter = 2;
       await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ZhuliRechargePage(service: service, phone: _phone)));
       await _settle(tester);
+      expect(find.byType(CampusToastAnchor), findsNothing);
       expect(find.text('¥17.49'), findsOneWidget);
       expect(find.text('¥20'), findsOneWidget);
       expect(find.text('用支付宝付 ¥20.00'), findsOneWidget, reason: '默认选第一档');
@@ -247,7 +249,7 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('买券：只写售价、面额、先用谁与限购，限购买满与售罄不给买；弹层里同样三项、没有使用规则，付款后按订单号查券到账', (tester) async {
+    testWidgets('买券：只写售价、面额、先用谁与限购，限购买满与售罄不给买；弹层里同样三项、没有使用规则，付款区固定在弹层底部、是提示条锚点，付款后按订单号查券到账', (tester) async {
       final payer = _FakePayer('9000');
       final service = await signIn(tester, payer);
       await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ZhuliShopPage(service: service, phone: _phone)));
@@ -258,9 +260,11 @@ void main() {
       expect(find.byWidgetPredicate((widget) => widget is DotSeparatedText && widget.text == '面额 ¥12.00 · 优先用券'), findsOneWidget, reason: '不限购不写');
       expect(tester.widget<FilledButton>(find.ancestor(of: find.text('限购 1 张，已买满'), matching: find.byWidgetPredicate((widget) => widget is FilledButton))).onPressed, isNull);
       expect(tester.widget<FilledButton>(find.ancestor(of: find.text('已售罄'), matching: find.byWidgetPredicate((widget) => widget is FilledButton))).onPressed, isNull);
+      expect(find.byType(CampusToastAnchor), findsNothing);
       await tester.tap(find.text('购买'));
       await _settle(tester);
       expect(find.text('使用规则'), findsNothing);
+      expect(find.ancestor(of: find.text('用支付宝付 ¥100.00'), matching: find.byType(CampusToastAnchor)), findsOneWidget);
       await tester.tap(find.text('用支付宝付 ¥100.00'));
       await _settle(tester, rounds: 30);
       expect(fake.lastQuery('/webapi/v1/cash_coupon/buy_cash_coupon')['cash_coupon_id'], 'C1');
