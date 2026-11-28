@@ -36,6 +36,9 @@ class PangguaiException implements Exception {
   String toString() => 'PangguaiException($failure, $code)';
 }
 
+// 手机位置（已换成 GCJ-02，胖乖按国内地图的口径认）；取法见 pangguai_location.dart。
+typedef PangguaiPosition = ({double latitude, double longitude});
+
 // 下单前重算的实付和页面上显示的不一样：不下单，交回新价请人再确认。
 class PangguaiPriceChanged implements Exception {
   const PangguaiPriceChanged(this.price);

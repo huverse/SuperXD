@@ -1,6 +1,5 @@
 import 'package:superxd/toolbox/life/pangguai/pangguai_devices.dart';
 import 'package:superxd/toolbox/life/pangguai/pangguai_http.dart';
-import 'package:superxd/toolbox/life/pangguai/pangguai_location.dart';
 import 'package:superxd/toolbox/life/pangguai/pangguai_models.dart';
 
 // 胖乖生活的接口（路径与参数照移交包 v2.3 的集成契约与 Demo；没在 v2.3 里实测过的接口不接）。

@@ -3,9 +3,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/china_coordinates.dart';
-
-// 手机位置（已换成 GCJ-02，胖乖按国内地图的口径认）。
-typedef PangguaiPosition = ({double latitude, double longitude});
+import 'package:superxd/toolbox/life/pangguai/pangguai_models.dart';
 
 enum PangguaiLocationProblem {
   // 没给定位权限（或这次没问、不弹框）。
