@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, readdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import Redis from 'ioredis';
 import request from 'supertest';
@@ -12,6 +13,7 @@ import { env } from 'src/config/env';
 import { REDIS } from 'src/common/redis/redis.module';
 import { RedisKeys } from 'src/common/redis/redis_keys';
 import { diagnosticKeepDays, diagnosticStoreMaxBytes, diagnosticStoreMaxFiles, diagnosticUploadMaxBytes, diagnosticUploadPerHour } from 'src/common/relay_limits';
+import { DiagnosticStore } from 'src/modules/diagnostic/diagnostic.store';
 import { DiagnosticRetentionTask } from 'src/modules/diagnostic/diagnostic_retention.task';
 import { insertAccount } from './account_fixture';
 import { TestDevice } from './test_device';
@@ -45,6 +47,8 @@ afterAll(async () => {
 
 const upload = (body: Buffer) => request(server).post('/v1/diagnostics').set('Content-Type', 'application/octet-stream').send(body);
 const usage = async () => redis().hgetall(RedisKeys.diagnosticUsage());
+// 在途预占（「凭据:字节数」），11-28 起与已存好的用量分开记。
+const reservations = async () => (await redis().zrange(RedisKeys.diagnosticReservations(), 0, -1)).map((member) => Number(member.split(':')[1]));
 
 // 直接用 node 的 http 发：可以只声明长度不发完、或不带长度分块发，看服务端在读请求体之前怎么回。
 const rawPost = (headers: Record<string, string | number>, chunks: Buffer[], options: { end: boolean }) =>
@@ -152,14 +156,15 @@ describe('诊断包', () => {
     outgoing.write(randomBytes(1000));
     // 等服务端预占好、开始写残片，再掐断。
     await eventually(async () => (await readdir(dir())).some((name) => name.endsWith('.part')));
-    expect(await usage()).toEqual({ bytes: '100200', files: '2' });
+    expect(await usage()).toEqual({ bytes: '200', files: '1' });
+    expect(await reservations()).toEqual([100_000]);
     outgoing.destroy();
-    await eventually(async () => (await usage()).bytes === '200');
+    await eventually(async () => (await reservations()).length === 0);
     expect(await usage()).toEqual({ bytes: '200', files: '1' });
     await eventually(async () => (await readdir(dir())).length === 1);
   });
 
-  it('清理任务删掉满 30 天的包与一小时前断掉的残片，新的留下，已用量按目录实际重写', async () => {
+  it('清理任务删掉满 30 天的包与一小时前断掉的残片，新的留下，已用量按目录里存好的包重写（残片的额度在在途预占里）', async () => {
     const fresh = (await upload(randomBytes(300)).expect(200)).body.id as string;
     const old = (await upload(randomBytes(500)).expect(200)).body.id as string;
     const backdate = async (name: string, ms: number) => {
@@ -177,8 +182,40 @@ describe('诊断包', () => {
 
     await app.get(DiagnosticRetentionTask).sweep();
     expect((await readdir(dir())).sort()).toEqual([fresh, 'JKMNPQRS.part', 'README.txt'].sort());
-    expect(await usage()).toEqual({ bytes: '370', files: '2' });
+    expect(await usage()).toEqual({ bytes: '300', files: '1' });
     expect(await redis().ttl(RedisKeys.diagnosticUsage())).toBeGreaterThan(0);
+  });
+
+  // 11-28 Codex 审查 F06：原来清理任务按目录重写已用量，冲掉还没写完的上传的预占，之后退回又把已用量减成少算。
+  it('清理任务不碰在途预占：预占 → 清理 → 存好，预占 → 清理 → 退回，已用量与预占都对得上', async () => {
+    const store = app.get(DiagnosticStore);
+    const kept = (await upload(randomBytes(300)).expect(200)).body.id as string;
+    const pending = (await store.reserve(1000))!;
+    await app.get(DiagnosticRetentionTask).sweep();
+    expect(await usage()).toEqual({ bytes: '300', files: '1' });
+    expect(await reservations()).toEqual([1000]);
+    await store.save('ABCDEFGJ', Readable.from([randomBytes(1000)]), pending);
+    expect(await usage()).toEqual({ bytes: '1300', files: '2' });
+    expect(await reservations()).toEqual([]);
+
+    const abandoned = (await store.reserve(2000))!;
+    await app.get(DiagnosticRetentionTask).sweep();
+    await store.release(abandoned);
+    // 退回不动已存好的用量、不会减成负数。
+    expect(await usage()).toEqual({ bytes: '1300', files: '2' });
+    expect(await reservations()).toEqual([]);
+    expect((await readdir(dir())).sort()).toEqual(['ABCDEFGJ', kept].sort());
+  });
+
+  it('在途预占也算进上限；过了 10 分钟还没存好也没退回的（进程中途挂了）自己作废', async () => {
+    const store = app.get(DiagnosticStore);
+    await redis().hset(RedisKeys.diagnosticUsage(), { bytes: diagnosticStoreMaxBytes - 1500, files: 0 });
+    expect(await store.reserve(1000)).not.toBeNull();
+    expect(await store.reserve(1000)).toBeNull();
+    const [member] = await redis().zrange(RedisKeys.diagnosticReservations(), 0, -1);
+    await redis().zadd(RedisKeys.diagnosticReservations(), Date.now() - 1, member);
+    expect(await store.reserve(1000)).not.toBeNull();
+    expect(await reservations()).toEqual([1000]);
   });
 });
 
