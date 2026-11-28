@@ -20,7 +20,7 @@
 set -euo pipefail
 
 # 新增长期保存的表时加在这里，并同步 README「备份与恢复」。
-tables=(device friendship reward_campaign reward_prize reward_draw reward_audience app_account account_device account_tombstone points_grant points_entry challenge_best account_social account_unlock rollout_target app_release_pause schema_migration)
+tables=(device friendship reward_campaign reward_prize reward_tier_stock reward_draw reward_audience app_account account_device account_tombstone points_grant points_entry challenge_best account_social account_unlock rollout_target app_release_pause schema_migration)
 
 log() { echo "[Backup] $* time=$(date -u +%Y-%m-%dT%H:%M:%SZ)"; }
 

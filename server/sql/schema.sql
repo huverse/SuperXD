@@ -97,6 +97,19 @@ CREATE TABLE IF NOT EXISTS reward_prize (
   KEY idx_campaign_tier_draw (campaign_id, tier, draw_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
+-- 每个活动每档的库存计数（11-28 起，sql/upgrade_2026_11_28.sql）：导入奖品加 stock、发出一份加 given，与奖品行同一事务；抽中时只读这几行，不汇总全部奖品。
+CREATE TABLE IF NOT EXISTS reward_tier_stock (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  campaign_id BIGINT UNSIGNED NOT NULL,
+  tier TINYINT UNSIGNED NOT NULL COMMENT '金额档，同 reward_prize.tier',
+  stock INT NOT NULL COMMENT '这一档导入的奖品份数',
+  given INT NOT NULL COMMENT '这一档已经发出的份数',
+  create_time DATETIME(3) NOT NULL,
+  update_time DATETIME(3) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_reward_tier_stock (campaign_id, tier)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
 -- 抽签记录：每次活动每个参与号一行（参与号只存 sha256），重复请求返回同一个结果，抽不中的也记，防止反复重抽。
 CREATE TABLE IF NOT EXISTS reward_draw (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,

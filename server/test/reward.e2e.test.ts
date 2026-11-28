@@ -521,6 +521,27 @@ describe('资格与发放', () => {
     expect(await runRewardAdmin(admin, ['status', key], lines(''))).toContain('发放 all');
   });
 
+  // 11-28 Codex 审查 F07：抽中时原来汇总这次活动的全部奖品；改成每档一行计数，导入与发出时同一事务里改。
+  it('每档的库存计数跟着导入与发出走、和奖品表对得上；导入中途有一行不对整批不进库、计数不变', async () => {
+    roll.mockReturnValue(0.999);
+    const key = await create(['--distribution', 'all', '--min-account-days', '0'], 2);
+    const stock = async () =>
+      (await database.query('SELECT s.tier, s.stock, s.given FROM reward_tier_stock s JOIN reward_campaign c ON c.id = s.campaign_id WHERE c.campaign_key = ? ORDER BY s.tier', [key])) as { tier: number; stock: number; given: number }[];
+    expect(await stock()).toEqual([{ tier: 0, stock: 2, given: 0 }]);
+    expect((await draw(await registered(), key, { activeDays: 0 })).body).toMatchObject({ result: 'won' });
+    expect(await stock()).toEqual([{ tier: 0, stock: 2, given: 1 }]);
+    await expect(runRewardAdmin(admin, ['import', key], lines('口令\t补1\n红包\t不认识'))).rejects.toThrow('第 2 行');
+    expect(await stock()).toEqual([{ tier: 0, stock: 2, given: 1 }]);
+    await runRewardAdmin(admin, ['import', key], lines('口令\t补1\n口令\t补2'));
+    await runRewardAdmin(admin, ['import', key, '--tier', '1'], lines('口令\t大额'));
+    expect(await stock()).toEqual([
+      { tier: 0, stock: 4, given: 1 },
+      { tier: 1, stock: 1, given: 0 },
+    ]);
+    const [counted] = (await database.query('SELECT COUNT(*) AS total, COUNT(draw_id) AS given FROM reward_prize p JOIN reward_campaign c ON c.id = p.campaign_id WHERE c.campaign_key = ?', [key])) as { total: string; given: string }[];
+    expect([Number(counted.total), Number(counted.given)]).toEqual([5, 1]);
+  });
+
   // 人工决策见 src/modules/reward/reward_odds.ts 的 11-18 那条：发完为止的活动分批补货。
   it('all 分批补货：这一批领完时来领的人回 sold_out、不记这次，状态 sold_out；补货后同一个人能领到，领过的照旧拿回自己那份', async () => {
     const key = await create(['--distribution', 'all', '--min-account-days', '0'], 1);

@@ -75,24 +75,42 @@ export const runRewardAdmin = async (connection: Connection, args: string[], lin
   if (command === 'import') {
     const tier = Number(option(rest, 'tier') ?? '0');
     if (!Number.isInteger(tier) || tier < 0 || tier > tierMax) fail(`--tier 是金额档，0 到 ${tierMax} 的整数`);
-    const rows: [string, number, string, string, string, Date, Date][] = [];
+    // 边读边按 importChunk 份一批写，整个导入一个事务（11-28 审查 F07：原来先把全部行读进内存再写）：哪一行不对整批都不进库；
+    // 这一档的库存计数 reward_tier_stock 在同一事务里加上（抽中时只读计数）。
     const now = new Date();
-    let line = 0;
-    for await (const text of lines()) {
-      line++;
-      if (text.trim() === '') continue;
-      const [label, content = '', note = ''] = text.replace(/^\uFEFF/, '').split('\t').map((part) => part.trim());
-      const kind = kinds[label];
-      if (kind === undefined) fail(`第 ${line} 行：开头写「口令」或「二维码」，再用 Tab 隔开内容`);
-      if (content === '' || content.length > 1024) fail(`第 ${line} 行：内容为空或超过 1024 字`);
-      if (note.length > 200) fail(`第 ${line} 行：附言超过 200 字`);
-      rows.push([campaign.id, tier, kind, content, note, now, now]);
+    let line = 0, total = 0;
+    let chunk: [string, number, string, string, string, Date, Date][] = [];
+    const flush = async () => {
+      if (chunk.length === 0) return;
+      await connection.query('INSERT INTO reward_prize (campaign_id, tier, kind, content, note, create_time, update_time) VALUES ?', [chunk]);
+      total += chunk.length;
+      chunk = [];
+    };
+    await connection.beginTransaction();
+    try {
+      for await (const text of lines()) {
+        line++;
+        if (text.trim() === '') continue;
+        const [label, content = '', note = ''] = text.replace(/^\uFEFF/, '').split('\t').map((part) => part.trim());
+        const kind = kinds[label];
+        if (kind === undefined) fail(`第 ${line} 行：开头写「口令」或「二维码」，再用 Tab 隔开内容`);
+        if (content === '' || content.length > 1024) fail(`第 ${line} 行：内容为空或超过 1024 字`);
+        if (note.length > 200) fail(`第 ${line} 行：附言超过 200 字`);
+        chunk.push([campaign.id, tier, kind, content, note, now, now]);
+        if (chunk.length >= importChunk) await flush();
+      }
+      await flush();
+      if (total === 0) fail('没有读到奖品');
+      await connection.query(
+        'INSERT INTO reward_tier_stock (campaign_id, tier, stock, given, create_time, update_time) VALUES (?, ?, ?, 0, ?, ?) ON DUPLICATE KEY UPDATE stock = stock + VALUES(stock), update_time = VALUES(update_time)',
+        [campaign.id, tier, total, now, now],
+      );
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
     }
-    if (rows.length === 0) fail('没有读到奖品');
-    for (let start = 0; start < rows.length; start += importChunk) {
-      await connection.query('INSERT INTO reward_prize (campaign_id, tier, kind, content, note, create_time, update_time) VALUES ?', [rows.slice(start, start + importChunk)]);
-    }
-    return `[RewardAdmin] action=import campaign=${key} tier=${tier} prizes=${rows.length}`;
+    return `[RewardAdmin] action=import campaign=${key} tier=${tier} prizes=${total}`;
   }
   if (command === 'audience') {
     // 先读完再查库（见上面 lines 的说明）；按 1000 个一批换成账号号、批量写入，不逐个查。
