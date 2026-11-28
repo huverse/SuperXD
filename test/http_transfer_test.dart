@@ -65,6 +65,32 @@ void main() {
     await transfer.close();
   });
 
+  // 11-28 Codex 审查 F08：原来写盘错误要等网络读完才接住，在那之前先成了没人处理的异步错误、下载还在等网络。
+  test('写不了盘（目录不在）：网络还没读完就按失败结束、不再收网络，错误不逃出下载', () async {
+    final escaped = <Object>[];
+    final body = StreamController<List<int>>();
+    final ended = Completer<(ToolboxTransferUpdate, bool)>();
+    // 出错的 zone 里 future 不往外传错，结果经 ended 交出来、断言在外面做。
+    unawaited(runZonedGuarded(() async {
+      final transfer = HttpTransfer('${directory.path}/missing', createClient: () => MockClient.streaming((_, _) async => http.StreamedResponse(body.stream, 200, contentLength: 2)));
+      final failed = transfer.updates.firstWhere((update) => update.state == ToolboxDownloadState.failed);
+      await transfer.enqueue(download('a', 'https://cdn.example.com/a.mp4'));
+      body.add([1]);
+      final update = await failed;
+      final open = !body.isClosed;
+      await transfer.close();
+      ended.complete((update, open));
+    }, (error, stack) => escaped.add(error)));
+    final (update, networkOpen) = await ended.future.timeout(const Duration(seconds: 5));
+    expect(update.error, '下载失败，链接可能已失效，请重新解析');
+    expect(networkOpen, isTrue, reason: '网络还没读完就结束了');
+    expect(escaped, isEmpty);
+    expect(body.hasListener, isFalse);
+    expect(logs.single, startsWith('[ToolboxDownload] action=transfer errorType=PathNotFoundException'));
+    // 没人听过的流，close 的 future 不会完成。
+    unawaited(body.close());
+  });
+
   test('跳转逐跳只认公网 https，跳到明文地址按失败处理', () async {
     final requested = <Uri>[];
     final transfer = HttpTransfer(
