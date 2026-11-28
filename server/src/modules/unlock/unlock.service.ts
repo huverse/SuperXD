@@ -77,7 +77,7 @@ export class UnlockService implements OnModuleInit {
     const expired = specs.filter((spec) => spec.retired !== true && unlockPublic(spec, now.getTime() - unlockKeepDaysAfterPublic * 86400_000)).map((spec) => spec.id);
     const counts = { refunded: 0, removed: 0 };
     for (let round = 0; round < 20; round++) {
-      const batch = await this.unlocks.settle(retired, cleanupBatch, async (manager, rows) => {
+      const batch = await this.unlocks.settle(retired, cleanupBatch, this.accounts.holdAll, async (manager, rows) => {
         const refunds = rows
           .filter((row) => row.source === 'buy' && row.price > 0)
           .map((row) => ({ accountId: row.accountId, amount: row.price, sourceKey: `unlock:${row.id}`, note: `退回 · ${titles.get(row.unlockId) ?? row.unlockId}` }));

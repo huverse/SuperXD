@@ -53,10 +53,20 @@ export const runFlagAdmin = async (connection: Connection, redis: Redis, args: s
   }
   const until = untilOf(rest);
   if (until !== null && until <= now) fail('--until 要晚于现在');
-  await connection.query(
-    'INSERT INTO rollout_target (flag_id, account_id, expires_at, create_time, update_time) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE expires_at = VALUES(expires_at), update_time = VALUES(update_time)',
-    [flag, accountId, until, now, now],
-  );
+  // 同各模块的写入门禁（account.repository.ts 的 holdIn）：同一事务里先给账号行加共享锁、确认还在再写，查到之后才注销的账号不留点名（11-28 复核 F05）。
+  await connection.beginTransaction();
+  try {
+    const [held] = (await connection.query('SELECT account_id FROM app_account WHERE account_id = ? FOR SHARE', [accountId])) as unknown as [unknown[]];
+    if (held.length === 0) fail(`没有用户名 ${username}`);
+    await connection.query(
+      'INSERT INTO rollout_target (flag_id, account_id, expires_at, create_time, update_time) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE expires_at = VALUES(expires_at), update_time = VALUES(update_time)',
+      [flag, accountId, until, now, now],
+    );
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  }
   return `已点名 ${username} 的 ${flag}（${until === null ? '一直开到撤销' : `到 ${until.toISOString()}`}）${await bump(connection, redis, accountId, now)}`;
 };
 

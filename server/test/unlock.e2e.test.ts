@@ -10,6 +10,8 @@ import { env } from 'src/config/env';
 import { REDIS } from 'src/common/redis/redis.module';
 import { unlockKeepDaysAfterPublic } from 'src/common/relay_limits';
 import { UnlockService } from 'src/modules/unlock/unlock.service';
+import { PointsService } from 'src/modules/points/points.service';
+import { PointsRetentionTask } from 'src/modules/points/points_retention.task';
 import { insertAccount } from './account_fixture';
 import { TestDevice } from './test_device';
 
@@ -204,5 +206,88 @@ describe('解锁', () => {
       expect(response.status, JSON.stringify(unlocks)).toBe(500);
     }
     printed.mockRestore();
+  });
+
+  // 11-28 Codex 复核 F05：定时任务一次给一批账号写积分（下架退回、到期清零），原来先锁解锁记录或获得、再写积分，和注销「先锁账号行、再删积分与解锁」的先后相反：
+  // 注销删完积分、还没删解锁时任务插进来，两边各等对方（InnoDB 判死锁回滚一边），或者给已注销的账号写进积分。现在任务先按账号号锁账号行。
+  describe('定时任务与注销交错', () => {
+    // 注销做完积分那一步、还没删别的时停住（此时拿着账号行的排他锁与积分表上这个账号的间隙锁）。
+    const pauseDeletionAfterPoints = () => {
+      let release!: () => void, reached!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve)), arrived = new Promise<void>((resolve) => (reached = resolve));
+      const points = app.get(PointsService), original = points.deleteAccountsIn.bind(points);
+      const spy = vi.spyOn(points, 'deleteAccountsIn').mockImplementation(async (...args) => {
+        await original(...args);
+        reached();
+        await gate;
+      });
+      return { arrived, release: () => release(), restore: () => spy.mockRestore() };
+    };
+    const waiting = async (pattern: string) => {
+      for (let attempt = 0; attempt < 300; attempt++) {
+        if (((await database.query('SELECT ID FROM information_schema.PROCESSLIST WHERE INFO LIKE ?', [pattern])) as unknown[]).length > 0) return true;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      return false;
+    };
+
+    it('下架退积分：等注销提交，已注销的不退、不死锁、不留积分；还在的账号照常退', async () => {
+      await writeRollout([{ id: 'toolbox.synthetic_gone', title: '下架', price: 10, retired: true }]);
+      const leaving = await signedIn(), staying = await signedIn();
+      for (const { accountId } of [leaving, staying]) {
+        await database.query('INSERT INTO account_unlock (account_id, unlock_id, source, price, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?)', [accountId, 'toolbox.synthetic_gone', 'buy', 10, new Date(), new Date()]);
+      }
+      const pause = pauseDeletionAfterPoints();
+      try {
+        const deleting = leaving.device.call('DELETE', '/v1/account').then((response) => response);
+        await pause.arrived;
+        const sweeping = app.get(UnlockService).sweep();
+        expect(await waiting('SELECT account_id AS accountId FROM app_account WHERE account_id IN (%) ORDER BY account_id FOR SHARE'), '退积分先等账号行').toBe(true);
+        pause.release();
+        expect((await deleting).status).toBe(204);
+        await sweeping;
+      } finally {
+        pause.release();
+        pause.restore();
+      }
+      expect(await database.query('SELECT id FROM points_grant WHERE account_id = ?', [leaving.accountId])).toHaveLength(0);
+      expect(await database.query('SELECT id FROM points_entry WHERE account_id = ?', [leaving.accountId])).toHaveLength(0);
+      expect(await database.query('SELECT id FROM account_unlock WHERE unlock_id = ?', ['toolbox.synthetic_gone'])).toHaveLength(0);
+      expect((await database.query('SELECT kind, amount FROM points_entry WHERE account_id = ?', [staying.accountId])) as unknown[]).toEqual([{ kind: 'refund', amount: 10 }]);
+    });
+
+    it('积分到期清零：等注销提交，已注销的不记过期流水、不死锁；还在的账号照常清零记流水', async () => {
+      const leaving = await signedIn(), staying = await signedIn();
+      for (const { accountId } of [leaving, staying]) await earn(accountId, 30, -1);
+      const pause = pauseDeletionAfterPoints();
+      try {
+        const deleting = leaving.device.call('DELETE', '/v1/account').then((response) => response);
+        await pause.arrived;
+        const sweeping = app.get(PointsRetentionTask).sweep();
+        expect(await waiting('SELECT account_id AS accountId FROM app_account WHERE account_id IN (%) ORDER BY account_id FOR SHARE'), '到期清零先等账号行').toBe(true);
+        pause.release();
+        expect((await deleting).status).toBe(204);
+        await sweeping;
+      } finally {
+        pause.release();
+        pause.restore();
+      }
+      expect(await database.query('SELECT id FROM points_entry WHERE account_id = ?', [leaving.accountId])).toHaveLength(0);
+      expect(await database.query('SELECT id FROM points_grant WHERE account_id = ?', [leaving.accountId])).toHaveLength(0);
+      expect((await database.query('SELECT kind, amount FROM points_entry WHERE account_id = ?', [staying.accountId])) as unknown[]).toEqual([{ kind: 'expire', amount: -30 }]);
+      expect((await database.query('SELECT remaining FROM points_grant WHERE account_id = ?', [staying.accountId])) as unknown[]).toEqual([{ remaining: 0 }]);
+    });
+
+    it('门禁之前留下的孤儿行（账号已不在）：退积分与到期都不给它写积分，记录照样清掉，不会每轮被重新选中', async () => {
+      await writeRollout([{ id: 'toolbox.synthetic_orphan', title: '下架', price: 10, retired: true }]);
+      const ghost = randomBytes(16).toString('base64url');
+      await database.query('INSERT INTO account_unlock (account_id, unlock_id, source, price, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?)', [ghost, 'toolbox.synthetic_orphan', 'buy', 10, new Date(), new Date()]);
+      await earn(ghost, 30, -1);
+      await app.get(UnlockService).sweep();
+      await app.get(PointsRetentionTask).sweep();
+      expect(await database.query('SELECT id FROM account_unlock WHERE account_id = ?', [ghost])).toHaveLength(0);
+      expect(await database.query('SELECT id FROM points_entry WHERE account_id = ?', [ghost])).toHaveLength(0);
+      expect((await database.query('SELECT remaining FROM points_grant WHERE account_id = ?', [ghost])) as unknown[]).toEqual([{ remaining: 0 }]);
+    });
   });
 });

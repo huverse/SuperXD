@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 
-import { AccountHold } from 'src/modules/account/account.repository';
+import { AccountHold, AccountHoldAll } from 'src/modules/account/account.repository';
 import { AccountUnlockEntity } from 'src/modules/unlock/unlock.entity';
 
 export type UnlockRow = { id: string; accountId: string; unlockId: string; source: string; price: number };
@@ -16,8 +16,9 @@ export abstract class UnlockRepository {
   abstract insertDrawn(accountId: string, unlockIds: string[], now: Date, hold: AccountHold): Promise<void>;
   // 在事务里记一笔买的：已经记过（买过或抽中过）返回 null，否则返回这一行的编号，再在同一事务里调 charge（付积分），charge 抛错则不留。
   abstract buy(accountId: string, unlockId: string, price: number, now: Date, hold: AccountHold, charge: (manager: EntityManager, rowId: string) => Promise<void>): Promise<string | null>;
-  // 在事务里取最多 limit 行属于这些解锁的记录交给 work（下架退回用），work 之后这些行删掉；返回处理的行数。
-  abstract settle(unlockIds: string[], limit: number, work: (manager: EntityManager, rows: UnlockRow[]) => Promise<void>): Promise<number>;
+  // 在事务里取最多 limit 行属于这些解锁的记录交给 work（下架退回用），work 之后这些行删掉；返回这一批取到的行数（不足 limit 说明取完了）。
+  // holdAll 是账号写入门禁（AccountRepository.holdAll）：先锁这批记录所属的账号行、再锁记录（同注销的先后，11-28 复核 F05），交给 work 的只有账号还在的行。
+  abstract settle(unlockIds: string[], limit: number, holdAll: AccountHoldAll, work: (manager: EntityManager, rows: UnlockRow[]) => Promise<void>): Promise<number>;
   // 删最多 limit 行属于这些解锁的记录（公开满 30 天的），返回删的行数。
   abstract deleteOf(unlockIds: string[], limit: number): Promise<number>;
   abstract deleteAccounts(manager: EntityManager, accountIds: string[]): Promise<void>;
@@ -64,17 +65,19 @@ export class TypeormUnlockRepository extends UnlockRepository {
     });
   }
 
-  settle(unlockIds: string[], limit: number, work: (manager: EntityManager, rows: UnlockRow[]) => Promise<void>) {
+  settle(unlockIds: string[], limit: number, holdAll: AccountHoldAll, work: (manager: EntityManager, rows: UnlockRow[]) => Promise<void>) {
     if (unlockIds.length === 0) return Promise.resolve(0);
     return this.unlocks.manager.transaction(async (manager) => {
-      const rows = (await manager.query(
-        'SELECT id, account_id AS accountId, unlock_id AS unlockId, source, price FROM account_unlock WHERE unlock_id IN (?) ORDER BY id LIMIT ? FOR UPDATE',
-        [unlockIds, limit],
-      )) as UnlockRow[];
-      if (rows.length === 0) return 0;
-      await work(manager, rows.map((row) => ({ ...row, id: String(row.id), price: Number(row.price) })));
-      await manager.query('DELETE FROM account_unlock WHERE id IN (?)', [rows.map((row) => row.id)]);
-      return rows.length;
+      // 先不加锁地取这一批（快照读），锁上它们的账号行，再锁住记录重读：等锁期间账号注销提交了的，记录已随账号删掉、重读不到。
+      const batch = (await manager.query('SELECT id, account_id AS accountId FROM account_unlock WHERE unlock_id IN (?) ORDER BY id LIMIT ?', [unlockIds, limit])) as { id: string; accountId: string }[];
+      if (batch.length === 0) return 0;
+      const held = await holdAll(manager, batch.map((row) => row.accountId));
+      const rows = (await manager.query('SELECT id, account_id AS accountId, unlock_id AS unlockId, source, price FROM account_unlock WHERE id IN (?) FOR UPDATE', [batch.map((row) => row.id)])) as UnlockRow[];
+      if (rows.length > 0) {
+        await work(manager, rows.filter((row) => held.has(row.accountId)).map((row) => ({ ...row, id: String(row.id), price: Number(row.price) })));
+        await manager.query('DELETE FROM account_unlock WHERE id IN (?)', [rows.map((row) => row.id)]);
+      }
+      return batch.length;
     });
   }
 

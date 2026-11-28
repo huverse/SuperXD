@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 
 import { DistributedLock } from 'src/common/redis/redis.module';
 import { cleanupBatch, pointsEntryKeepDays, pointsSpentGrantKeepDays } from 'src/common/relay_limits';
+import { AccountRepository } from 'src/modules/account/account.repository';
 import { PointsRepository } from 'src/modules/points/points.repository';
 
 // 积分的到期与保留（人工决策见 points.service.ts）：每小时把到期还有剩余的获得清零并记过期流水；流水满 13 个月删除；
@@ -14,6 +15,7 @@ export class PointsRetentionTask {
   constructor(
     private readonly lock: DistributedLock,
     private readonly points: PointsRepository,
+    private readonly accounts: AccountRepository,
   ) {}
 
   // 每小时一次，只比较 UTC 绝对时刻，显式按 UTC 调度。
@@ -30,7 +32,7 @@ export class PointsRetentionTask {
   async sweep(now = new Date()) {
     const counts = { expired: 0, entries: 0, grants: 0 };
     const steps: [keyof typeof counts, () => Promise<number>][] = [
-      ['expired', () => this.points.expireDue(now, cleanupBatch)],
+      ['expired', () => this.points.expireDue(now, cleanupBatch, this.accounts.holdAll)],
       ['entries', () => this.points.deleteEntriesBefore(new Date(now.getTime() - pointsEntryKeepDays * 86400_000), cleanupBatch)],
       ['grants', () => this.points.deleteGrantsBefore(new Date(now.getTime() - pointsSpentGrantKeepDays * 86400_000), cleanupBatch)],
     ];
