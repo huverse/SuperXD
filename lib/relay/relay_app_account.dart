@@ -1,3 +1,7 @@
+import 'dart:async';
+
+import 'package:synchronized/synchronized.dart';
+
 import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/domain/campus_log.dart';
@@ -32,10 +36,19 @@ class RelayAppAccountClient implements AppAccountClient {
     return saved == null ? null : AppAccountSession(account: AppAccountRef(accountId: saved.accountId, slot: appAccountSlot), username: saved.username);
   }
 
+  // 本机这把密钥的写入与删除排成一个队（11-28 审查 F03）：删之前核对槽里还是读出来的那把，旧账号迟到的「账号不在了」不会删掉刚登录的新账号。
+  final _vaultLock = Lock();
+
   Future<AppAccountSession> _save(RelayIdentity key, String accountId, String username) async {
-    await vault.write(appAccountSlot, AppAccountKey(identity: key, accountId: accountId, username: username));
+    await _vaultLock.synchronized(() => vault.write(appAccountSlot, AppAccountKey(identity: key, accountId: accountId, username: username)));
     return AppAccountSession(account: AppAccountRef(accountId: accountId, slot: appAccountSlot), username: username);
   }
+
+  // 删掉本机这把密钥，只在槽里还是 saved 那把（同一设备号）时删；已经换成别的账号或别的密钥就不动。
+  Future<void> _forget(AppAccountKey saved) => _vaultLock.synchronized(() async {
+    final current = await vault.read(appAccountSlot);
+    if (current != null && current.identity.deviceId == saved.identity.deviceId) await vault.delete(appAccountSlot);
+  });
 
   static final _usernamePattern = RegExp(r'^[a-z0-9_]{3,20}$');
 
@@ -65,8 +78,10 @@ class RelayAppAccountClient implements AppAccountClient {
     return const AppAccountException(AppAccountFailure.failed, _badMessage);
   }
 
-  // 注册、登录、重设共用：新生成一把设备密钥，带着封装好的秘密发出，成功才存本机。
+  // 注册、登录、重设共用：新生成一把设备密钥，带着封装好的秘密发出，成功才存本机。改用这几种方式登录时，还在出示的扫码登录一律作废（审查 F04）。
   Future<AppAccountSession> _credential(String action, String path, String username, Map<String, Object?> secrets) async {
+    _joins.clear();
+    _joinEpoch++;
     final key = await RelayIdentity.generate();
     final body = await _relay.signedWith(key, 'POST', path, payload: {..._keys(key), 'username': normalizeAppUsername(username), 'sealed': await _seal(key, secrets)}, errors: _errors);
     final accountId = body['accountId'], name = body['username'];
@@ -103,8 +118,13 @@ class RelayAppAccountClient implements AppAccountClient {
     await _relay.signedWith(saved.identity, 'POST', '/v1/account/recovery-code', payload: {'sealed': await _seal(saved.identity, {'recoveryCode': recoveryCode})}, errors: _errors);
   }
 
-  // 扫码登录出示二维码用的密钥：出示时新生成、只放内存，批准了才存进安全存储（没批准就丢，服务端那条登记按 400 天不活跃清掉）。
-  RelayIdentity? _joinKey;
+  // 扫码登录出示二维码用的密钥：出示时新生成、只放内存，按票据号各记一把，批准了才存进安全存储（没批准就丢，服务端那条登记按 400 天不活跃清掉）。
+  // 11-28 审查 F04：离开出示页、刷新或改用别的方式登录时立即从这里拿掉，已经发出的轮询晚回来说批准了也不存、不登录（不覆盖之后的登录）。
+  // 一个出示页同时只有一两张，最多记 _joinLimit 张。
+  final _joins = <String, RelayIdentity>{};
+  static const _joinLimit = 4;
+  // 改用别的方式登录的次数：出示请求在路上时登录了别的，回来的那张不再记。
+  var _joinEpoch = 0;
 
   // 机型是给批准方看的一行字：去掉首尾空白与控制字符，最多 64 个字符（同服务端 accountJoinDeviceMaxLength），读不出就不带。
   Future<String?> _model() async {
@@ -121,37 +141,49 @@ class RelayAppAccountClient implements AppAccountClient {
 
   @override
   Future<AppAccountJoin> startJoin() async {
-    final key = _joinKey = await RelayIdentity.generate();
+    final epoch = _joinEpoch;
+    final key = await RelayIdentity.generate();
     final model = await _model();
     final body = await _relay.signedWith(key, 'POST', '/v1/account/joins', payload: {..._keys(key), 'device': ?model}, errors: _errors);
     final ticketId = body['ticketId'], code = body['code'], expiresAt = body['expiresAt'];
     if (ticketId is String && _accountIdPattern.hasMatch(ticketId) && code is String && RegExp(r'^\d{6}$').hasMatch(code) && expiresAt is int) {
+      if (epoch != _joinEpoch) throw const AppAccountException(AppAccountFailure.joinExpired, '已经用别的方式登录了');
+      if (_joins.length >= _joinLimit) _joins.remove(_joins.keys.first);
+      _joins[ticketId] = key;
       // 失效时刻是服务器时钟，换成本机时钟给出示页倒数（手机时钟不准、校时过时，不换就一出示就显示已失效、不再问批准）。
       return AppAccountJoin(ticketId: ticketId, code: code, expiresAt: DateTime.fromMillisecondsSinceEpoch(expiresAt - _relay.clockOffset, isUtc: true));
     }
     throw _bad('start_join');
   }
 
+  static const _joinGone = AppAccountException(AppAccountFailure.joinExpired, '二维码已过期，请刷新');
+
   @override
   Future<AppAccountSession?> joinState(AppAccountJoin join) async {
-    final key = _joinKey;
-    if (key == null) throw const AppAccountException(AppAccountFailure.joinExpired, '二维码已过期，请刷新');
+    final key = _joins[join.ticketId];
+    if (key == null) throw _joinGone;
     final body = await _relay.signedWith(key, 'GET', '/v1/account/joins/${join.ticketId}', errors: _errors);
     final state = body['state'], account = body['account'];
     if (state == 'pending') return null;
     if (state == 'approved') {
       if (account case {'accountId': final String accountId, 'username': final String name} when _accountIdPattern.hasMatch(accountId) && _usernamePattern.hasMatch(name)) {
-        _joinKey = null;
+        // 这一问在路上时离开了出示页、刷新了或登录了别的：不存这把密钥、不登录，顺手请中转删掉批准时登记的这台设备（不等，失败只记日志）。
+        if (!identical(_joins[join.ticketId], key)) {
+          campusLog('[AppAccount] action=join_state result=stale');
+          unawaited(_relay.signedWith(key, 'DELETE', '/v1/devices', errors: _errors).then<void>((_) {}, onError: (Object error, StackTrace stack) => campusLog('[AppAccount] action=drop_stale_join errorType=${error.runtimeType}\n$stack')));
+          throw _joinGone;
+        }
+        _joins.remove(join.ticketId);
         return _save(key, accountId, name);
       }
     }
     throw _bad('join_state');
   }
 
-  // 离开出示页：用出示时那把临时密钥请中转作废这张票据（中转只作废还没批准的）；批准过（密钥已存）或没出示过不发。
+  // 离开出示页或刷新：先在本机作废（之后回来的批准不再认），再用那把临时密钥请中转作废这张票据（中转只作废还没批准的）；批准过（密钥已存）或没出示过不发。
   @override
   Future<void> cancelJoin(AppAccountJoin join) async {
-    final key = _joinKey;
+    final key = _joins.remove(join.ticketId);
     if (key == null) return;
     await _relay.signedWith(key, 'DELETE', '/v1/account/joins/${join.ticketId}', errors: _errors);
   }
@@ -190,8 +222,8 @@ class RelayAppAccountClient implements AppAccountClient {
       }
       throw _bad('summary');
     } on AppAccountException catch (error) {
-      // 账号在别处注销、被清理，或这把密钥被顶掉了：本机记录随之作废。
-      if (error.failure == AppAccountFailure.notSignedIn || error.failure == AppAccountFailure.deleted) await vault.delete(appAccountSlot);
+      // 账号在别处注销、被清理，或这把密钥被顶掉了：本机记录随之作废（只删发这次请求的那把，这一问在路上时换成的别的账号不动）。
+      if (error.failure == AppAccountFailure.notSignedIn || error.failure == AppAccountFailure.deleted) await _forget(saved);
       rethrow;
     }
   }
@@ -206,7 +238,7 @@ class RelayAppAccountClient implements AppAccountClient {
       // 服务端已不认、或这会儿连不上：照样删本机密钥（没了私钥谁也用不了那条登记，服务端按 400 天不活跃清掉）。
       campusLog('[AppAccount] action=sign_out failure=${error.failure.name} errorType=${error.runtimeType}\n$stack');
     }
-    await vault.delete(appAccountSlot);
+    await _forget(saved);
   }
 
   @override

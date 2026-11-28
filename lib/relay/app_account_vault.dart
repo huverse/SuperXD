@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/relay/relay_crypto.dart';
 
@@ -70,6 +71,15 @@ class MemoryAppAccountVault implements AppAccountVault {
   Future<void> delete(String slot) async => records.remove(slot);
   @override
   Future<List<String>> slots() async => records.keys.toList();
+}
+
+// 读这个应用账号在本机的那把密钥：槽是这台设备共用的，换过账号后还拿着旧引用的操作会读到新账号的密钥（11-28 审查 F01），
+// 所以账号号对不上的当没有（不签名、不发请求）。签名请求（account_relay.dart）与私信挂账号都经这里读。
+extension AppAccountKeyOf on AppAccountVault {
+  Future<AppAccountKey?> keyOf(AppAccountRef account) async {
+    final saved = await read(account.slot);
+    return saved != null && saved.accountId == account.accountId ? saved : null;
+  }
 }
 
 // 安全存储里这台设备应用账号的键（11-15 起一台设备一个，与教务各管各的）。11-15 以前每个教务账号一把，键是 account.<教务身份的哈希>（清理见 relay_app_account.dart 的 dropLegacy）。

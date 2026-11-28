@@ -211,7 +211,8 @@ class SocialService extends ChangeNotifier implements FriendMessaging {
   // 账号的私信在另一台手机上抛 SocialException(SOCIAL_ELSEWHERE)；这台手机上没有那把应用账号密钥、或中转说账号不在了抛 SocialException(signedOut)。
   Future<bool> _bind(_Session session, {required bool takeover}) async {
     final identity = session.identity!;
-    final key = await accountKeys.read(session.account.slot);
+    // 账号号对不上（这台手机已换成别的应用账号）的密钥当没有，免得把这个账号的私信挂到别的账号下（11-28 审查 F01）。
+    final key = await accountKeys.keyOf(session.account);
     if (key == null) throw const SocialException(SocialCode.signedOut);
     final bool moved;
     try {

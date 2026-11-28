@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cryptography/cryptography.dart';
@@ -31,6 +32,7 @@ import 'package:superxd/page/app_account_join_page.dart';
 import 'package:superxd/page/app_account_page.dart';
 import 'package:superxd/page/section_pages.dart';
 import 'package:superxd/page/sensitive_clipboard.dart';
+import 'package:superxd/relay/account_relay.dart';
 import 'package:superxd/relay/account_seal.dart';
 import 'package:superxd/relay/app_account_vault.dart';
 import 'package:superxd/relay/relay_app_account.dart';
@@ -259,6 +261,96 @@ void main() {
       expect(await client.dropLegacy(), [const AppAccountRef(accountId: 'OLDOLDOLDOLDOLDOLDOLDO', slot: 'account.AAAA')]);
       expect(await vault.slots(), [appAccountSlot]);
       expect(await client.dropLegacy(), isEmpty);
+    });
+
+    // 11-28 Codex 审查 F01、F03、F04：这台手机只有一个应用账号槽，换过账号后旧的引用、旧的请求与旧的扫码轮询都不能动到新账号。
+    const other = 'BBBBBBBBBBBBBBBBBBBBBB';
+
+    test('旧账号的引用读不到新账号的密钥：签名请求不发，三个入口都一样（审查 F01）', () async {
+      await vault.write(appAccountSlot, AppAccountKey(identity: await RelayIdentity.generate(), accountId: other, username: 'tester_two'));
+      final account = AccountRelay(vault: vault, transport: relay);
+      const stale = AppAccountRef(accountId: _accountId, slot: appAccountSlot);
+      expect(await account.send(stale, 'DELETE', '/v1/leisure'), isNull);
+      expect(await account.exchange(stale, 'GET', '/v1/flags/mine'), isNull);
+      final errors = RelayErrors(
+        signedOut: const AppAccountException(AppAccountFailure.notSignedIn, 'signed out'),
+        network: const AppAccountException(AppAccountFailure.network, 'network'),
+        rateLimited: const AppAccountException(AppAccountFailure.rateLimited, 'limited'),
+        failed: (code) => AppAccountException(AppAccountFailure.failed, code),
+      );
+      await expectLater(account.signedCall(stale, 'POST', '/v1/challenges/x/runs', errors: errors), throwsA(isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.notSignedIn)));
+      expect(relay.requests, isEmpty);
+      expect((await account.send(const AppAccountRef(accountId: other, slot: appAccountSlot), 'GET', '/v1/unlocks'))?.body, isNotNull, reason: '自己的引用照常发');
+    });
+
+    test('旧账号核对迟到的「账号不在了」不删刚登录的新账号（审查 F03）', () async {
+      await vault.write(appAccountSlot, AppAccountKey(identity: await RelayIdentity.generate(), accountId: _accountId, username: 'tester_one'));
+      final arrived = Completer<void>(), late = Completer<RelayResponse>();
+      relay.asyncReply = (request) async {
+        if (request.method == 'GET' && request.path == '/v1/account') {
+          arrived.complete();
+          return late.future;
+        }
+        return const RelayResponse(200, {'accountId': other, 'username': 'tester_two'});
+      };
+      final accounts = AppAccounts(client: client);
+      await accounts.load();
+      final checking = accounts.check(force: true);
+      await arrived.future;
+      expect(await accounts.login('tester_two', 'synthetic-pass'), isA<AppAccountDone>());
+      late.complete(const RelayResponse(404, {'code': 'ACCOUNT_NOT_FOUND'}));
+      await checking;
+      expect(accounts.username, 'tester_two');
+      expect((await client.accountOf())?.username, 'tester_two', reason: '安全存储里还是新账号');
+      accounts.dispose();
+    });
+
+    test('离开出示页后，在路上的轮询说批准了也不存、不登录，不覆盖之后的密码登录；那台多出来的设备顺手删掉（审查 F04）', () async {
+      final arrived = Completer<void>(), late = Completer<RelayResponse>();
+      final expires = DateTime.now().add(const Duration(minutes: 5)).millisecondsSinceEpoch;
+      relay.asyncReply = (request) async => switch ((request.method, request.path)) {
+        ('POST', '/v1/account/joins') => RelayResponse(200, {'ticketId': 'TTTTTTTTTTTTTTTTTTTTTT', 'code': '123456', 'expiresAt': expires}),
+        ('GET', _) => () {
+          arrived.complete();
+          return late.future;
+        }(),
+        ('DELETE', _) => const RelayResponse(204, {}),
+        _ => const RelayResponse(200, {'accountId': other, 'username': 'tester_two'}),
+      };
+      final accounts = AppAccounts(client: client);
+      final started = await accounts.startJoin() as AppAccountJoinStarted;
+      final polling = accounts.pollJoin(started.join);
+      await arrived.future;
+      await accounts.cancelJoin(started.join);
+      await accounts.login('tester_two', 'synthetic-pass');
+      late.complete(const RelayResponse(200, {'state': 'approved', 'account': {'accountId': _accountId, 'username': 'tester_one'}}));
+      expect(await polling, isA<AppAccountError>());
+      await Future<void>.delayed(Duration.zero);
+      expect(accounts.username, 'tester_two');
+      expect((await client.accountOf())?.username, 'tester_two');
+      expect(relay.requests.where((request) => request.method == 'DELETE').map((request) => request.path), ['/v1/account/joins/TTTTTTTTTTTTTTTTTTTTTT', '/v1/devices']);
+      accounts.dispose();
+    });
+
+    test('出示中改用密码登录：之后回来的批准同样不认；刷新换下的旧票据作废了，新票据照常问', () async {
+      var tickets = 0;
+      final expires = DateTime.now().add(const Duration(minutes: 5)).millisecondsSinceEpoch;
+      relay.reply = (request) => switch ((request.method, request.path)) {
+        ('POST', '/v1/account/joins') => RelayResponse(200, {'ticketId': '${++tickets}'.padLeft(22, 'T'), 'code': '123456', 'expiresAt': expires}),
+        ('GET', _) => const RelayResponse(200, {'state': 'approved', 'account': {'accountId': _accountId, 'username': 'tester_one'}}),
+        ('DELETE', _) => const RelayResponse(204, {}),
+        _ => const RelayResponse(200, {'accountId': other, 'username': 'tester_two'}),
+      };
+      final first = await client.startJoin();
+      await client.cancelJoin(first);
+      final second = await client.startJoin();
+      await expectLater(client.joinState(first), throwsA(isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.joinExpired)));
+      final third = await client.startJoin();
+      await client.login('tester_two', 'synthetic-pass');
+      for (final join in [second, third]) {
+        await expectLater(client.joinState(join), throwsA(isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.joinExpired)));
+      }
+      expect((await client.accountOf())?.username, 'tester_two');
     });
   });
 

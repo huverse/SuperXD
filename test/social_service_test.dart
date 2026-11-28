@@ -753,6 +753,19 @@ void main() {
       expect(service.profile!.nickname, '老用户');
     });
 
+    test('槽里已换成别的应用账号的密钥：不拿它挂私信，私信不会挂到别的账号下（11-28 审查 F01）', () async {
+      final relay = FakeRelay();
+      final phone = Phone(relay);
+      final first = await phone.signIn();
+      final service = await phone.start();
+      final elsewhere = MemoryAppAccountVault();
+      await relay.signIn(elsewhere, slot: first.slot);
+      await phone.keys.write(first.slot, (await elsewhere.read(first.slot))!);
+      await expectLater(service.enable('小红'), throwsA(isA<SocialException>().having((error) => error.code, 'code', SocialCode.signedOut)));
+      expect(relay.accountSocial, isEmpty);
+      expect(service.status, SocialStatus.signedOut);
+    });
+
     test('中转说应用账号已不在：停用私信、让应用账号马上核一次', () async {
       final relay = FakeRelay();
       final phone = Phone(relay);
