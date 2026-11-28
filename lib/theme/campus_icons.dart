@@ -54,6 +54,11 @@ abstract final class CampusIcons {
   static const deviceNumber = LucideIcons.keyboard;
   static const building = LucideIcons.building2;
   static const swapDevice = LucideIcons.arrowLeftRight;
+  // 胖乖生活的洗衣机（含洗鞋、烘干）、吹风机、饮水机与附近门店。
+  static const washer = LucideIcons.washingMachine;
+  static const dryer = LucideIcons.wind;
+  static const water = LucideIcons.glassWater;
+  static const store = LucideIcons.store;
   // 住理生活的充值与买券（用支付宝付）。
   static const wallet = LucideIcons.wallet;
   static const shop = LucideIcons.shoppingBag;

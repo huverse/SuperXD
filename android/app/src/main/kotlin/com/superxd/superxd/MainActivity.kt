@@ -15,6 +15,7 @@ class MainActivity : FlutterActivity() {
     private var shortcutChannel: MethodChannel? = null
     private var powerSave: PowerSaveChannel? = null
     private var sensitiveClipboard: SensitiveClipboard? = null
+    private var pangguaiCaptcha: PangguaiCaptcha? = null
 
     // 系统启动图（Android 12 起由系统画，图标设成透明、只有底色，见 res/values-v31/styles.xml）在 Flutter 画出第一帧时淡出，露出下面的开屏画作（lib/page/painting_splash.dart），不一下切走。
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -46,6 +47,12 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler(chaoxingDevice)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "superxd/location_settings")
             .setMethodCallHandler(LocationSettingsChannel(this))
+        // 胖乖生活取一次当前位置（见 DeviceLocation.kt）与登录前的人机验证（见 PangguaiCaptcha.kt）。
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "superxd/location")
+            .setMethodCallHandler(DeviceLocation(applicationContext))
+        pangguaiCaptcha = PangguaiCaptcha(this)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "superxd/pangguai_captcha")
+            .setMethodCallHandler(pangguaiCaptcha)
         // 住理生活蓝牙连上设备后调高连接优先级（见 ZhuliBleBoost.kt）。
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "superxd/zhuli_ble")
             .setMethodCallHandler(ZhuliBleBoost(flutterEngine))
@@ -81,6 +88,7 @@ class MainActivity : FlutterActivity() {
         toolboxFiles?.close()
         chaoxingDevice?.close()
         powerSave?.close()
+        pangguaiCaptcha?.close()
         super.onDestroy()
     }
 }
