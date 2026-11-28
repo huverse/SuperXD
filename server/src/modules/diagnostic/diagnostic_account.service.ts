@@ -49,7 +49,8 @@ export class DiagnosticAccountService implements OnModuleInit {
     const bytes = await this.store.size(diagnosticId);
     if (bytes === null) throw notFound();
     const now = new Date();
-    if (!(await this.uploads.claim(diagnosticId, accountId, bytes, now))) throw notFound();
+    // 认领与注销按账号行串行（11-28 审查 F05：注销提交后在途的认领原来还能写回已注销的账号）。
+    if (!(await this.uploads.claim(diagnosticId, accountId, bytes, now, this.accounts.hold))) throw notFound();
     await this.redis.del(RedisKeys.diagnosticClaim(diagnosticId));
     this.logger.log(`[DiagnosticAccount] action=claim id=${diagnosticId} deviceId=${deviceId}`);
     return present({ diagnosticId, bytes, createTime: now });

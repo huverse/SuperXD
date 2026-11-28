@@ -31,8 +31,11 @@ export const RedisKeys = {
   deviceMissing: (deviceId: string) => `device_missing:${deviceId}`,
   // 分布式锁，单值，持有者令牌。
   lock: (name: string) => `lock:${name}`,
-  // 诊断包目录的已用量：Hash {bytes, files}，字段固定 2 个。上传时原子预占、写盘失败退回，清理任务每轮按目录实际重写（丢了也由它重建，在那之前上限偏松）。
+  // 诊断包目录里已存好的用量：Hash {bytes, files}，字段固定 2 个。存好时加上，清理任务每轮按目录里存好的包重写（丢了也由它重建，在那之前上限偏松）。
   diagnosticUsage: () => 'diagnostic_usage',
+  // 诊断包上传中的预占：ZSet，成员是「凭据:字节数」、分数是到期时刻（毫秒），一笔一项；存好或失败时删掉，进程挂了到期自己丢掉（下一次预占时清）。
+  // 在途预占也算进个数上限，最多 diagnosticStoreMaxFiles 项；整个 key 跟已用量同一个过期时间。
+  diagnosticReservations: () => 'diagnostic_reservations',
   // 诊断包的认领口令：单值，口令的 sha256 十六进制；一天过期，认领时核对后删掉。丢了只是这个包认领不了、照旧匿名。
   diagnosticClaim: (diagnosticId: string) => `diagnostic_claim:${diagnosticId}`,
   // 扫码登录的票据：单值 JSON {deviceId, code, accountId, device, region}（机型最多 64 字、属地最多 32 字，不存 IP），几百字节；5 分钟过期。丢了只是新设备要重新出示二维码。

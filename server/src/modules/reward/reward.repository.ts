@@ -28,7 +28,7 @@ export abstract class RewardRepository {
   abstract findDraw(campaignId: string, participantHash: string): Promise<RewardDrawOutcome | null>;
   // 记一次抽签并按需发奖，同一事务；同一台设备并发来两次只记一次，后到的拿先到的结果。
   abstract draw(input: RewardDrawInput): Promise<RewardDrawOutcome>;
-  // 还没发出去的奖品份数（发完为止的活动查状态用；走 (campaign_id, tier, draw_id) 索引，行数是这次活动的奖品数）。
+  // 还没发出去的奖品份数（发完为止的活动查状态用；读每档的计数 reward_tier_stock，行数是档数）。
   abstract unclaimed(campaignId: string): Promise<number>;
   // 这个账号在不在这次活动的名单里（走 uk_campaign_account）。
   abstract inAudience(campaignId: string, accountId: string): Promise<boolean>;
@@ -73,8 +73,9 @@ export class TypeormRewardRepository extends RewardRepository {
       if (!input.lucky) return { prize: null };
       // 抽中的人在活动这一行上排队，放量额度与发奖一个接一个算；只有抽中的才排，人数有界。
       await manager.query('SELECT id FROM reward_campaign WHERE id = ? FOR UPDATE', [campaign.id]);
-      // 每档各自均匀放量：这一小时每档还能发的份数，再按等级加权挑一档（走 (campaign_id, tier, draw_id) 索引，行数是这次活动的奖品数）。
-      const counts = (await manager.query('SELECT tier, COUNT(*) AS stock, COUNT(draw_id) AS given FROM reward_prize WHERE campaign_id = ? GROUP BY tier', [campaign.id])) as { tier: number; stock: string; given: string }[];
+      // 每档各自均匀放量：这一小时每档还能发的份数，再按等级加权挑一档。读每档一行的计数（11-28 审查 F07：原来汇总这次活动的全部奖品行，工作量随库存增长），
+      // 行数是档数；导入与发出时在同一事务里改它（见 reward_admin.ts 的 import 与下面发出时）。
+      const counts = (await manager.query('SELECT tier, stock, given FROM reward_tier_stock WHERE campaign_id = ?', [campaign.id])) as { tier: number; stock: number; given: number }[];
       // all（有资格就发）不按小时放量，发完为止。
       const released = (stock: number) => (campaign.distribution === 'all' ? stock : rewardReleased(stock, campaign.startsAt, campaign.endsAt, now));
       const available = counts.map((row) => ({ tier: Number(row.tier), count: Math.max(0, released(Number(row.stock)) - Number(row.given)) }));
@@ -91,6 +92,7 @@ export class TypeormRewardRepository extends RewardRepository {
       const drawId = String(inserted.insertId);
       await manager.query('UPDATE reward_prize SET draw_id = ?, update_time = ? WHERE id = ?', [drawId, now, prize.id]);
       await manager.query('UPDATE reward_draw SET prize_id = ?, update_time = ? WHERE id = ?', [prize.id, now, drawId]);
+      await manager.query('UPDATE reward_tier_stock SET given = given + 1, update_time = ? WHERE campaign_id = ? AND tier = ?', [now, campaign.id, tier]);
       return { prize: { kind: prize.kind, content: prize.content, note: prize.note } };
     });
   }
@@ -103,7 +105,7 @@ export class TypeormRewardRepository extends RewardRepository {
   }
 
   async unclaimed(campaignId: string) {
-    const [row] = (await this.campaigns.query('SELECT COUNT(*) AS count FROM reward_prize WHERE campaign_id = ? AND draw_id IS NULL', [campaignId])) as { count: string }[];
+    const [row] = (await this.campaigns.query('SELECT COALESCE(SUM(stock - given), 0) AS count FROM reward_tier_stock WHERE campaign_id = ?', [campaignId])) as { count: string }[];
     return Number(row.count);
   }
 
@@ -131,6 +133,9 @@ export class TypeormRewardRepository extends RewardRepository {
       const audience = (await this.campaigns.query('DELETE FROM reward_audience WHERE campaign_id = ? LIMIT ?', [id, limit - removed])) as { affectedRows: number };
       removed += audience.affectedRows;
       if (removed >= limit) break;
+      // 每档一行的计数，最多 10 行。
+      const stocks = (await this.campaigns.query('DELETE FROM reward_tier_stock WHERE campaign_id = ?', [id])) as { affectedRows: number };
+      removed += stocks.affectedRows;
       await this.campaigns.delete({ id });
       removed++;
     }

@@ -1,5 +1,6 @@
 import { createCipheriv, createPrivateKey, createPublicKey, diffieHellman, generateKeyPairSync, hkdfSync, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { Readable } from 'node:stream';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import Redis from 'ioredis';
 import { DataSource } from 'typeorm';
@@ -9,8 +10,12 @@ import { REDIS } from 'src/common/redis/redis.module';
 import { RedisKeys } from 'src/common/redis/redis_keys';
 import { accountDeviceLimit, accountJoinPerSourcePerHour, accountLoginPerUserSourcePerHour, accountRegisterPerDevicePerHour } from 'src/common/relay_limits';
 import { accountDeletedCanonical, decodeBase64url, ed25519Key, verifyEd25519, x25519PrivateKey, x25519PublicOf } from 'src/common/crypto/relay_crypto';
-import { accountSealKeyId, accountSealKeyOf, openAccountSeal } from 'src/modules/account/account_keys';
+import { AccountKeys, accountSealKeyId, accountSealKeyOf, openAccountSeal } from 'src/modules/account/account_keys';
 import { AccountRetentionTask } from 'src/modules/account/account_retention.task';
+import { AccountRepository } from 'src/modules/account/account.repository';
+import { DiagnosticStore } from 'src/modules/diagnostic/diagnostic.store';
+import { claimHash } from 'src/modules/diagnostic/diagnostic.service';
+import { DiagnosticUploadRepository } from 'src/modules/diagnostic/diagnostic_upload.repository';
 import { IpRegion } from 'src/common/ip_region';
 import { createInviteKeys, helloOf, inviteProof, socialBindBody, TestDevice } from './test_device';
 
@@ -442,5 +447,117 @@ describe('退出、注销与保留', () => {
     await app.get(AccountRetentionTask).sweep();
     expect((await device.call('GET', '/v1/account')).body.code).toBe('ACCOUNT_NOT_FOUND');
     expect(await database.query('SELECT id FROM app_account WHERE account_id = ?', [accountId])).toHaveLength(0);
+  });
+});
+
+// 11-28 Codex 审查 F02、F05：照审查的确定性复现写成反过来的断言（只在核对完成处、写入之前设屏障，不替换判定结果）。
+describe('并发：凭据版本与注销门禁', () => {
+  // 在 AccountKeys.verify 核对完 match 这份秘密后停住，等 release 才放行。
+  const pauseAfterVerify = (match: (secret: string) => boolean, expected = 1) => {
+    let release!: () => void, reached!: () => void, count = 0;
+    const gate = new Promise<void>((resolve) => (release = resolve)), arrived = new Promise<void>((resolve) => (reached = resolve));
+    const keysService = app.get(AccountKeys), original = keysService.verify.bind(keysService);
+    const spy = vi.spyOn(keysService, 'verify').mockImplementation(async (secret, stored) => {
+      const valid = await original(secret, stored);
+      if (match(secret)) {
+        if (++count === expected) reached();
+        await gate;
+      }
+      return valid;
+    });
+    return { arrived, release: () => release(), restore: () => spy.mockRestore() };
+  };
+
+  it('旧密码的登录核对完还没登记时，账号凭恢复码重设了：这次登录不再登记、回用户名或密码不对', async () => {
+    const owner = new TestDevice(server), stale = new TestDevice(server), recovery = new TestDevice(server);
+    const username = name(), code = recoveryCode();
+    expect((await register(owner, username, 'synthetic-pass', code)).status).toBe(200);
+    const pause = pauseAfterVerify((secret) => secret === 'synthetic-pass');
+    try {
+      // 请求在调 then 时才发出。
+      const pending = login(stale, username).then((response) => response);
+      await pause.arrived;
+      expect((await recover(recovery, username, code, 'synthetic-new-pass', recoveryCode())).status).toBe(200);
+      pause.release();
+      const response = await pending;
+      expect(response.status).toBe(403);
+      expect(response.body.code).toBe('CREDENTIALS_INVALID');
+      expect((await stale.call('GET', '/v1/account')).status).toBe(404);
+      expect((await recovery.call('GET', '/v1/account')).body.deviceCount).toBe(1);
+    } finally {
+      pause.release();
+      pause.restore();
+    }
+  });
+
+  it('同一份恢复码并发用两次：只有一次成功，另一次回用户名或密码不对，账号下只留成功那台', async () => {
+    const owner = new TestDevice(server), first = new TestDevice(server), second = new TestDevice(server);
+    const username = name(), code = recoveryCode();
+    expect((await register(owner, username, 'synthetic-pass', code)).status).toBe(200);
+    const pause = pauseAfterVerify((secret) => secret === code, 2);
+    try {
+      const pending = Promise.all([recover(first, username, code, 'synthetic-first-pass', recoveryCode()), recover(second, username, code, 'synthetic-second-pass', recoveryCode())]);
+      await pause.arrived;
+      pause.release();
+      const responses = await pending;
+      expect(responses.map((response) => response.status).sort()).toEqual([200, 403]);
+      const winner = responses[0].status === 200 ? first : second, loser = winner === first ? second : first;
+      expect((await winner.call('GET', '/v1/account')).body.deviceCount).toBe(1);
+      expect((await loser.call('GET', '/v1/account')).status).toBe(404);
+      expect((await login(new TestDevice(server), username, winner === first ? 'synthetic-first-pass' : 'synthetic-second-pass')).status).toBe(200);
+    } finally {
+      pause.release();
+      pause.restore();
+    }
+  });
+
+  it('认领核对完、写入之前账号注销了：认领回没有登录应用账号，库里不留已注销账号的记录', async () => {
+    const { device, accountId } = await registered();
+    const store = app.get(DiagnosticStore), uploads = app.get(DiagnosticUploadRepository), redis = app.get<Redis>(REDIS);
+    const id = 'A0D0T001', token = 'AAAAAAAAAAAAAAAAAAAAAA';
+    await store.save(id, Readable.from([Buffer.alloc(100)]), (await store.reserve(100))!);
+    await redis.set(RedisKeys.diagnosticClaim(id), claimHash(token), 'EX', 60);
+    let release!: () => void, reached!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve)), arrived = new Promise<void>((resolve) => (reached = resolve));
+    const original = uploads.claim.bind(uploads);
+    const spy = vi.spyOn(uploads, 'claim').mockImplementation(async (...args) => {
+      reached();
+      await gate;
+      return original(...args);
+    });
+    try {
+      const pending = device.call('POST', `/v1/account/diagnostics/${id}/claim`, { claim: token }).then((response) => response);
+      await arrived;
+      expect((await device.call('DELETE', '/v1/account')).status).toBe(204);
+      release();
+      expect((await pending).body.code).toBe('ACCOUNT_NOT_FOUND');
+      expect(await database.query('SELECT diagnostic_id FROM diagnostic_upload WHERE account_id = ?', [accountId])).toHaveLength(0);
+    } finally {
+      release();
+      spy.mockRestore();
+      await store.remove([id]);
+      await uploads.forget([id]);
+    }
+  });
+
+  it('写入门禁按账号行串行：写事务拿着共享锁时注销等它提交后连它写的一起删；注销之后到的写入过不了门禁', async () => {
+    const { device, accountId } = await registered();
+    const accounts = app.get(AccountRepository);
+    let release!: () => void, reached!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve)), arrived = new Promise<void>((resolve) => (reached = resolve));
+    const writing = database.transaction(async (manager) => {
+      await accounts.hold(manager, accountId);
+      reached();
+      await gate;
+      await manager.query('INSERT INTO diagnostic_upload (diagnostic_id, account_id, bytes, create_time, update_time) VALUES (?, ?, 1, NOW(), NOW())', ['A0D0T002', accountId]);
+    });
+    await arrived;
+    const deleting = device.call('DELETE', '/v1/account').then((response) => response);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    release();
+    await writing;
+    expect((await deleting).status).toBe(204);
+    expect(await database.query('SELECT diagnostic_id FROM diagnostic_upload WHERE account_id = ?', [accountId])).toHaveLength(0);
+    await expect(database.transaction((manager) => accounts.hold(manager, accountId))).rejects.toMatchObject({ code: 'ACCOUNT_NOT_FOUND' });
   });
 });

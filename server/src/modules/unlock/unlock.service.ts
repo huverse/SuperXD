@@ -58,7 +58,7 @@ export class UnlockService implements OnModuleInit {
     const owned = (await this.unlocks.ownedOf(accountId, [unlockId])).has(unlockId);
     if (unlockReason(spec, accountId, level, owned, now.getTime()) === null) {
       const price = spec.price;
-      const rowId = await this.unlocks.buy(accountId, unlockId, price, now, (manager, row) => this.points.spendIn(manager, accountId, price, `unlock:${row}`, `解锁 · ${spec.title}`, now));
+      const rowId = await this.unlocks.buy(accountId, unlockId, price, now, this.accounts.hold, (manager, row) => this.points.spendIn(manager, accountId, price, `unlock:${row}`, `解锁 · ${spec.title}`, now));
       this.logger.log(`[Unlock] action=buy unlock=${unlockId} price=${price} bought=${rowId !== null}`);
     }
     return this.stateOf(accountId, specs);
@@ -107,7 +107,7 @@ export class UnlockService implements OnModuleInit {
       open.push(spec.id);
       if (reason === 'drawn') drawn.push(spec.id);
     }
-    await this.unlocks.insertDrawn(accountId, drawn, new Date(now));
+    await this.unlocks.insertDrawn(accountId, drawn, new Date(now), this.accounts.hold);
     if (drawn.length > 0) this.logger.log(`[Unlock] action=draw unlocks=${drawn.join(',')}`);
     return { level, open, serverTime: now };
   }

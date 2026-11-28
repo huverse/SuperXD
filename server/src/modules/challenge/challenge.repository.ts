@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 
+import { AccountHold } from 'src/modules/account/account.repository';
 import { ChallengeRunEntity } from 'src/modules/challenge/challenge.entity';
 
 export type RunRow = {
@@ -24,10 +25,11 @@ export type RunChanges = Pick<RunRow, 'progress'> & Partial<Pick<RunRow, 'ending
 // 挑战存储端口：服务只依赖这个抽象。
 export abstract class ChallengeRepository {
   // 插入一局；这个账号已有进行中的一局时插不进，返回 false。插进了就在同一事务里调 charge（付门票），charge 抛错则这一局也不留。
-  abstract insertRun(run: RunRow, now: Date, charge: (manager: EntityManager) => Promise<void>): Promise<boolean>;
+  // hold 是账号写入门禁（AccountRepository.hold），事务的第一步。
+  abstract insertRun(run: RunRow, now: Date, hold: AccountHold, charge: (manager: EntityManager) => Promise<void>): Promise<boolean>;
   abstract activeRunOf(accountId: string): Promise<string | null>;
-  // 在事务里锁住这一局（只认这个账号的），交给 work 读改；没有这一局时 work 拿到 null。
-  abstract withRun<T>(runId: string, accountId: string | null, work: (manager: EntityManager, run: RunRow | null) => Promise<T>): Promise<T>;
+  // 在事务里锁住这一局（只认这个账号的），交给 work 读改；没有这一局时 work 拿到 null。锁这一局之前先过账号门禁 hold（结算要写积分与最好成绩）。
+  abstract withRun<T>(runId: string, accountId: string | null, hold: AccountHold, work: (manager: EntityManager, run: RunRow | null) => Promise<T>): Promise<T>;
   // 写回这一局（work 里用）；settle 为真时同时把 active 清空（结算）。
   abstract updateRun(manager: EntityManager, runId: string, changes: RunChanges, now: Date): Promise<void>;
   // 这个账号在这些挑战上的最好成绩。
@@ -52,8 +54,9 @@ export class TypeormChallengeRepository extends ChallengeRepository {
     super();
   }
 
-  insertRun(run: RunRow, now: Date, charge: (manager: EntityManager) => Promise<void>) {
+  insertRun(run: RunRow, now: Date, hold: AccountHold, charge: (manager: EntityManager) => Promise<void>) {
     return this.runs.manager.transaction(async (manager) => {
+      await hold(manager, run.accountId);
       const inserted = (await manager.query(
         'INSERT IGNORE INTO challenge_run (run_id, account_id, challenge_id, active, deadline, plan, progress, ending, points, awarded, end_time, create_time, update_time) VALUES (?, ?, ?, 1, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)',
         [run.runId, run.accountId, run.challengeId, run.deadline, run.plan, run.progress, now, now],
@@ -69,8 +72,12 @@ export class TypeormChallengeRepository extends ChallengeRepository {
     return rows[0]?.runId ?? null;
   }
 
-  withRun<T>(runId: string, accountId: string | null, work: (manager: EntityManager, run: RunRow | null) => Promise<T>) {
+  withRun<T>(runId: string, accountId: string | null, hold: AccountHold, work: (manager: EntityManager, run: RunRow | null) => Promise<T>) {
     return this.runs.manager.transaction(async (manager) => {
+      // 先过账号门禁再锁这一局（结算会写积分与最好成绩，锁的先后同注销）；定时任务不带账号，先读出这一局是谁的。
+      const owner = accountId ?? ((await manager.query('SELECT account_id AS accountId FROM challenge_run WHERE run_id = ?', [runId])) as { accountId: string }[])[0]?.accountId;
+      if (owner === undefined) return work(manager, null);
+      await hold(manager, owner);
       const rows = (await manager.query(`SELECT ${columns} FROM challenge_run WHERE run_id = ? FOR UPDATE`, [runId])) as RawRun[];
       const row = rows[0];
       if (row === undefined || (accountId !== null && row.accountId !== accountId)) return work(manager, null);

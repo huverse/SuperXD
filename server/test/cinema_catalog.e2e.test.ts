@@ -10,7 +10,8 @@ import { DataSource } from 'typeorm';
 import { createRelayApp } from 'src/relay_app';
 import { env } from 'src/config/env';
 import { REDIS } from 'src/common/redis/redis.module';
-import { cinemaCatalogSearchPerHour } from 'src/common/relay_limits';
+import { cinemaCatalogEntryLimit, cinemaCatalogSearchPerHour } from 'src/common/relay_limits';
+import { CinemaCatalogRepository } from 'src/modules/cinema_catalog/cinema_catalog.repository';
 import { CinemaCatalogService } from 'src/modules/cinema_catalog/cinema_catalog.service';
 import { catalogPageUrl, cinemaFold, decodeCatalogRules, parseCatalogPage, readPath } from 'src/modules/cinema_catalog/cinema_catalog_source';
 
@@ -147,6 +148,23 @@ describe('片名目录', () => {
     await service.sync(new Date('2026-11-20T11:30:00Z'));
     expect(requests.map((query) => [query.get('h'), query.get('pg')])).toEqual([['5', '1']]);
     expect((await search('庆余年番外')).body.ids).toEqual(['106']);
+  });
+
+  // 11-28 Codex 审查 F09：原来目录到了条数上限就整批跳过，已有影片改名也丢、同步照样往前。条数按上限算（不真插 40 万条）。
+  it('目录到条数上限：已有的编号照常改名，新编号写不进、记日志，同步照常往前', async () => {
+    const service = app.get(CinemaCatalogService);
+    await service.sync(new Date('2026-11-20T08:00:00Z'));
+    const counting = vi.spyOn(app.get(CinemaCatalogRepository), 'count').mockResolvedValue(cinemaCatalogEntryLimit);
+    try {
+      pages = [[{ vod_id: 102, vod_name: '庆余年 第一季' }, { vod_id: 107, vod_name: '新上的片' }]];
+      await service.sync(new Date('2026-11-20T10:00:00Z'));
+      expect((await search('庆余年第一季')).body.ids).toEqual(['102']);
+      expect((await search('新上的片')).body.ids).toEqual([]);
+      const [state] = (await database.query('SELECT synced_at AS syncedAt FROM cinema_catalog_state WHERE rule_id = ?', ['wsy'])) as { syncedAt: Date }[];
+      expect(new Date(state.syncedAt).toISOString()).toBe('2026-11-20T10:00:00.000Z');
+    } finally {
+      counting.mockRestore();
+    }
   });
 
   it('抓全一轮按时间预算跑：到点停在批与批之间、记下抓到第几页，下一轮接着抓到完', async () => {

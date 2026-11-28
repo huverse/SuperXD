@@ -16,6 +16,8 @@ export abstract class CinemaCatalogRepository {
   // 一批写进去（同编号的改名覆盖），多行 INSERT 一条 SQL。
   abstract upsert(ruleId: string, entries: { source: string; folded: string }[], now: Date): Promise<void>;
   abstract count(ruleId: string): Promise<number>;
+  // 这些编号里已经在目录里的（按 uk_cinema_catalog 查，一次最多 500 个）。
+  abstract existing(ruleId: string, sources: string[]): Promise<Set<string>>;
   abstract state(ruleId: string): Promise<CinemaCatalogState | null>;
   abstract saveState(ruleId: string, state: CinemaCatalogState, now: Date): Promise<void>;
   // 删掉规则包里已经没有的源（目录与进度），分批，返回删的行数；删了行就整理一次表（见实现）。
@@ -48,6 +50,15 @@ export class TypeormCinemaCatalogRepository extends CinemaCatalogRepository {
     await this.catalog.query('INSERT INTO cinema_catalog (rule_id, source, folded, create_time, update_time) VALUES ? ON DUPLICATE KEY UPDATE folded = VALUES(folded), update_time = VALUES(update_time)', [
       entries.map((entry) => [ruleId, entry.source, entry.folded, now, now]),
     ]);
+  }
+
+  async existing(ruleId: string, sources: string[]) {
+    const found = new Set<string>();
+    for (let start = 0; start < sources.length; start += 500) {
+      const rows = (await this.catalog.query('SELECT source FROM cinema_catalog WHERE rule_id = ? AND source IN (?)', [ruleId, sources.slice(start, start + 500)])) as { source: string }[];
+      for (const row of rows) found.add(row.source);
+    }
+    return found;
   }
 
   async count(ruleId: string) {

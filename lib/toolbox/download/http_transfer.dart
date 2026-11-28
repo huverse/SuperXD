@@ -59,7 +59,9 @@ class HttpTransfer implements ToolboxTransfer {
     final watch = Stopwatch()..start();
     var uri = task.url;
     int? status;
-    IOSink? sink;
+    RandomAccessFile? file;
+    // 正在写盘的那一块（写完才收下一块）；它的错误已在回调里交给 body，自己不会出错。
+    var writing = Future<void>.value();
     try {
       late http.StreamedResponse response;
       // 跳转自己跟：每一跳都得是公网 https，同解析结果与预览图的规则。
@@ -101,17 +103,29 @@ class HttpTransfer implements ToolboxTransfer {
           ..mimeType = response.headers['content-type']?.split(';').first.trim();
       }
       _emit(id, task);
-      final open = sink = task.file.openWrite(mode: resumed ? FileMode.append : FileMode.write);
+      // 11-28 Codex 审查 F08：原来往 IOSink 里 add、错误要等网络读完 close 时才接住，在那之前先成了没人处理的异步错误，也没有磁盘背压。
+      // 改成逐块写 RandomAccessFile：每收到一块先停住网络、写完盘再接着收（快网络慢磁盘不积压），写盘出错立即结束这次下载并取消上游请求。
+      final open = file = await task.file.open(mode: resumed ? FileMode.append : FileMode.write);
       final body = Completer<void>();
       final reported = Stopwatch()..start();
-      final subscription = response.stream.timeout(_timeout).listen(
+      late final StreamSubscription<List<int>> subscription;
+      subscription = response.stream.timeout(_timeout).listen(
         (chunk) {
-          open.add(chunk);
-          task.received += chunk.length;
-          if (reported.elapsed >= const Duration(milliseconds: 300)) {
-            reported.reset();
-            _emit(id, task);
-          }
+          subscription.pause();
+          writing = open.writeFrom(chunk).then(
+            (_) {
+              task.received += chunk.length;
+              if (reported.elapsed >= const Duration(milliseconds: 300)) {
+                reported.reset();
+                _emit(id, task);
+              }
+              subscription.resume();
+            },
+            onError: (Object error, StackTrace stack) {
+              if (!body.isCompleted) body.completeError(error, stack);
+              unawaited(subscription.cancel());
+            },
+          );
         },
         onError: (Object error, StackTrace stack) {
           if (!body.isCompleted) body.completeError(error, stack);
@@ -126,7 +140,8 @@ class HttpTransfer implements ToolboxTransfer {
         if (!body.isCompleted) body.complete();
       }));
       await body.future;
-      sink = null;
+      await writing;
+      file = null;
       await open.close();
       if (stop.isCompleted) return;
       if (task.total >= 0 && task.received != task.total) throw const FormatException('下载不完整');
@@ -139,7 +154,9 @@ class HttpTransfer implements ToolboxTransfer {
       task.state = task.received > 0 && task.resumable ? ToolboxDownloadState.paused : ToolboxDownloadState.failed;
       _emit(id, task, error: task.state == ToolboxDownloadState.failed ? _failure : null);
     } finally {
-      await sink?.close().catchError((Object error, StackTrace stack) {
+      // 先等在写的那一块写完（不然关文件会撞上未完成的写），再关文件。
+      await writing;
+      await file?.close().catchError((Object error, StackTrace stack) {
         campusLog('[ToolboxDownload] action=close errorType=${error.runtimeType}\n$stack');
       });
       client.close();

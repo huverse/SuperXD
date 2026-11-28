@@ -31,15 +31,16 @@ export class DiagnosticService {
     if (!Number.isInteger(length) || length < diagnosticUploadMinBytes) throw new RelayError(RelayCode.invalidRequest, HttpStatus.BAD_REQUEST, '诊断包为空或不完整');
     const retryAfter = await this.limiter.hit('diagnostic_upload', rateSubjectOf(ip), diagnosticUploadPerHour, 3600);
     if (retryAfter !== null) throw new RelayError(RelayCode.rateLimited, HttpStatus.TOO_MANY_REQUESTS, '诊断包上传过于频繁', { retryAfter });
-    if (!(await this.store.reserve(length))) {
+    const reservation = await this.store.reserve(length);
+    if (reservation === null) {
       this.logger.warn(`[Diagnostic] action=upload errorType=StoreFull bytes=${length}`);
       throw new RelayError(RelayCode.mailboxFull, HttpStatus.SERVICE_UNAVAILABLE, '诊断包存满了');
     }
     const id = newDiagnosticId();
     try {
-      await this.store.save(id, body);
+      await this.store.save(id, body, reservation);
     } catch (error) {
-      await this.store.release(length);
+      await this.store.release(reservation);
       // 客户端中途断开（换网、看门狗中止）不是服务端的错，回什么也送不到，只记一行；写盘出错（目录不可写、磁盘满）照常带堆栈上抛。
       const code = (error as NodeJS.ErrnoException).code;
       if (code === 'ECONNRESET' || code === 'ERR_STREAM_PREMATURE_CLOSE') {

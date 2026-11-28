@@ -45,10 +45,10 @@ class AccountRelay {
   // 本机时钟与服务器的差（毫秒）。
   int get clockOffset => _relay.clockOffset;
 
-  // 用这个应用账号在本机的设备密钥（安全存储里 account.slot 指的那把）签名发一个请求；没有这把密钥抛 errors.missingKey、不发请求，
+  // 用这个应用账号在本机的设备密钥（安全存储里 account.slot 指的那把，账号号也要对得上，见 keyOf）签名发一个请求；没有这把密钥抛 errors.missingKey、不发请求，
   // 中转的错误码按 errors 换成本模块的异常。limit 为空用传输的默认响应上限。
   Future<SignedReply> signedCall(AppAccountRef account, String method, String path, {Map<String, Object?>? payload, int? limit, required RelayErrors errors}) async {
-    final saved = await vault.read(account.slot);
+    final saved = await vault.keyOf(account);
     if (saved == null) throw errors.missingKey ?? errors.signedOut;
     return (body: await signedWith(saved.identity, method, path, payload: payload, limit: limit, errors: errors), identity: saved.identity);
   }
@@ -64,14 +64,14 @@ class AccountRelay {
 
   // 同 signedCall，但没有这把密钥时返回空、中转的错误码原样抛 RelayException：给要按错误码返回结果而不是抛异常的调用方（灰度点名、节日抽签的账号太新）。
   Future<SignedReply?> send(AppAccountRef account, String method, String path, {Map<String, Object?>? payload, int? limit}) async {
-    final saved = await vault.read(account.slot);
+    final saved = await vault.keyOf(account);
     if (saved == null) return null;
     return (body: await _relay.request(saved.identity, method, path, payload: payload, limit: limit), identity: saved.identity);
   }
 
   // 同 send，另可加请求头、拿整条回复（304 算成功）：给条件请求（灰度点名带上次的版本号）。
   Future<RelayResponse?> exchange(AppAccountRef account, String method, String path, {Map<String, String> headers = const {}, int? limit}) async {
-    final saved = await vault.read(account.slot);
+    final saved = await vault.keyOf(account);
     if (saved == null) return null;
     return _relay.exchange(saved.identity, method, path, limit: limit, headers: headers);
   }

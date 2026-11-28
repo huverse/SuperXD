@@ -62,7 +62,7 @@ export class PassService implements OnModuleInit {
     const offer = (await this.current()).find((item) => item.id === passId);
     if (offer === undefined) throw new RelayError(RelayCode.passUnavailable, HttpStatus.CONFLICT, '这项服务现在不用积分换时长');
     const now = new Date();
-    const expire = await this.passes.extend(accountId, passId, offer.price, offer.days, now, (manager, ref) => this.points.spendIn(manager, accountId, offer.price, ref, `时长 · ${offer.title}`, now));
+    const expire = await this.passes.extend(accountId, passId, offer.price, offer.days, now, this.accounts.hold, (manager, ref) => this.points.spendIn(manager, accountId, offer.price, ref, `时长 · ${offer.title}`, now));
     this.logger.log(`[Pass] action=buy pass=${passId} price=${offer.price} days=${offer.days} until=${expire.toISOString()}`);
     return this.stateOf(accountId);
   }
