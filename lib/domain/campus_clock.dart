@@ -48,10 +48,11 @@ String formatCampusRelative(String value, {DateTime? now}) {
   };
 }
 
-// 绝对时刻在校园时区的钟点 HH:mm。
-String formatCampusClock(DateTime instant) {
+// 绝对时刻在校园时区的钟点 HH:mm；seconds 为真写到秒 HH:mm:ss（倒计时的目标时刻）。
+String formatCampusClock(DateTime instant, {bool seconds = false}) {
   final local = campusInstant(instant);
-  return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+  String two(int value) => value.toString().padLeft(2, '0');
+  return seconds ? '${two(local.hour)}:${two(local.minute)}:${two(local.second)}' : '${two(local.hour)}:${two(local.minute)}';
 }
 
 // 绝对时刻在校园时区的短写「10月17日 09:12」：历史版本里按时刻指代某一版时用。

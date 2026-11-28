@@ -18,7 +18,7 @@
   - campusToday：校园时区的今天。campusNow：校园时区今天的零点。
   - formatCampusRelative：展示时刻按远近写到分钟（今天、昨天、明天、今年写月日、跨年带年份，[人工决策] 在函数上），页面展示时刻都用它。formatCampusMoment：短写「10月17日 09:12」，历史版本按时刻指代某一版时用。
   - clockMinutes：把 HH:mm 转成分钟数。
-  - campusMoment：校园日期加当天分钟换算成 UTC 绝对时刻。formatCampusClock：绝对时刻在校园时区的钟点 HH:mm。
+  - campusMoment：校园日期加当天分钟换算成 UTC 绝对时刻。formatCampusClock：绝对时刻在校园时区的钟点 HH:mm（seconds 为真写到秒，胖乖使用中的预计结束时刻用）。
 - week.dart：ISO 日期与周次计算。第几周从开学日所在周的周一起算（weekIndex、weekRange）。
 - schedule_store.dart：课表核心模型与版本规则。
   - 模型：CourseRecord、CourseMeeting、TermRef、ScheduleRevision、ScheduleScope。

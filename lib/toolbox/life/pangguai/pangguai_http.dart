@@ -19,13 +19,21 @@ typedef PangguaiRisk = ({String category, String imei, String latitude, String l
 // 不是平台公布的安全配额），点「下单」到拉起支付宝要 8 个请求、约 10 秒，连点几个档位时试算也排着队一个个等。
 // 凭据同时放请求头 Authorization 与表单 token（同官方 App）。日志只记路径与业务码，不记表单（有手机号、验证码、凭据）与回复。
 class PangguaiHttp {
-  PangguaiHttp({http.Client? client, this.timeout = const Duration(seconds: 15)}) : _http = CampusHttp('pangguai', client: client, keepIdle: lifeKeepIdle);
+  PangguaiHttp({http.Client? client, this.timeout = const Duration(seconds: 15), DateTime Function()? clock}) : _http = CampusHttp('pangguai', client: client, keepIdle: lifeKeepIdle), _clock = clock ?? DateTime.now;
 
   static const payloadLimit = 1024 * 1024;
 
   final CampusHttp _http;
   final Duration timeout;
   final _brake = LifeHttpBrake();
+
+  // 手机时钟（测试换成可控的）。
+  final DateTime Function() _clock;
+  // 胖乖服务器时钟比手机快多少：每条回复顶层的 t 是服务器的毫秒时间（外部输入，差一天以上的不认），按最近一条记。
+  var _clockOffset = Duration.zero;
+
+  // 按胖乖服务器时间算的「现在」（UTC）：使用中的倒计时用它，手机时钟快了慢了都走得对。
+  DateTime now() => _clock().toUtc().add(_clockOffset);
 
   // 胖乖自己的接口：业务码是整数 0 才算成，交回 data；2 是没登录。
   Future<Object?> post(String path, Map<String, String> fields, {String token = '', bool multipart = false, PangguaiRisk? risk}) async {
@@ -48,6 +56,10 @@ class PangguaiHttp {
       },
     };
     final body = await _send(Uri.parse('$pangguaiApi$path'), path, {...fields, if (token.isNotEmpty) 'token': token}, headers, multipart: multipart);
+    if (body['t'] case final int serverTime) {
+      final offset = serverTime - _clock().millisecondsSinceEpoch;
+      if (offset.abs() < Duration.millisecondsPerDay) _clockOffset = Duration(milliseconds: offset);
+    }
     final code = body['code'];
     if (code is int && code == 0) return body['data'];
     if (code == null) {

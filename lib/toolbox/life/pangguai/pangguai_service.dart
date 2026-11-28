@@ -35,6 +35,9 @@ class PangguaiService implements ToolboxService {
   final PangguaiLocator locator;
   final PangguaiCaptcha captcha;
 
+  // 按胖乖服务器时间算的「现在」（UTC，偏差取自最近一条回复）：使用中的倒计时用它。
+  DateTime now() => client.now();
+
   // 子模块 id：路由（/toolbox/life/pangguai）、服务、同意记录与开关共用，发出后不改。
   static const serviceId = 'life.pangguai';
   // 第一次发验证码前的同意说明的版本，说明有实质变化就加一档。
@@ -93,9 +96,11 @@ class PangguaiService implements ToolboxService {
   static const payWindow = Duration(minutes: 10);
 
   Future<List<PangguaiOrder>> ongoing(String phone, {DateTime? now}) => run(phone, (token) async {
-    final moment = (now ?? DateTime.now()).toUtc();
+    final orders = (await client.orders(token)).orders;
+    // 下单时刻是胖乖服务器的时间，按校正过的「现在」比（这一条回复刚校正过）。
+    final moment = (now ?? client.now()).toUtc();
     return [
-      for (final order in (await client.orders(token)).orders)
+      for (final order in orders)
         if (order.running || (order.payable && order.createdAt != null && moment.difference(order.createdAt!) < payWindow)) order,
     ];
   });

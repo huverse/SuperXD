@@ -275,6 +275,15 @@ class PangguaiOrder {
   String get statusLabel => payable ? '待付款' : cancelled ? '已取消' : running ? '使用中' : done ? '已完成' : '状态 $status';
 }
 
+// 使用中的剩余时间写法：「还剩 2:31」，一小时以上「还剩 1:05:00」，到点写「快好了」（向上取整到秒，订单变成已完成之前一直这样写）。
+String pangguaiLeft(Duration left) {
+  final seconds = (left.inMilliseconds / 1000).ceil();
+  if (seconds <= 0) return '快好了';
+  String two(int value) => value.toString().padLeft(2, '0');
+  final hours = seconds ~/ 3600, minutes = seconds % 3600 ~/ 60;
+  return hours > 0 ? '还剩 $hours:${two(minutes)}:${two(seconds % 60)}' : '还剩 $minutes:${two(seconds % 60)}';
+}
+
 PangguaiOrder decodePangguaiOrder(Object? data) {
   final json = pangguaiObject(data);
   return PangguaiOrder(
