@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:tobias/tobias.dart';
 
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
@@ -12,22 +11,6 @@ import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_models.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_service.dart';
-
-// 支付宝付款的端口：把住理给的支付串交给支付宝，返回支付宝报的结果码（9000 成功、6001 取消…）。
-// 结果码只作提示，到没到账只认住理（到账由住理收支付宝的回调写库，客户端只查）。
-abstract interface class ZhuliPayer {
-  Future<String> pay(String orderContent);
-}
-
-// 插件 tobias（支付宝 SDK 15.8，用户 11-22 选的）。安卓没装支付宝时 SDK 自己开网页收银台；
-// iOS 付完经 Info.plist 里 CFBundleURLName 为 alipay 的 scheme 回来，自签证书配不了通用链接、应用又是场景模式，SDK 的回调不一定回得来，
-// 所以结账不只等它：回到前台或点「我已付款」也去住理查（见 ZhuliCheckout）。
-class TobiasZhuliPayer implements ZhuliPayer {
-  final _tobias = Tobias();
-
-  @override
-  Future<String> pay(String orderContent) async => '${(await _tobias.pay(orderContent))['resultStatus'] ?? ''}';
-}
 
 enum _Step { idle, ordering, paying, checking, paid, pending }
 

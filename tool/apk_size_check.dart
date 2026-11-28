@@ -12,7 +12,9 @@ import 'dart:io';
 // 11-19 电影院接入 media_kit（libmpv）调高：arm64 的 libmpv.so 约 12.4MB；它的原生库按 jar 带全部架构，这份单架构 profile 包里另夹带 armeabi-v7a 与 x86_64 两套约 36.5MB，
 // 发版按架构分包时各包只带自己的那套（用户的 arm64 包实际多约 12.5MB）。
 // 11-22 住理生活两轮（第一轮的 flutter_svg 与登录、券、订单约 0.92MB，第二轮的洗浴与蓝牙开关水约 0.13MB）调高：基数改成本机编出的 140,679,880 字节。
-const apkBudgetBytes = 140679880 + apkBudgetSlack;
+// 11-28 胖乖生活调高：同机全新编出比 main 多 1,121,969 字节（主要是易盾行为式验证码 SDK 与它要的 AndroidX 版 Glide 4.16 的 dex，加胖乖页面与两条原生通道），
+// 基数改成本机编出的 142,632,653 字节。本机在同一个构建目录里反复编时增量打包会留空隙（那次量出 157MB，条目加起来只多 1.1MB），量之前先删掉旧包。
+const apkBudgetBytes = 142632653 + apkBudgetSlack;
 const apkBudgetSlack = 1024 * 1024;
 
 void main(List<String> args) {

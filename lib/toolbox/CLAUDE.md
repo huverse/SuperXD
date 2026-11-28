@@ -1,12 +1,12 @@
 # toolbox 百宝箱
 
-定位：设备级工具集，不需要教务登录，只依赖 domain 与 theme，不依赖教务相关的任何层，不读取教务凭据或 cookie；切换账号时下载任务不销毁。当前注册了五个工具：视频解析与下载、学习通签到、快递（拼多多身份码与快递查询）、电影院、生活（校园生活服务的子模块列表，现在有住理生活；两者 11-27 起不经功能开关，人工决策见 domain/feature_flags.dart）。工具可以带子模块（规则见 toolbox_module.dart 的人工决策）。学习通的文件与规则在 chaoxing/CLAUDE.md，快递在 express/CLAUDE.md，电影院在 cinema/CLAUDE.md，住理生活在 life/zhuli/CLAUDE.md（生活下面的子模块同层互不依赖，test/project_structure_test.dart 守护），download 与 short_video 两个子目录登记在本文件。
+定位：设备级工具集，不需要教务登录，只依赖 domain 与 theme，不依赖教务相关的任何层，不读取教务凭据或 cookie；切换账号时下载任务不销毁。当前注册了五个工具：视频解析与下载、学习通签到、快递（拼多多身份码与快递查询）、电影院、生活（校园生活服务的子模块列表，现在有住理生活与胖乖生活；电影院、生活与住理生活 11-27 起不经功能开关，胖乖生活碰真钱、自己的开关默认关，人工决策见 domain/feature_flags.dart）。工具可以带子模块（规则见 toolbox_module.dart 的人工决策）。学习通的文件与规则在 chaoxing/CLAUDE.md，快递在 express/CLAUDE.md，电影院在 cinema/CLAUDE.md，住理生活在 life/zhuli/CLAUDE.md，胖乖生活在 life/pangguai/CLAUDE.md（生活下面的子模块同层互不依赖，test/project_structure_test.dart 守护，共用的放生活根目录），download、short_video 两个子目录与生活根目录的共用件登记在本文件。
 
 # 文件职责
 
 - 框架：
   - toolbox_runtime.dart：设备级组合根 ToolboxRuntime。在应用支持目录的 toolbox 子目录下打开 toolbox.db、资源目录与下载目录；组装下载管理、后台传输与文件导出这些公共能力，不替任何工具组装业务对象；跟随前后台恢复下载。注册表由组合根传入，工具服务经 runtime.service 取用、退出时按接口统一关闭，打开失败不留缓存。组合根注入的能力：relayUrl（中转地址，只来自构建参数）、shareVideo（分享给好友，为空不显示入口，百宝箱不感知私信）、pickImage 与 pickImages（取图，缓存副本用完必须 discard）、扫码（给了 then 时扫码页直接换成要去的页面）、campusTimetable（本应用课表今天的课，只读，给学习通推断正在上的课；为空当没有课表）、pinShortcut（把工具登记的快捷入口放到桌面，系统不支持或测试时为空，页面据此不显示「添加到桌面」）、cinemaRules 与 versionCode（电影院的片源规则包，中转下发、device 层验签后的载荷，与本机构建号；没配中转时为空）、passes（积分时长券，人工决策见 domain/pass.dart；为空都不拦）、features（功能开关，同百宝箱首页与路由那份，工具里灰度中的一部分按它问，如电影院的解析；为空当都关）。
-  - toolbox_catalog.dart：工具注册表 toolboxCatalog，工具与子模块只在这一处登记（名称、图标、页面、资源、服务与快捷入口），路由按这里的 id 生成免登录的工具路由与快捷入口路由；工具 id 全处统一（路由、服务、同意记录同一个 id，[人工决策] 在文件头）。电影院的 children 是首页的找片与解析两段，生活的 children 是它的子模块（住理生活 life.zhuli）。
+  - toolbox_catalog.dart：工具注册表 toolboxCatalog，工具与子模块只在这一处登记（名称、图标、页面、资源、服务与快捷入口），路由按这里的 id 生成免登录的工具路由与快捷入口路由；工具 id 全处统一（路由、服务、同意记录同一个 id，[人工决策] 在文件头）。电影院的 children 是首页的找片与解析两段，生活的 children 是它的子模块（住理生活 life.zhuli、胖乖生活 life.pangguai，后者登记开关 toolbox.life.pangguai）。
   - toolbox_module.dart：ToolboxModule 描述一个工具或子模块：id、名称、图标、页面构造器（由框架列出子模块的父模块不给）、可选的按需资源、可选的服务打开函数 openService（登记了就要给 clearedData 写明清除数据会删什么）、可选的好友分享卡片入口 openShared 与常用功能的快捷入口 shortcuts（ToolboxShortcut：工具内唯一且不改的 id、名字、图标与直达的页面；长按应用图标的菜单与「添加到桌面」都按它生成，接线在组合根 app_shortcuts.dart，谷歌建议全应用不超过 4 个），灰度中的工具登记的功能开关 flag（开着才显示与能进路由），以及子模块 children（[人工决策] 在类上：子模块 id 写成「父 id.子 id」、路由按点分层；父模块不给页面时框架列出子模块、子模块各有路由，给了页面时自己摆子模块、子模块没有路由）。树的工具函数 toolboxPath、toolboxTree、toolboxRoutable（有自己路由的）、toolboxClearable 与 toolboxClearedData（清除父模块时按子模块逐个清、逐个写）。ToolboxServiceContext 是框架交给工具服务的公共能力。
   - toolbox_page.dart：百宝箱首页 ToolboxPage（给了 parent 时是这个父模块的子模块列表，标题是父模块的名字，同一套卡片与左滑，一个都看不见时写「暂时没有可用的功能」）：有按需资源的工具可「卸载」，有本机数据的工具（自己或子模块登记了 openService）可「清除数据」；入口只有卡片左滑露出的圆角按钮（卡片右侧一律「›」，读屏操作菜单里有同一操作），点了须确认，同一时刻只开一张（人工决策见 _tile）；隐藏的工具（解锁 toolbox.<工具 id>，子模块是 toolbox.<父 id.子 id>，toolboxUnlockId，规则见服务端 unlock_rules.ts）对当前账号锁着时不显示入口，组合根经路由注入 UnlockAccess；灰度中的工具开关没开不显示（FeatureGate，同经路由注入）；由框架列出子模块的父模块一个看得见的子模块都没有时也不显示。首页与路由同一规则 toolboxVisible；路由门禁 toolboxRedirect 让看不见的那一层回到它的上一层。
   - toolbox_models.dart：公共模型与接口：ToolboxException、ToolboxCancellation、ToolboxResource、ToolboxDownloadRequest、ToolboxDownload 及其状态机（origin 是发起工具的附加信息，下载管理原样存取），接口 ToolboxTransfer、ToolboxFilePublisher、ToolboxService（close 与 clearData）。
@@ -14,6 +14,9 @@
   - toolbox_resource_manager.dart：重型按需资源的安装、校验（版本、sha256、字节数）与卸载；每个工具只留当前版本，卸载只删本工具的资源、不删用户已导出的文件。
   - toolbox_image.dart：小网络图 ToolboxRemoteImage（学习通头像与课程封面、电影院海报）：每个模块共用一份 CampusHttp（随进程存在，跨图片复用连接）、同时最多取 concurrency 张（[人工决策] 在类上；测试注入的客户端仍是每次一份、用完关掉），视频打开或卡住缓冲时经 ToolboxImageGate 先等（最多 10 秒，播放优先，[人工决策] 在类上，电影院播放页 hold 与 release）；经共用内核取字节（整次 15 秒、上限 2MB、请求记录带模块名），逐跳只认公网 https、最多跳 5 次，按铺满边长 side 物理像素的方块解码（不按原图），取失败的从图片缓存拿掉、不自动重试；lib 里不许用 Flutter 自带的 Image.network、NetworkImage（test/project_structure_test.dart 守护）。
   - toolbox_url.dart：toolboxPublicUrl 只接受公开的 http 或 https 地址（拒绝本机、内网、带凭据或非标准端口，anyPort 时不限端口（电影院的媒体地址），长度上限 8192；地址判定用 domain/campus_http.dart 的 campusPublicAddress）；shortVideoInput 从分享文案中提取唯一的作品链接。
+- life 生活根目录（子模块共用，子模块之间不互引）：
+  - life_money.dart：金额换算 lifeCents（数或十进制文本按文本换成分、四舍五入，不经浮点）与 lifeYuan（分写成两位小数的元）。
+  - life_alipay.dart：支付宝付款端口 LifeAlipay 与插件实现 TobiasLifeAlipay（tobias，内含支付宝 SDK；结果码只作提示，到账只认服务方；iOS 回调不一定回得来，各子模块回到前台也去查）。
 - download 下载：
   - toolbox_download_manager.dart：通用下载管理 ToolboxDownloadManager，不认识任何工具的数据（[人工决策] 在 enqueue）。按工具 id 与 identity 加每项 id 去重；负责入队、暂停、继续、取消、校验、导出与清理，clearTool 清除一个工具的下载数据（已导出的文件不动）。每组 1–100 项、待处理任务组最多 10 个、同时传输最多 2 个。
   - background_transfer.dart：安卓用的后台传输 BackgroundTransfer，基于 background_downloader；没有通知权限时改用普通 WorkManager 任务，避免 ANR。

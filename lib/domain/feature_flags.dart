@@ -31,4 +31,8 @@ const cinemaParseFlag = FeatureFlag('toolbox.cinema.parse', fallback: false);
 // 子模块会动真钱（充值、买券、洗浴扣费），不随版本直接发给所有人。生活下面一个看得见的子模块都没有时，生活本身也不出现（toolboxVisible）。
 // 11-27 这两个开关随全量删掉（见上面 11-27 那条），子模块各自登记开关的规矩不变。
 
-const featureFlags = <FeatureFlag>[cinemaParseFlag];
+// [人工决策-2026-11-27 23:34:29] 胖乖生活（生活的第二个子模块，碰真钱：洗衣机、吹风机下单付款，饮水机扣水卡）照 11-27 13:14:15 那条的最后一句登记自己的开关：
+// 默认关，先在中转点名给开发者测，再看要不要放量（用户 11-27 晚确认照上一轮）。人工决策的其余部分见 toolbox/life/pangguai/pangguai_service.dart 文件头。
+const pangguaiFlag = FeatureFlag('toolbox.life.pangguai', fallback: false);
+
+const featureFlags = <FeatureFlag>[cinemaParseFlag, pangguaiFlag];

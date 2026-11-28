@@ -10,7 +10,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import 'package:superxd/domain/campus_log.dart';
-import 'package:superxd/toolbox/chaoxing/chaoxing_location.dart';
+import 'package:superxd/domain/china_coordinates.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_map_view.dart';
 
 // [人工决策-2026-11-10 13:09:42] 学习通位置签到的地图改用网页版高德（内嵌网页加高德 JS API 2.0），删掉高德原生地图 SDK（用户选定）：

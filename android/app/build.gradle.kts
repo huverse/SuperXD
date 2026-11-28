@@ -165,4 +165,8 @@ dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     // 学习通签到的设备码按 OAID 算（与官方客户端一致）；它自带的存储、电话状态等权限在清单里移除。
     implementation("com.github.gzu-liyujiang:Android_CN_OAID:4.2.17")
+    // 胖乖生活登录前的人机验证：网易易盾行为式验证码（闭源 SDK，用户 11-27 选的，人工决策见 lib/toolbox/life/pangguai/pangguai_service.dart；接法见 PangguaiCaptcha.kt）。
+    // 它依赖的 Glide 4.9 还拖着旧的 support 库，这里显式要 AndroidX 版的 Glide 4.16（Gradle 取高版本），不开 Jetifier。
+    implementation("io.github.yidun:captcha:3.7.1.1")
+    implementation("com.github.bumptech.glide:glide:4.16.0")
 }

@@ -38,6 +38,8 @@ target 'Runner' do
   use_frameworks!
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+  # 胖乖生活登录前的人机验证：网易易盾 NTESVerifyCode（闭源 SDK，自带隐私清单；接法见 Runner/PangguaiCaptcha.swift，人工决策见 lib/toolbox/life/pangguai/pangguai_service.dart）。
+  pod 'NTESVerifyCode', '3.8.6'
   target 'RunnerTests' do
     inherit! :search_paths
   end

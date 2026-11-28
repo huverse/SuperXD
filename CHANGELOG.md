@@ -2,7 +2,13 @@
 
 ## Unreleased
 
+### 新增
+- 百宝箱「生活」加第二个子模块胖乖生活（用户 11-27 转交另一个 AI 的移交包 v2.3，[人工决策] 在 toolbox/life/pangguai/pangguai_service.dart 文件头）：手机号加短信验证码登录（胖乖要人机验证时弹网易易盾的验证，可以登录几个账号切换）；扫设备码或按「附近门店」（读一次手机位置）找到设备；洗衣机选程序、吹风机选位置与时长，只有一个档位的直接选好，按钮写胖乖试算的实付；下单时整串重发并核对实付、带位置与签名，用支付宝付，付好胖乖启动设备，订单页写预计几点结束；饮水机（apwork.cn 码）选水种与水卡、锁机后在机器上按键出水，查取水状态与用水记录，水卡余额不够跳支付宝小程序充值。第一版不用券与积分。碰真钱，开关 toolbox.life.pangguai 默认关、先点名给开发者测。用户四项选择：按 v2.3 从头写（没以已关闭的 #370 为底）、饮水机走原生接口（没选打开胖乖网页）、人机验证接易盾原生 SDK、系统定位自己写（不用带谷歌闭源库的 geolocator）。
+- 原生：通道 superxd/location 取一次当前位置（安卓 DeviceLocation.kt 用系统 LocationManager，iOS DeviceLocation.swift 用 CoreLocation）；通道 superxd/pangguai_captcha 弹易盾验证（安卓 io.github.yidun:captcha 3.7.1.1，它依赖的 Glide 显式升到 AndroidX 版 4.16、不开 Jetifier；iOS 经 CocoaPods 的 NTESVerifyCode 3.8.6），两端都关掉易盾的崩溃与日志上报（disableReport）。iOS 的锁文件要从 CI 取回。
+- 隐私政策升修订 16（新增第三方去向、SDK 与位置用途，按 11-22 住理生活那次的先例提示一次）：第十节改成「百宝箱：生活」，住理生活与胖乖生活各一段（不让后面的节号顺延）；附录一加易盾 SDK 与胖乖、apwork 两个去向，附录二相机与位置、附录三本机第 12 项同步；用户协议第一节与第五节写上胖乖生活。安全存储新命名空间 superxd_pangguai 加进两份备份排除规则，iOS 的定位用途说明同步。README 的闭源 SDK 改成四个，胖乖按「没启用、框架在」写进现状与已知限制；百宝箱说明加一节。
+
 ### 变更
+- 生活下面两个子模块共用的金额换算与支付宝端口挪到生活根目录（life_money.dart 的 lifeCents、lifeYuan，life_alipay.dart 的 LifeAlipay、TobiasLifeAlipay），住理改用它们，行为不变；WGS-84 换 GCJ-02 从学习通挪到 domain/china_coordinates.dart，学习通与胖乖共用。同层子模块不互引（test/project_structure_test.dart 守护），共用的只能放上一级。
 - 今天页此刻卡收成一条时，「课名 · 教室」放不下就滚动播放（用户 11-27 截图「大学体育…」后从跑马灯、变两行、轮流显示里选了跑马灯，[人工决策] 在 theme/campus_marquee.dart）：先停 3 秒，匀速往左滚完一遍、首尾接上回到开头再停，滚动中两端渐隐、停着时只渐隐尾端；最多滚 3 遍就停在开头（同安卓系统跑马灯的默认遍数；今天页常开着，一直滚会让页面一直满帧），换状态、回到前台或回到今天页时重新开始。放得下照旧不动；减少动画、省电模式时不滚，照旧先省略课名、教室写全。新组件 theme 的 CampusMarquee，不加依赖（marquee、text_scroll 两个库看过，原因写在文件头）。
 - 删掉电影院、生活与住理生活的功能开关 toolbox.cinema、toolbox.life、toolbox.life.zhuli（11-23 起灰度配置已全量，11-27 用户选「现在删代码」，[人工决策] 在 domain/feature_flags.dart）：三个工具不再经开关、一直显示；用户看到的没有变化。私有灰度配置里的同名三项先留着：44 及以前的版本配置里没有这三项就会藏起工具，等它们都低于最低可用版本再删。电影院的解析仍在开关 toolbox.cinema.parse 后面；百宝箱基准图多出电影院与生活两行（测试里以前没开开关）。
 

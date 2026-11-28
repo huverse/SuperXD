@@ -12,6 +12,8 @@ import workmanager_apple
   private let shortcuts = AppShortcuts()
   private let dialogs = NativeDialogs()
   private let tabBar = NativeTabBar()
+  private let location = DeviceLocation()
+  private let captcha = PangguaiCaptcha()
 
   override func application(
     _ application: UIApplication,
@@ -40,6 +42,8 @@ import workmanager_apple
     calendar.register(messenger: messenger)
     ChaoxingDevice.register(messenger: messenger)
     LocationSettings.register(messenger: messenger)
+    location.register(messenger: messenger)
+    captcha.register(messenger: messenger)
     SensitiveClipboard.register(messenger: messenger)
     CourseBridge.register(messenger: messenger)
     dialogs.register(messenger: messenger)
