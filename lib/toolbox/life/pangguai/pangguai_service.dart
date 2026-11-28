@@ -38,7 +38,8 @@ class PangguaiService implements ToolboxService {
   // 子模块 id：路由（/toolbox/life/pangguai）、服务、同意记录与开关共用，发出后不改。
   static const serviceId = 'life.pangguai';
   // 第一次发验证码前的同意说明的版本，说明有实质变化就加一档。
-  static const consentVersion = 'pangguai-1';
+  // pangguai-2（11-28）：写明打开设备时先读一次位置、下单时才发给胖乖。
+  static const consentVersion = 'pangguai-2';
 
   static Future<PangguaiService> open(ToolboxServiceContext context) async =>
       PangguaiService(vault: SecurePangguaiVault(), devices: PangguaiDeviceStore.file(File('${context.base.path}/pangguai_devices.json')));
@@ -120,11 +121,37 @@ class PangguaiService implements ToolboxService {
   // 选好档位后试算实付（页面上显示的价）。
   Future<int> quote(String phone, PangguaiDevice device, PangguaiSku sku, int? minutes) => run(phone, (token) => client.preview(token, pangguaiItems(device, sku, minutes)));
 
-  // 下单：先取一次位置（取不到抛 PangguaiLocationException，一个请求都不发；可能要等系统授权框，所以不和下面的请求一起发），
+  // [人工决策-2026-11-28 21:26:48] 打开设备页就先读一次位置（用户看了诊断包 NNK5V9VD 后选「打开设备页就先读」，没选「选好档位时才读」与「保持下单时才读」）：
+  // 点「下单」后最慢的是现取定位（那份包里 1.9 秒，室内可能更久）。只在已经允许过位置时读、不弹授权；读到的照旧在定位端口里留 5 分钟，下单时才发给胖乖。
+  // 隐私政策升修订 17、同意说明加一档，写明打开设备时读一次。
+  Future<PangguaiPosition>? _warming;
+
+  Future<void> warmLocation() async {
+    final warming = _warming = locator.current(ask: false);
+    try {
+      await warming;
+    } on PangguaiLocationException catch (error) {
+      // 没给过权限、定位关着或这一会儿取不到：下单时照常再问。
+      campusLog('[Pangguai] action=warm_location problem=${error.problem.name}');
+    } finally {
+      if (identical(_warming, warming)) _warming = null;
+    }
+  }
+
+  // 下单：先取一次位置（打开设备页时先读的那一次还没回来就等它，不另起一次；取不到抛 PangguaiLocationException，一个请求都不发；
+  // 可能要等系统授权框，所以不和下面的请求一起发），
   // 再一起重取详情与档位（同一个凭据，不沿用打开页面时取的），都到了再依次试算、下单（同移交包实测成功的顺序：试算在详情与档位之后、下单紧跟试算）；
   // 试算的实付和页面上的价（expected）不一样时不下单、抛 PangguaiPriceChanged；零元的单不在这里下（可能直接启动）。回订单号。
   Future<String> place(String phone, {required String goodsId, required String skuId, int? minutes, required int expected}) async {
-    final position = await locator.current(ask: true);
+    PangguaiPosition? warmed;
+    if (_warming case final warming?) {
+      try {
+        warmed = await warming;
+      } on PangguaiLocationException {
+        // 先读的那一次没取到（多半是没给过权限）：下面照常问，这次可以弹授权。
+      }
+    }
+    final position = warmed ?? await locator.current(ask: true);
     return run(phone, (token) async {
       final (:device, :skus) = await _deviceAndSkus(token, goodsId);
       if (device.unusable case final reason?) throw PangguaiException(PangguaiFailure.rejected, reason);

@@ -53,6 +53,8 @@ class _PangguaiDevicePageState extends State<PangguaiDevicePage> {
   var _quoting = false;
   // 试算的代次：选择改了，旧的试算结果不再写界面。
   var _quoteGeneration = 0;
+  // 正在试算时又改了选择：只记下要再算一次，这一次回来后按最后的选择算（同一时刻最多一个试算在路上）。
+  var _quoteInFlight = false, _quoteAgain = false;
   var _placing = false;
   String? _placeError;
   PangguaiLocationProblem? _location;
@@ -91,6 +93,8 @@ class _PangguaiDevicePageState extends State<PangguaiDevicePage> {
       });
       _autoTier();
       unawaited(_quote());
+      // 设备能用就先读一次位置备用（已允许过位置才读、不弹授权，人工决策见 PangguaiService.warmLocation）。
+      if (result.device.unusable == null) unawaited(widget.service.warmLocation());
     } on PangguaiException catch (error) {
       if (mounted) setState(() => _error = error.message);
     } catch (error, stack) {
@@ -112,23 +116,24 @@ class _PangguaiDevicePageState extends State<PangguaiDevicePage> {
     return device != null && device.unusable == null && sku != null && (!device.timed || _minutes != null);
   }
 
-  // 连着点几个档位时只算最后选的那个：停 quoteSettle 没再改才发试算（11-28 诊断包 TJEHRHFR：每点一下排一个试算，最后的价要等前面的都发完）。
-  static const quoteSettle = Duration(milliseconds: 300);
-
-  Future<void> _quote({Duration settle = Duration.zero}) async {
+  // 试算：选了马上算；正在算时又改了，只记下最后的选择，等这一次回来再算一次（11-28 诊断包 TJEHRHFR：原来每点一下排一个试算；
+  // 诊断包 NNK5V9VD：改成停 300 毫秒没再改才算后，每次选完都白等这 300 毫秒）。同一时刻最多一个试算在路上，中间点过的不算。
+  Future<void> _quote() async {
     final generation = ++_quoteGeneration;
+    final ready = _ready;
     setState(() {
       _price = null;
       _placeError = null;
       _location = null;
       _unsure = false;
+      _quoting = ready;
     });
-    if (!_ready) return;
-    setState(() => _quoting = true);
-    if (settle > Duration.zero) {
-      await Future<void>.delayed(settle);
-      if (!mounted || generation != _quoteGeneration) return;
+    if (!ready) return;
+    if (_quoteInFlight) {
+      _quoteAgain = true;
+      return;
     }
+    _quoteInFlight = true;
     try {
       final price = await widget.service.quote(widget.phone, _device!, _sku!, _minutes);
       if (mounted && generation == _quoteGeneration) setState(() => _price = price);
@@ -138,7 +143,13 @@ class _PangguaiDevicePageState extends State<PangguaiDevicePage> {
       campusLog('[Pangguai] action=quote errorType=${error.runtimeType}\n$stack');
       if (mounted && generation == _quoteGeneration) setState(() => _placeError = '没算出价格，稍后再试');
     } finally {
-      if (mounted && generation == _quoteGeneration) setState(() => _quoting = false);
+      _quoteInFlight = false;
+      if (mounted && _quoteAgain) {
+        _quoteAgain = false;
+        unawaited(_quote());
+      } else if (mounted && generation == _quoteGeneration) {
+        setState(() => _quoting = false);
+      }
     }
   }
 
@@ -151,7 +162,7 @@ class _PangguaiDevicePageState extends State<PangguaiDevicePage> {
       }
       if (minutes != null) _minutes = minutes;
     });
-    unawaited(_quote(settle: quoteSettle));
+    unawaited(_quote());
   }
 
   Future<void> _place() async {

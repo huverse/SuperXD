@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -67,6 +68,8 @@ class _FakePangguai {
   final dropped = <String>{};
   // 失效的凭据（回业务码 2）。
   final expired = <String>{};
+  // 给了就把试算的回复压到它完成（造「试算还在路上」）。
+  Completer<void>? holdPreview;
   var tokenCounter = 0;
   var orderCounter = 0;
   final orders = <String, Map<String, Object?>>{};
@@ -127,6 +130,7 @@ class _FakePangguai {
     final fields = _fields(request);
     requests.add(_Request(request.url.host, request.url.path, request.headers, fields));
     final path = request.url.path;
+    if (path == '/trade/preview/v4' && holdPreview != null) await holdPreview!.future;
     if (dropped.contains(path)) throw http.ClientException('dropped');
     if (blocked.contains(path)) return http.Response('<html>blocked</html>', 405);
     if (request.url.host == 'apwork.cn') {
@@ -252,9 +256,12 @@ class _FakeLocator implements PangguaiLocator {
   PangguaiLocationProblem? problem;
   final asked = <bool>[];
   final opened = <PangguaiLocationProblem>[];
+  // 给了就等它完成才回（造「定位还在取」）。
+  Completer<void>? hold;
   @override
   Future<PangguaiPosition> current({required bool ask}) async {
     asked.add(ask);
+    if (hold case final hold?) await hold.future;
     if (problem case final problem?) throw PangguaiLocationException(problem);
     return (latitude: 36.123456, longitude: 117.654321);
   }
@@ -580,20 +587,29 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('洗衣机：选程序后按钮写服务端的实付（连点几个程序只算最后一个），下单换成订单页并开始付，付好是使用中、写预计几点结束', (tester) async {
+    testWidgets('洗衣机：选程序马上试算，按钮写服务端的实付；算着时又连点了几下，回来只按最后选的再算一次；下单换成订单页并开始付，付好是使用中、写预计几点结束', (tester) async {
       await tester.runAsync(kit.signIn);
       kit.alipay.onPay = () => kit.fake.pay(kit.fake.orders.keys.single);
       await show(tester, PangguaiDevicePage(service: kit.service, phone: _phone, goodsId: _washer));
       expect(find.text('合成楼-201'), findsOneWidget);
       expect(find.text('选好再下单'), findsOneWidget);
       final before = kit.fake.requests.length;
-      for (final program in ['标准洗', '桶自洁', '标准洗', '桶自洁']) {
+      final held = kit.fake.holdPreview = Completer<void>();
+      await tester.tap(find.text('标准洗'));
+      await tester.pump();
+      expect(kit.fake.requests.skip(before).map((request) => request.path), ['/trade/preview/v4'], reason: '选了马上算，不等');
+      for (final program in ['桶自洁', '标准洗', '桶自洁']) {
         await tester.tap(find.text(program));
-        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump();
       }
       expect(find.text('正在算价'), findsOneWidget);
+      expect(kit.fake.requests.skip(before).where((request) => request.path == '/trade/preview/v4'), hasLength(1), reason: '算着时不叠请求');
+      kit.fake.holdPreview = null;
+      held.complete();
       await _settle(tester);
-      expect(kit.fake.requests.skip(before).map((request) => request.path), ['/trade/preview/v4'], reason: '停下来之前改的不发试算');
+      final previews = kit.fake.requests.skip(before).where((request) => request.path == '/trade/preview/v4').toList();
+      expect(previews, hasLength(2));
+      expect(previews.last.fields['items'], contains('1102'), reason: '第二次按最后选的桶自洁算');
       expect(find.text('下单并付款 ¥1.00'), findsOneWidget);
       await tester.tap(find.text('下单并付款 ¥1.00'));
       await _settle(tester);
@@ -601,6 +617,28 @@ void main() {
       expect(kit.alipay.paid, hasLength(1));
       expect(find.text('使用中'), findsOneWidget);
       expect(find.byWidgetPredicate((widget) => widget is DotSeparatedText && widget.text.startsWith('预计 21:44 结束 · ')), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    // 用户 11-28 晚选定（人工决策见 PangguaiService.warmLocation）：诊断包 NNK5V9VD 里点下单后现取定位用了 1.9 秒。
+    testWidgets('打开设备页就以不弹授权的方式先读一次位置；还没回来时点下单，等的是同一次、不另起一次', (tester) async {
+      await tester.runAsync(kit.signIn);
+      kit.alipay.onPay = () => kit.fake.pay(kit.fake.orders.keys.single);
+      final locating = kit.locator.hold = Completer<void>();
+      await show(tester, PangguaiDevicePage(service: kit.service, phone: _phone, goodsId: _washer));
+      expect(kit.locator.asked, [false]);
+      await tester.tap(find.text('桶自洁'));
+      await _settle(tester);
+      await tester.tap(find.text('下单并付款 ¥1.00'));
+      await _settle(tester);
+      expect(kit.fake.paths().where((path) => path == '/trade/create'), isEmpty, reason: '位置还没到不下单');
+      kit.locator.hold = null;
+      locating.complete();
+      await _settle(tester);
+      await _settle(tester);
+      expect(kit.locator.asked, [false], reason: '下单等的是打开页面时那一次');
+      expect(kit.fake.paths().where((path) => path == '/trade/create'), hasLength(1));
+      expect(find.text('使用中'), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
     });
 

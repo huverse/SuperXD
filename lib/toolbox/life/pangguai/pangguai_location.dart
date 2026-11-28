@@ -25,7 +25,7 @@ class PangguaiLocationException implements Exception {
   };
 }
 
-// 位置端口：只在找附近门店与下单时取一次（下单请求头带经纬度与位置签名，胖乖按它核对人在不在设备旁），不持续、不在后台定位。
+// 位置端口：找附近门店、打开设备页（已允许过位置时先读一次备用，11-28 起）与下单时取（下单请求头带经纬度与位置签名，胖乖按它核对人在不在设备旁），不持续、不在后台定位。
 abstract interface class PangguaiLocator {
   // ask 为真时没给过权限就弹系统授权（仅使用期间）；为假时不弹，直接报 denied。
   Future<PangguaiPosition> current({required bool ask});
