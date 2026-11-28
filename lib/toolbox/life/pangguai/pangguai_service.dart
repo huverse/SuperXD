@@ -142,7 +142,9 @@ class PangguaiService implements ToolboxService {
   // 可能要等系统授权框，所以不和下面的请求一起发），
   // 再一起重取详情与档位（同一个凭据，不沿用打开页面时取的），都到了再依次试算、下单（同移交包实测成功的顺序：试算在详情与档位之后、下单紧跟试算）；
   // 试算的实付和页面上的价（expected）不一样时不下单、抛 PangguaiPriceChanged；零元的单不在这里下（可能直接启动）。回订单号。
-  Future<String> place(String phone, {required String goodsId, required String skuId, int? minutes, required int expected}) async {
+  // quotedItems 是页面按刚才的详情与档位算出的 items（试算过的那份）：试算与重取详情、档位一起发（11-28 夜用户要再快一些，少等一个来回）；
+  // 详情回来后按新的算出的 items 和它不一样（档位或时长变了），就按新的再试算一次，下单用的永远是按刚取的详情算的那份。下单请求照旧等这三个都核对过才发。
+  Future<String> place(String phone, {required String goodsId, required String skuId, int? minutes, required int expected, String? quotedItems}) async {
     PangguaiPosition? warmed;
     if (_warming case final warming?) {
       try {
@@ -153,12 +155,16 @@ class PangguaiService implements ToolboxService {
     }
     final position = warmed ?? await locator.current(ask: true);
     return run(phone, (token) async {
+      // 先发的试算一发出就接住错误（详情先失败、或 items 变了用不上它时，不成为没人处理的异步错误）。
+      final early = quotedItems == null ? null : client.preview(token, quotedItems).then<Object>((price) => price, onError: (Object error, StackTrace stack) => AsyncError(error, stack));
       final (:device, :skus) = await _deviceAndSkus(token, goodsId);
       if (device.unusable case final reason?) throw PangguaiException(PangguaiFailure.rejected, reason);
       final sku = skus.where((each) => each.id == skuId && each.available).firstOrNull;
       if (sku == null) throw const PangguaiException(PangguaiFailure.rejected, '这个档位现在选不了，换一个');
       final items = pangguaiItems(device, sku, minutes);
-      final price = await client.preview(token, items);
+      final quoted = early != null && items == quotedItems ? await early : null;
+      if (quoted is AsyncError) Error.throwWithStackTrace(quoted.error, quoted.stackTrace);
+      final price = quoted as int? ?? await client.preview(token, items);
       if (price != expected) throw PangguaiPriceChanged(price);
       if (price <= 0) throw const PangguaiException(PangguaiFailure.rejected, '这一单请在胖乖生活 App 里下');
       final orderId = await client.create(token, items, (category: device.category, imei: device.imei, latitude: position.latitude.toStringAsFixed(6), longitude: position.longitude.toStringAsFixed(6)));

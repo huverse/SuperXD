@@ -17,7 +17,7 @@
 - life 生活根目录（子模块共用，子模块之间不互引）：
   - life_money.dart：金额换算 lifeCents（数或十进制文本按文本换成分、四舍五入，不经浮点）与 lifeYuan（分写成两位小数的元）。
   - life_alipay.dart：支付宝付款端口 LifeAlipay 与插件实现 TobiasLifeAlipay（tobias，内含支付宝 SDK；结果码只作提示，到账只认服务方；iOS 回调不一定回得来，各子模块回到前台也去查）。
-  - life_http_brake.dart：各子模块统一的请求策略（11-28 用户选「都照住理：不限并发」，[人工决策] 在文件头）：不排队、不限并发、不固定间隔，超时与上限各子模块给、不自动重试；刹车 LifeHttpBrake：回 403、405、429 就停这个域名 30 秒（11-28 用户由 15 分钟改来），期间在本机直接拒掉、提示写还要等几秒。
+  - life_http_brake.dart：各子模块统一的请求策略（11-28 用户选「都照住理：不限并发」，[人工决策] 在文件头）：不排队、不限并发、不固定间隔，超时与上限各子模块给、不自动重试；空闲连接留 lifeKeepIdle（50 秒，挑档位再下单的停顿后不用重新握手）；刹车 LifeHttpBrake：回 403、405、429 就停这个域名 30 秒（11-28 用户由 15 分钟改来），期间在本机直接拒掉、提示写还要等几秒。
 - download 下载：
   - toolbox_download_manager.dart：通用下载管理 ToolboxDownloadManager，不认识任何工具的数据（[人工决策] 在 enqueue）。按工具 id 与 identity 加每项 id 去重；负责入队、暂停、继续、取消、校验、导出与清理，clearTool 清除一个工具的下载数据（已导出的文件不动）。每组 1–100 项、待处理任务组最多 10 个、同时传输最多 2 个。
   - background_transfer.dart：安卓用的后台传输 BackgroundTransfer，基于 background_downloader；没有通知权限时改用普通 WorkManager 任务，避免 ANR。

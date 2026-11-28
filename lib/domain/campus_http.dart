@@ -58,8 +58,9 @@ class CampusHttpTooLarge implements Exception {
 // 是本机、内网、链路本地这类（campusPublicPeer 为假，代理软件的 fake-ip 段放行）就断开并抛 CampusHttpPrivateAddress；按连上的地址认，域名解析成 127.0.0.1 也挡得住。
 // traced 另按主机记新连接（11-24 电影院取证，用户选「先取证」）：超时时写清卡在哪一步（见 CampusHttpTimeout），
 // 分得出是复用了连接池里已经断掉的旧连接、新连接没建起来（含域名解析与 TLS），还是连上了对方不回。
+// keepIdle：连接池里的空闲连接留多久（不给用 dart:io 默认的 15 秒），只在没注入 client 时用；一串请求之间要停顿一会儿的模块（生活：挑档位再下单）给长一些，免得停顿后第一个请求又要重新握手。
 class CampusHttp {
-  CampusHttp(this.module, {http.Client? client}) : _client = client ?? http.Client(), _trace = null;
+  CampusHttp(this.module, {http.Client? client, Duration? keepIdle}) : _client = client ?? (keepIdle == null ? http.Client() : IOClient(HttpClient()..idleTimeout = keepIdle)), _trace = null;
   CampusHttp.publicOnly(this.module) : _client = IOClient(HttpClient()..connectionFactory = ((url, proxyHost, proxyPort) => _connect(url, proxyHost, proxyPort, publicOnly: true))), _trace = null;
   CampusHttp._traced(this.module, _ConnectTrace trace) : _client = IOClient(HttpClient()..connectionFactory = ((url, proxyHost, proxyPort) => _connect(url, proxyHost, proxyPort, trace: trace))), _trace = trace;
   factory CampusHttp.traced(String module) => CampusHttp._traced(module, _ConnectTrace());

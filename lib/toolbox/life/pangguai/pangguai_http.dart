@@ -19,7 +19,7 @@ typedef PangguaiRisk = ({String category, String imei, String latitude, String l
 // 不是平台公布的安全配额），点「下单」到拉起支付宝要 8 个请求、约 10 秒，连点几个档位时试算也排着队一个个等。
 // 凭据同时放请求头 Authorization 与表单 token（同官方 App）。日志只记路径与业务码，不记表单（有手机号、验证码、凭据）与回复。
 class PangguaiHttp {
-  PangguaiHttp({http.Client? client, this.timeout = const Duration(seconds: 15)}) : _http = CampusHttp('pangguai', client: client);
+  PangguaiHttp({http.Client? client, this.timeout = const Duration(seconds: 15)}) : _http = CampusHttp('pangguai', client: client, keepIdle: lifeKeepIdle);
 
   static const payloadLimit = 1024 * 1024;
 

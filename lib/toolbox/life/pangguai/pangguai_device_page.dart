@@ -175,7 +175,7 @@ class _PangguaiDevicePageState extends State<PangguaiDevicePage> {
       _unsure = false;
     });
     try {
-      final orderId = await widget.service.place(widget.phone, goodsId: device.goodsId, skuId: sku.id, minutes: _minutes, expected: price);
+      final orderId = await widget.service.place(widget.phone, goodsId: device.goodsId, skuId: sku.id, minutes: _minutes, expected: price, quotedItems: pangguaiItems(device, sku, _minutes));
       if (!mounted) return;
       // 换成订单页（返回回到来的那一页），打开就开始付。
       _replaced = true;

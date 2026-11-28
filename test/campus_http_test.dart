@@ -283,6 +283,35 @@ void main() {
     expect(logs.where((line) => line.contains('module=demo') && line.endsWith('error=timeout')), hasLength(4));
   });
 
+  // 11-28 夜生活提速：挑档位再下单中间常停顿超过默认的 15 秒，keepIdle 让空闲连接留得久一些，停顿后的请求不用重新握手。
+  test('keepIdle：空闲连接留到给的时长，过了就关；没过的下一个请求复用同一条连接', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final ports = <int>[];
+    server.listen((request) async {
+      ports.add(request.connectionInfo!.remotePort);
+      request.response.write('ok');
+      await request.response.close();
+    });
+    addTearDown(() => server.close(force: true));
+    await HttpOverrides.runWithHttpOverrides(() async {
+      Future<List<int>> twice(Duration keepIdle) async {
+        ports.clear();
+        final kernel = CampusHttp('demo', keepIdle: keepIdle);
+        final url = Uri.parse('http://127.0.0.1:${server.port}/quick');
+        await kernel.send('GET', url, timeout: const Duration(seconds: 5), limit: 1024);
+        await Future<void>.delayed(const Duration(milliseconds: 1200));
+        await kernel.send('GET', url, timeout: const Duration(seconds: 5), limit: 1024);
+        kernel.close();
+        return [...ports];
+      }
+
+      final kept = await twice(const Duration(seconds: 30));
+      expect(kept[0], kept[1], reason: '停了 1.2 秒，连接还在');
+      final dropped = await twice(const Duration(milliseconds: 500));
+      expect(dropped[0], isNot(dropped[1]), reason: '空闲超过 0.5 秒就关了，第二个请求新开连接');
+    }, _RealHttp());
+  });
+
   // 11-22 Codex 复核 P1（电影院的本机代理替第三方清单取东西）：按连上的真实地址核对，写成域名、解析到本机的也挡得住。
   test('只连公网：连到本机（直接写地址、或域名解析到本机）就断开并抛 CampusHttpPrivateAddress，对方一个请求都没收到', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);

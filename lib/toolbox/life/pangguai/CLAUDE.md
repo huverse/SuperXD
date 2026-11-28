@@ -14,7 +14,7 @@
 - pangguai_devices.dart：扫到的码 pangguaiParseCode（胖乖链接的 NQT、IMEI、SN，单独的 NQT 与 32 位十六进制的饮水机码，别的不认）；本机最近使用 PangguaiDeviceStore（工具目录下的 pangguai_devices.json，按手机号分开，每个账号最多 pangguaiRecentLimit 台；外部输入，坏了当没有，写临时文件再改名；测试用内存版）。
 - pangguai_location.dart：位置端口 PangguaiLocator 与通道实现（superxd/location：安卓 android/app/src/main/kotlin/com/superxd/superxd/DeviceLocation.kt 用系统 LocationManager，iOS ios/Runner/DeviceLocation.swift 用 CoreLocation，都不带谷歌闭源库）：找附近门店、打开设备页（已允许过位置时先读一次备用，不弹授权）与下单时取，权限由 permission_handler 问（仅使用期间），5 分钟内取过的直接用，系统给的 WGS-84 经 domain/china_coordinates.dart 换成 GCJ-02；去设置时没权限到本应用设置页、定位关着到系统定位设置（通道 superxd/location_settings）。只有真机能验。
 - pangguai_captcha.dart：人机验证端口 PangguaiCaptcha 与通道实现（superxd/pangguai_captcha：安卓 PangguaiCaptcha.kt 用易盾 io.github.yidun:captcha 3.7.1.1，依赖的 Glide 在 android/app/build.gradle.kts 显式升到 AndroidX 版 4.16；iOS ios/Runner/PangguaiCaptcha.swift 用 CocoaPods 的 NTESVerifyCode 3.8.6）：两边都关上报 disableReport（不装易盾的崩溃收集），通过回 validate、关掉回空。只有真机能验。
-- pangguai_service.dart：服务 PangguaiService（实现 ToolboxService，serviceId life.pangguai，同意版本 consentVersion）：要人机验证时先过易盾再交给胖乖核对（发码与登录前都问）；登录成功才记凭据、切换、退出（只删本机凭据）；run 带着凭据做一次请求，凭据失效抛 notSignedIn（登录要短信，不能后台重登）；ongoing 是首页的进行中（使用中的，与 payWindow 内新建、没付的）；inspect 打开设备（详情与档位一起取，记进最近使用）；quote 试算；warmLocation 打开设备页时先读一次位置（11-28 用户选定，[人工决策] 在方法上）；place 下单（先取位置（先读的那次还在路上就等它），再一起重取详情与档位、之后依次试算与下单，价变了不下单，零元的不下）；prepay 付款前核对订单与金额（订单页刚读到的直接用，没给就重查）、只走支付宝渠道；cancel 只取消没付的；water 打开饮水机；unlock 锁机前重扫拿新会话、核对水种、水卡与余额门槛。没有业务库；清除数据删安全存储与最近使用。
+- pangguai_service.dart：服务 PangguaiService（实现 ToolboxService，serviceId life.pangguai，同意版本 consentVersion）：要人机验证时先过易盾再交给胖乖核对（发码与登录前都问）；登录成功才记凭据、切换、退出（只删本机凭据）；run 带着凭据做一次请求，凭据失效抛 notSignedIn（登录要短信，不能后台重登）；ongoing 是首页的进行中（使用中的，与 payWindow 内新建、没付的）；inspect 打开设备（详情与档位一起取，记进最近使用）；quote 试算；warmLocation 打开设备页时先读一次位置（11-28 用户选定，[人工决策] 在方法上）；place 下单（先取位置（先读的那次还在路上就等它），再把试算（按页面试算过的 items）与重取详情、档位一起发，详情变了 items 不一样就按新的再试算一次，都核对过才下单，价变了不下单，零元的不下）；prepay 付款前核对订单与金额（订单页刚读到的直接用，没给就重查）、只走支付宝渠道；cancel 只取消没付的；water 打开饮水机；unlock 锁机前重扫拿新会话、核对水种、水卡与余额门槛。没有业务库；清除数据删安全存储与最近使用。
 - pangguai_login.dart：登录表单 PangguaiLoginForm（手机号、短信验证码，发码前经页面给的 consent 取同意，发码后 60 秒才能再发，接系统自动填充；给了手机号时是重新登录这个账号、号不能改）与加账号、重新登录的页面 PangguaiLoginPage。
 - pangguai_page.dart：首页 PangguaiPage：没登录是登录表单；登录了是账号卡（昵称与打码手机号 pangguaiMaskedPhone，⋯ 里切换、添加与退出）、进行中的订单（使用中写预计几点结束）、用设备（扫码与附近门店一行两个等宽，最近使用默认两台、点「全部」展开）、订单入口，下拉刷新；凭据失效时原地重新登录；扫码经 runtime 的 ToolboxQrScan，胖乖码直接换成设备页、饮水机码换成饮水机页；同意说明在 _consent（写明发给谁、存什么、用到位置与易盾）。
 - pangguai_shop_page.dart：附近门店 PangguaiNearbyPage（打开时取位置，没权限或定位关着原地写明并给「去设置」；门店写距离、空闲几台与地址，「加载更多」）与门店 PangguaiShopPage（机型的选择标签，设备写名字与状态，「加载更多」，点进设备页）。
@@ -24,7 +24,7 @@
 
 # 关键规则
 
-- 下单：详情与档位（一起取）→ 试算 → 下单用同一个凭据连着发，点「下单」时整串重发，不沿用打开页面时取的；items 与上一次试算一字不差；位置取不到不下单（胖乖按位置核对，下单请求头带经纬度与位置签名）；结果不确定（没等到回复）不重发，请人先看订单。
+- 下单：详情、档位与试算（三个一起发，11-28 夜起；试算先按页面的 items 发，详情回来算出的 items 不一样就按新的再试一次）→ 下单用同一个凭据连着发，点「下单」时整串重发，不沿用打开页面时取的；下单的 items 与它前面那次试算一字不差、按刚取的详情算；位置取不到不下单（胖乖按位置核对，下单请求头带经纬度与位置签名）；结果不确定（没等到回复）不重发，请人先看订单。
 - 金额：只显示胖乖给的数，下单前以试算的实付为准，付款前再核对订单金额，变了先停下请人确认；第一版不用券与积分（试算不带优惠、饮水不用积分抵扣），手里有券的人会比官方 App 付得多。付款只接支付宝 APP 支付串（收款方是胖乖），到账只认胖乖的订单状态，支付串不进日志。
 - 开机：先付后用的设备由胖乖服务器在付款成功后下发开机，客户端没有启动设备的接口；预计结束时刻会变、到点不等于完成，以订单状态为准。没付的单胖乖不给关单时刻，首页只提 10 分钟内的。
 - 提示条：三页的付款区、下单区与选择卡跟着内容滚动，不包 CampusToastAnchor（包了提示条会停到页面中间压住上面的卡片，11-28 真机截图）。
