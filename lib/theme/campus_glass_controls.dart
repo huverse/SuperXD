@@ -21,19 +21,23 @@ class CampusGlassChip extends StatelessWidget {
     required this.selected,
     required this.onSelected,
     this.leading,
+    this.unavailable = false,
   });
   final String label;
   final bool selected;
   final ValueChanged<bool>? onSelected;
   // 没选中时显示在名字前的小图标（如带颜色的标签图标）；选中时换成勾。
   final Widget? leading;
+  // 暂时选不了（被占用、出不了）：不能点，画成虚线空心胶囊、文字次要色，原因由调用方写进名字（如「开水 暂不可用」）。
+  // 普通禁用（忙着时整组禁用）只把底色和文字压淡一点，和能选的几乎分不出（11-28 用户真机截图），所以单独一种样子，同电商规格表里缺货的虚线框。
+  final bool unavailable;
 
   @override
   Widget build(BuildContext context) {
     final palette = CampusPalette.of(context);
     final onSelected = this.onSelected;
     // iOS 点选标签有系统的选择触感（同系统分段控件）。
-    final onPressed = onSelected == null
+    final onPressed = onSelected == null || unavailable
         ? null
         : () {
             if (campusIos) HapticFeedback.selectionClick();
@@ -47,11 +51,13 @@ class CampusGlassChip extends StatelessWidget {
         fontSize: 14,
         fontWeight: FontWeight.w600,
       ),
-      backgroundBuilder: (context, states, child) => CampusGlassButtonSurface(
-        states: {...states, if (selected) WidgetState.selected},
-        neutral: true,
-        child: child!,
-      ),
+      backgroundBuilder: (context, states, child) => unavailable
+          ? CustomPaint(painter: _DashedStadiumPainter(palette.outline), child: child)
+          : CampusGlassButtonSurface(
+              states: {...states, if (selected) WidgetState.selected},
+              neutral: true,
+              child: child!,
+            ),
     );
     // 选中前后是同一个按钮；高对比度下给勾号让位时，图标位宽度平滑展开、图标淡入，文字跟着滑开，胶囊两端始终是圆的。
     // 以前整个按钮换成带图标的那种、外面包一层 AnimatedSize：勾号和文字一下子到位，胶囊右端在展开途中被裁成直边。
@@ -85,6 +91,27 @@ class CampusGlassChip extends StatelessWidget {
       ),
     ));
   }
+}
+
+// 暂不可用的选择标签的虚线胶囊边：各段拼进一条路径一次画完（Impeller 没有栅格缓存，逐段画每帧都要重新提交）。
+class _DashedStadiumPainter extends CustomPainter {
+  const _DashedStadiumPainter(this.color);
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final shape = RRect.fromRectAndRadius(Offset.zero & size, Radius.circular(size.height / 2)).deflate(.6);
+    final dashes = Path();
+    for (final metric in (Path()..addRRect(shape)).computeMetrics()) {
+      for (var distance = 0.0; distance < metric.length; distance += 8) {
+        dashes.addPath(metric.extractPath(distance, distance + 4), Offset.zero);
+      }
+    }
+    canvas.drawPath(dashes, Paint()..color = color..style = PaintingStyle.stroke..strokeWidth = 1.2);
+  }
+
+  @override
+  bool shouldRepaint(_DashedStadiumPainter oldDelegate) => oldDelegate.color != color;
 }
 
 // 开关行：整行可点、触区足够；玻璃档位下开关为 GlassSwitch，实色档沿用系统 Switch。

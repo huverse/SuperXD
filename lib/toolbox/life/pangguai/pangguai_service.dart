@@ -98,10 +98,10 @@ class PangguaiService implements ToolboxService {
     ];
   });
 
-  // 打开一台先付后用的设备：详情与档位（设备不能用时不取档位），记进最近使用。
+  // 打开一台先付后用的设备：详情与档位（设备不能用时不取档位；暂不可用的档位也带上，页面标出来，不藏），记进最近使用。
   Future<({PangguaiDevice device, List<PangguaiSku> skus})> inspect(String phone, String goodsId) => run(phone, (token) async {
     final device = await client.device(token, goodsId);
-    final skus = device.unusable == null ? [for (final sku in await client.skus(token, goodsId)) if (sku.available) sku] : const <PangguaiSku>[];
+    final skus = device.unusable == null ? await client.skus(token, goodsId) : const <PangguaiSku>[];
     await _remember(phone, PangguaiDeviceEntry(water: false, id: goodsId, name: device.name, place: device.orgName, category: device.category));
     return (device: device, skus: skus);
   });
@@ -131,7 +131,7 @@ class PangguaiService implements ToolboxService {
   // 付款前：重查订单（还没付、金额和页面上的一样），收银台有能用的支付宝渠道，再拿支付串。
   Future<String> prepay(String phone, String orderId, {required int expected}) => run(phone, (token) async {
     final order = await client.order(token, orderId);
-    if (!order.payable) throw const PangguaiException(PangguaiFailure.rejected, '这一单已经付过或不能再付了');
+    if (!order.payable) throw PangguaiException(PangguaiFailure.rejected, order.cancelled ? '这一单已取消，重新下单吧' : '这一单已经付过了');
     if (order.price != expected) throw PangguaiPriceChanged(order.price);
     if (!await client.alipayUsable(token, order)) throw const PangguaiException(PangguaiFailure.rejected, '这一单不能用支付宝付，请在胖乖生活 App 里付');
     return client.prepay(token, order.number);
@@ -140,7 +140,7 @@ class PangguaiService implements ToolboxService {
   // 放弃付款：只取消还没付的单。
   Future<void> cancel(String phone, String orderId) => run(phone, (token) async {
     final order = await client.order(token, orderId);
-    if (!order.payable) throw const PangguaiException(PangguaiFailure.rejected, '付过的单不能在这里取消');
+    if (!order.payable) throw PangguaiException(PangguaiFailure.rejected, order.cancelled ? '这一单已经取消了' : '付过的单不能在这里取消');
     await client.cancel(token, orderId);
   });
 

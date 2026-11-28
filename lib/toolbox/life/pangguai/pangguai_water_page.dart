@@ -13,7 +13,6 @@ import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_refresh.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_tokens.dart';
-import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
@@ -21,7 +20,7 @@ import 'package:superxd/toolbox/life/life_money.dart';
 import 'package:superxd/toolbox/life/pangguai/pangguai_models.dart';
 import 'package:superxd/toolbox/life/pangguai/pangguai_service.dart';
 
-// 饮水机页（apwork.cn 码，扣水卡的钱，不走支付宝下单）：设备名与位置、选水种（每升多少钱，出不了的灰掉）、共享水卡时选哪张、所选水卡的余额；
+// 饮水机页（apwork.cn 码，扣水卡的钱，不走支付宝下单）：设备名与位置、选水种（每升多少钱，出不了的写「暂不可用」、虚线空心）、共享水卡时选哪张、所选水卡的余额；
 // 「开始取水」锁机后人在机器上按闪着灯的按钮出水、再按停止（App 没有远程停止），页面前台时每 4 秒查一次状态（最多 15 次）；
 // 结束不等于扣了费，过一会儿重读余额与用水记录（订单与余额都会晚一点才出来，一次查不到别急着再锁）。
 // 余额不够时「充值」：选档后跳支付宝小程序（同官方网页），回来重读余额；余额涨了也不当成这一笔到账的凭据。
@@ -320,66 +319,65 @@ class _PangguaiWaterPageState extends State<PangguaiWaterPage> with WidgetsBindi
     final card = water.cards.where((each) => each.areaId == _areaId).firstOrNull;
     final short = card != null && card.balance < water.minimum;
     final error = _actionError;
-    return CampusToastAnchor(
-      child: CampusSurface(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('水', style: secondary),
+    return CampusSurface(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('水', style: secondary),
+          const SizedBox(height: CampusGap.small),
+          Wrap(
+            spacing: CampusGap.small,
+            runSpacing: CampusGap.small,
+            children: [
+              for (final choice in water.choices)
+                CampusGlassChip(
+                  key: ValueKey(choice.id),
+                  label: choice.available ? '${choice.name} ¥${lifeYuan(choice.rate)}/升' : '${choice.name} 暂不可用',
+                  selected: choice.id == _choiceId,
+                  unavailable: !choice.available,
+                  onSelected: _locking ? null : (_) => setState(() => _choiceId = choice.id),
+                ),
+            ],
+          ),
+          if (water.cards.length > 1) ...[
+            const SizedBox(height: CampusGap.large),
+            Text('水卡', style: secondary),
             const SizedBox(height: CampusGap.small),
             Wrap(
               spacing: CampusGap.small,
               runSpacing: CampusGap.small,
               children: [
-                for (final choice in water.choices)
-                  CampusGlassChip(
-                    key: ValueKey(choice.id),
-                    label: '${choice.name} ¥${lifeYuan(choice.rate)}/升',
-                    selected: choice.id == _choiceId,
-                    onSelected: !choice.available || _locking ? null : (_) => setState(() => _choiceId = choice.id),
-                  ),
+                for (final each in water.cards)
+                  CampusGlassChip(key: ValueKey(each.areaId), label: each.name.isEmpty ? '水卡' : each.name, selected: each.areaId == _areaId, onSelected: _locking ? null : (_) => setState(() => _areaId = each.areaId)),
               ],
             ),
-            if (water.cards.length > 1) ...[
-              const SizedBox(height: CampusGap.large),
-              Text('水卡', style: secondary),
-              const SizedBox(height: CampusGap.small),
-              Wrap(
-                spacing: CampusGap.small,
-                runSpacing: CampusGap.small,
-                children: [
-                  for (final each in water.cards)
-                    CampusGlassChip(key: ValueKey(each.areaId), label: each.name.isEmpty ? '水卡' : each.name, selected: each.areaId == _areaId, onSelected: _locking ? null : (_) => setState(() => _areaId = each.areaId)),
-                ],
-              ),
-            ],
-            if (card != null) ...[
-              const SizedBox(height: CampusGap.large),
-              Text('水卡余额', style: secondary),
-              Text('¥${lifeYuan(card.balance)}', style: const TextStyle(fontSize: CampusFontSize.headline, fontWeight: FontWeight.w600)),
-              if (short) Text('不到 ¥${lifeYuan(water.minimum)}，先充值', style: secondary),
-            ],
-            const SizedBox(height: CampusGap.large),
-            FilledButton(
-              style: campusProminent,
-              onPressed: water.unusable == null && !short && _choiceId != null && card != null && !_locking && !_recharging ? () => unawaited(_unlock()) : null,
-              child: CampusBusyContent(busy: _locking, label: '开始取水', busyLabel: '正在锁机', icon: const CampusIcon(CampusIcons.water)),
-            ),
-            if (error != null) ...[const SizedBox(height: CampusGap.medium), Text(error, style: TextStyle(color: palette.danger))],
-            if (_unsure) ...[
-              const SizedBox(height: CampusGap.small),
-              Align(child: OutlinedButton.icon(onPressed: () => unawaited(_loadRecords()), icon: const CampusIcon(CampusIcons.orders), label: const Text('看用水记录'))),
-            ],
-            if (water.merchantId != null && water.merchantAreaId != null) ...[
-              const SizedBox(height: CampusGap.small),
-              if (!_rechargeOpen)
-                OutlinedButton.icon(onPressed: _locking ? null : () => unawaited(_openRecharge()), icon: const CampusIcon(CampusIcons.wallet), label: const Text('充值'))
-              else
-                _rechargePanel(context),
-            ],
           ],
-        ),
+          if (card != null) ...[
+            const SizedBox(height: CampusGap.large),
+            Text('水卡余额', style: secondary),
+            Text('¥${lifeYuan(card.balance)}', style: const TextStyle(fontSize: CampusFontSize.headline, fontWeight: FontWeight.w600)),
+            if (short) Text('不到 ¥${lifeYuan(water.minimum)}，先充值', style: secondary),
+          ],
+          const SizedBox(height: CampusGap.large),
+          FilledButton(
+            style: campusProminent,
+            onPressed: water.unusable == null && !short && _choiceId != null && card != null && !_locking && !_recharging ? () => unawaited(_unlock()) : null,
+            child: CampusBusyContent(busy: _locking, label: '开始取水', busyLabel: '正在锁机', icon: const CampusIcon(CampusIcons.water)),
+          ),
+          if (error != null) ...[const SizedBox(height: CampusGap.medium), Text(error, style: TextStyle(color: palette.danger))],
+          if (_unsure) ...[
+            const SizedBox(height: CampusGap.small),
+            Align(child: OutlinedButton.icon(onPressed: () => unawaited(_loadRecords()), icon: const CampusIcon(CampusIcons.orders), label: const Text('看用水记录'))),
+          ],
+          if (water.merchantId != null && water.merchantAreaId != null) ...[
+            const SizedBox(height: CampusGap.small),
+            if (!_rechargeOpen)
+              OutlinedButton.icon(onPressed: _locking ? null : () => unawaited(_openRecharge()), icon: const CampusIcon(CampusIcons.wallet), label: const Text('充值'))
+            else
+              _rechargePanel(context),
+          ],
+        ],
       ),
     );
   }

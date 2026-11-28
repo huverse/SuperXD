@@ -63,7 +63,7 @@ class PangguaiClient {
 
   Future<String> prepay(String token, String orderNo) async => decodePangguaiPrepay(await _http.post('/pay/unify/prePay', {'orderNo': orderNo, 'payType': '13', 'againFlag': '1'}, token: token));
 
-  // 放弃付款：胖乖对没付的单回成功但状态不变（v2.3 实测），所以接着隐藏（同官方的删除订单；不是退款，也不是解除占用）。
+  // 放弃付款：取消后订单变成 1（已取消；移交包当成「状态不变」，11-28 查明不是），接着隐藏（同官方的删除订单；不是退款，也不是解除占用）。
   Future<void> cancel(String token, String orderId) async {
     await _http.post('/order/cancel', {'orderId': orderId}, token: token);
     await _http.post('/order/hidden', {'orderId': orderId}, token: token);
