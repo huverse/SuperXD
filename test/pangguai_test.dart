@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
+import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/feature_flags.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_icons.dart';
@@ -74,6 +75,8 @@ class _FakePangguai {
   bool Function()? failPreviewOnce;
   // 给了就把设备详情的回复压到它完成。
   Completer<void>? holdDetails;
+  // 给了就在成功的回复里带上服务器的毫秒时间 t（同真胖乖）。
+  int Function()? serverMillis;
   var tokenCounter = 0;
   var orderCounter = 0;
   final orders = <String, Map<String, Object?>>{};
@@ -149,7 +152,7 @@ class _FakePangguai {
       ]});
     }
     Object? data;
-    Map<String, Object?> ok(Object? value) => {'code': 0, 'msg': '成功', 'data': value};
+    Map<String, Object?> ok(Object? value) => {'code': 0, 'msg': '成功', 'data': value, 't': ?serverMillis?.call()};
     Map<String, Object?> fail(int code, String message) => {'code': code, 'msg': message, 'data': null};
     final token = fields['token'] ?? '';
     if (!const {'/common/isNeedCaptcha', '/captcha/checkCaptcha', '/common/sms/sendCode', '/user/reg'}.contains(path) && (token.isEmpty || expired.contains(token))) {
@@ -295,10 +298,12 @@ class _Kit {
   final locator = _FakeLocator();
   final captcha = _FakeCaptcha();
   final vault = MemoryPangguaiVault();
+  // 手机时钟（默认真实时间）。
+  DateTime Function() clock = DateTime.now;
   late final service = PangguaiService(
     vault: vault,
     devices: PangguaiDeviceStore.memory(),
-    client: PangguaiClient(http: PangguaiHttp(client: fake.client)),
+    client: PangguaiClient(http: PangguaiHttp(client: fake.client, clock: () => clock())),
     alipay: alipay,
     locator: locator,
     captcha: captcha,
@@ -368,6 +373,19 @@ void main() {
       expect(() => decodePangguaiOrder({'id': 'O1', 'orderNo': 'O1', 'orderStatus': '待付', 'payPrice': '1.00'}), throwsA(isA<PangguaiException>()));
     });
 
+    // 11-28 用户选「秒级倒计时」：胖乖没有剩余时间的接口，按预计结束时刻与服务器时间算。
+    test('剩余时间写到秒：向上取整、一小时以上带小时、到点写快好了；预计结束时刻写到秒', () {
+      expect(pangguaiLeft(const Duration(seconds: 151)), '还剩 2:31');
+      expect(pangguaiLeft(const Duration(milliseconds: 150200)), '还剩 2:31');
+      expect(pangguaiLeft(const Duration(milliseconds: 59001)), '还剩 1:00');
+      expect(pangguaiLeft(const Duration(seconds: 3900)), '还剩 1:05:00');
+      expect(pangguaiLeft(const Duration(milliseconds: 1)), '还剩 0:01');
+      expect(pangguaiLeft(Duration.zero), '快好了');
+      expect(pangguaiLeft(const Duration(seconds: -5)), '快好了');
+      expect(formatCampusClock(DateTime.utc(2026, 11, 28, 15, 29, 3), seconds: true), '23:29:03');
+      expect(formatCampusClock(DateTime.utc(2026, 11, 28, 15, 29, 3)), '23:29');
+    });
+
     test('只认支付宝 APP 支付串；饮水机的两套凭据与充值标识分开；充值链接同官方的两次编码', () {
       expect(decodePangguaiPrepay({'prepayParam': 'method=alipay.trade.app.pay&x=1'}), 'method=alipay.trade.app.pay&x=1');
       expect(() => decodePangguaiPrepay({'prepayParam': 'weixin://pay'}), throwsA(isA<PangguaiException>()));
@@ -387,6 +405,21 @@ void main() {
   });
 
   group('请求', () {
+    test('每条回复的 t 是胖乖服务器时间：按它校正「现在」，手机时钟走多少跟着走多少；差一天以上的不认', () async {
+      var phone = DateTime.utc(2026, 11, 28, 15);
+      final kit = _Kit()..clock = () => phone;
+      await kit.signIn();
+      expect(kit.service.now(), phone, reason: '没收到 t 时就是手机时间');
+      kit.fake.serverMillis = () => phone.add(const Duration(seconds: 90)).millisecondsSinceEpoch;
+      await kit.service.ongoing(_phone);
+      expect(kit.service.now(), phone.add(const Duration(seconds: 90)));
+      phone = phone.add(const Duration(seconds: 10));
+      expect(kit.service.now(), phone.add(const Duration(seconds: 90)));
+      kit.fake.serverMillis = () => phone.add(const Duration(days: 2)).millisecondsSinceEpoch;
+      await kit.service.ongoing(_phone);
+      expect(kit.service.now(), phone.add(const Duration(seconds: 90)), reason: '差两天的不认，留着上一次的');
+    });
+
     test('凭据在请求头与表单两处都带，签名头按路径算；下单另带设备与位置签名', () async {
       final kit = _Kit();
       await kit.signIn();
@@ -666,7 +699,7 @@ void main() {
       await _settle(tester);
       expect(kit.alipay.paid, hasLength(1));
       expect(find.text('使用中'), findsOneWidget);
-      expect(find.byWidgetPredicate((widget) => widget is DotSeparatedText && widget.text.startsWith('预计 21:44 结束 · ')), findsOneWidget);
+      expect(find.byWidgetPredicate((widget) => widget is DotSeparatedText && widget.text == '预计 21:44:40 结束 · 快好了'), findsOneWidget, reason: '假胖乖付款后写的结束时刻已经过了');
       await tester.pumpWidget(const SizedBox());
     });
 
@@ -742,6 +775,44 @@ void main() {
       await _settle(tester);
       expect(kit.fake.requests.last.path, '/order/list', reason: '订单页关掉时刷新首页');
       expect(find.byWidgetPredicate((widget) => widget is DotSeparatedText && widget.text.startsWith('使用中 · ')), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    // 11-28 用户选「秒级倒计时」、首页也显示（诊断包 FN3P1NWK 的截图：23:27 时写「还剩 3 分钟」，实际剩 2 分多）。
+    testWidgets('使用中按胖乖服务器时间倒计时：手机慢一小时也按服务器算，跨过整秒才走一格，到点写快好了并停下；首页进行中的卡片同样写', (tester) async {
+      await tester.runAsync(kit.signIn);
+      final start = DateTime.utc(2026, 11, 28, 15, 27);
+      var phone = start;
+      kit.clock = () => phone;
+      // 胖乖服务器比手机快一小时；订单 2 分 31 秒后结束（按服务器时间）。
+      kit.fake.serverMillis = () => phone.add(const Duration(hours: 1)).millisecondsSinceEpoch;
+      final ends = start.add(const Duration(hours: 1, seconds: 151));
+      String beijing(DateTime utc) => utc.add(const Duration(hours: 8)).toIso8601String().substring(0, 19).replaceFirst('T', ' ');
+      kit.fake.orders['O9'] = {
+        'id': 'O9', 'orderNo': 'O9', 'orderStatus': 2, 'payPrice': '0.66', 'machineName': '合成楼吹风', 'machineFunctionName': '左边1号', 'shopName': '合成门店', 'shopAutoId': 100000001,
+        'createTime': beijing(ends.subtract(const Duration(minutes: 4))), 'payTime': beijing(ends.subtract(const Duration(minutes: 3))), 'completeTime': beijing(ends),
+      };
+      final clock = formatCampusClock(ends, seconds: true);
+      Finder line(String text) => find.byWidgetPredicate((widget) => widget is DotSeparatedText && widget.text == text);
+      await show(tester, PangguaiOrderPage(service: kit.service, phone: _phone, orderId: 'O9'));
+      expect(line('预计 $clock 结束 · 还剩 2:31'), findsOneWidget);
+      phone = phone.add(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
+      expect(line('预计 $clock 结束 · 还剩 2:30'), findsOneWidget);
+      phone = phone.add(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(line('预计 $clock 结束 · 还剩 2:30'), findsOneWidget, reason: '没跨过整秒不变');
+      phone = start.add(const Duration(seconds: 152));
+      await tester.pump(const Duration(seconds: 1));
+      expect(line('预计 $clock 结束 · 快好了'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+
+      phone = start;
+      await show(tester, PangguaiPage(runtime: runtime()));
+      expect(line('使用中 · 预计 $clock 结束 · 还剩 2:31'), findsOneWidget);
+      phone = phone.add(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
+      expect(line('使用中 · 预计 $clock 结束 · 还剩 2:30'), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
     });
 

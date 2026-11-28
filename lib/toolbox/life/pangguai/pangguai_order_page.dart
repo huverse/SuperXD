@@ -24,7 +24,7 @@ enum _Pay { idle, preparing, paying, checking }
 
 // 订单页：待付款时「用支付宝付」（⋯ 里取消）；付款：重查订单与收银台 → 拿支付宝串 → 交给支付宝 → 支付宝返回、回到前台或点「我已付款」时去胖乖查
 // （2 秒一次、最多 15 次，订单变成使用中或已完成就是付好了、变成已取消就停下；到账只认胖乖的订单，支付宝的结果码只作提示），支付宝报取消或失败时查一次没付就回到能再付的样子。
-// 付好后胖乖下发开机（客户端没有启动设备的接口）：使用中写预计几点结束与还剩多久（按胖乖给的目标时刻算，不按时长自己倒数），前台时每 15 秒再查一次，到点照样以状态为准。
+// 付好后胖乖下发开机（客户端没有启动设备的接口）：使用中写预计几点结束与还剩多久（按胖乖给的目标时刻算，不按时长自己倒数；倒计时见 PangguaiCountdown），前台时每 15 秒再查一次，到点照样以状态为准。
 class PangguaiOrderPage extends StatefulWidget {
   const PangguaiOrderPage({super.key, required this.service, required this.phone, required this.orderId, this.autoPay = false, this.onClose});
   final PangguaiService service;
@@ -47,7 +47,6 @@ class _PangguaiOrderPageState extends State<PangguaiOrderPage> with WidgetsBindi
   String? _status;
   var _autoPay = false;
   Timer? _poll;
-  Timer? _tick;
 
   @override
   void initState() {
@@ -61,7 +60,6 @@ class _PangguaiOrderPageState extends State<PangguaiOrderPage> with WidgetsBindi
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _poll?.cancel();
-    _tick?.cancel();
     widget.onClose?.call();
     super.dispose();
   }
@@ -101,17 +99,13 @@ class _PangguaiOrderPageState extends State<PangguaiOrderPage> with WidgetsBindi
     }
   }
 
-  // 使用中：前台时每 15 秒再查一次，倒计时每 30 秒重画；别的状态不查。
+  // 使用中：前台时每 15 秒再查一次（预计结束时刻会被设备改写、到点后要等状态变成已完成）；别的状态不查。倒计时自己每秒走。
   void _schedule() {
     _poll?.cancel();
-    _tick?.cancel();
     if (_order?.running != true) return;
     if (WidgetsBinding.instance.lifecycleState == null || WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
       _poll = Timer(const Duration(seconds: 15), () => unawaited(_load()));
     }
-    _tick = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted) setState(() {});
-    });
   }
 
   // fresh：打开就付时页面刚读到的订单，付款前不再重查一次。
@@ -254,7 +248,6 @@ class _PangguaiOrderPageState extends State<PangguaiOrderPage> with WidgetsBindi
     final palette = CampusPalette.of(context);
     final secondary = TextStyle(color: palette.onSurfaceVariant);
     final endsAt = order.endsAt;
-    final left = endsAt?.difference(DateTime.now().toUtc());
     return CampusSurface(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -271,9 +264,13 @@ class _PangguaiOrderPageState extends State<PangguaiOrderPage> with WidgetsBindi
               Text('¥${lifeYuan(order.price)}', style: const TextStyle(fontSize: CampusFontSize.title, fontWeight: FontWeight.w600)),
             ],
           ),
-          if (order.running && endsAt != null && left != null) ...[
+          if (order.running && endsAt != null) ...[
             const SizedBox(height: CampusGap.small),
-            DotSeparatedText('预计 ${formatCampusClock(endsAt)} 结束 · ${left.inSeconds > 0 ? '还剩 ${(left.inSeconds / 60).ceil()} 分钟' : '快好了'}', style: secondary),
+            PangguaiCountdown(
+              endsAt: endsAt,
+              now: widget.service.now,
+              builder: (context, left) => DotSeparatedText('预计 ${formatCampusClock(endsAt, seconds: true)} 结束 · $left', style: secondary.copyWith(fontFeatures: const [FontFeature.tabularFigures()])),
+            ),
           ],
           if (order.paidAt case final paidAt?) ...[
             const SizedBox(height: CampusGap.small),
@@ -445,4 +442,57 @@ class _PangguaiOrdersPageState extends State<PangguaiOrdersPage> {
       ),
     );
   }
+}
+
+// 使用中的剩余时间（11-28 用户选「秒级倒计时」，订单页与首页的进行中卡片都显示；胖乖没有剩余时间的接口）：按订单的预计结束时刻
+// （精确到秒，付款时写成付款时刻加档位时长，运行中设备可能改写成真实结束时刻，页面重读订单时跟着换）与 now（胖乖服务器时间，PangguaiService.now）算，
+// 在每个整秒走一次、只重画这一行；到 0 写「快好了」并停下，等订单状态变成已完成。
+class PangguaiCountdown extends StatefulWidget {
+  const PangguaiCountdown({super.key, required this.endsAt, required this.now, required this.builder});
+  final DateTime endsAt;
+  final DateTime Function() now;
+  // left 是 pangguaiLeft 的写法（「还剩 2:31」或「快好了」）。
+  final Widget Function(BuildContext context, String left) builder;
+  @override
+  State<PangguaiCountdown> createState() => _PangguaiCountdownState();
+}
+
+class _PangguaiCountdownState extends State<PangguaiCountdown> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _schedule();
+  }
+
+  @override
+  void didUpdateWidget(PangguaiCountdown old) {
+    super.didUpdateWidget(old);
+    if (old.endsAt != widget.endsAt) _schedule();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Duration get _left => widget.endsAt.difference(widget.now());
+
+  // 下一次在剩余时间跨过整秒的那一刻重画（显示向上取整到秒，跨过整秒才变）。
+  void _schedule() {
+    _timer?.cancel();
+    final left = _left.inMilliseconds;
+    if (left <= 0) return;
+    final next = left % 1000;
+    _timer = Timer(Duration(milliseconds: next == 0 ? 1000 : next), () {
+      if (!mounted) return;
+      setState(() {});
+      _schedule();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context, pangguaiLeft(_left));
 }

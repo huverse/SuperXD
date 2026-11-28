@@ -8,6 +8,9 @@ class PangguaiClient {
   PangguaiClient({PangguaiHttp? http}) : _http = http ?? PangguaiHttp();
   final PangguaiHttp _http;
 
+  // 按胖乖服务器时间算的「现在」（见 PangguaiHttp.now）。
+  DateTime now() => _http.now();
+
   // 列表的页大小：订单、附近门店一页 10 条，门店里的设备一页 20 台（v2.3 的有界分页）。
   static const orderPage = 10;
   static const shopPage = 10;

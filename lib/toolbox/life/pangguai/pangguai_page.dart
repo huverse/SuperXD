@@ -252,7 +252,7 @@ class _PangguaiPageState extends State<PangguaiPage> {
     );
   }
 
-  // 进行中的订单：每单一张卡，使用中的写预计几点结束，没付的写待付款。
+  // 进行中的订单：每单一张卡，使用中的写预计几点结束与还剩多久（每秒走，见 PangguaiCountdown），没付的写待付款。
   List<Widget> _ongoing(BuildContext context, String phone) {
     final palette = CampusPalette.of(context);
     final orders = _orders;
@@ -275,10 +275,17 @@ class _PangguaiPageState extends State<PangguaiPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(order.machine.isEmpty ? '设备订单' : order.machine, style: const TextStyle(fontSize: CampusFontSize.body, fontWeight: FontWeight.w600)),
-                    DotSeparatedText(
-                      [order.statusLabel, if (order.running && order.endsAt != null) '预计 ${formatCampusClock(order.endsAt!)} 结束', if (order.payable) '¥${lifeYuan(order.price)}'].join(' · '),
-                      style: TextStyle(color: palette.onSurfaceVariant),
-                    ),
+                    if (order.running && order.endsAt != null)
+                      PangguaiCountdown(
+                        endsAt: order.endsAt!,
+                        now: _service.now,
+                        builder: (context, left) => DotSeparatedText(
+                          [order.statusLabel, '预计 ${formatCampusClock(order.endsAt!, seconds: true)} 结束', left].join(' · '),
+                          style: TextStyle(color: palette.onSurfaceVariant, fontFeatures: const [FontFeature.tabularFigures()]),
+                        ),
+                      )
+                    else
+                      DotSeparatedText([order.statusLabel, if (order.payable) '¥${lifeYuan(order.price)}'].join(' · '), style: TextStyle(color: palette.onSurfaceVariant)),
                   ],
                 ),
               ),
