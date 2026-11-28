@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:superxd/domain/campus_log.dart';
@@ -98,25 +99,36 @@ class PangguaiService implements ToolboxService {
     ];
   });
 
-  // 打开一台先付后用的设备：详情与档位（设备不能用时不取档位；暂不可用的档位也带上，页面标出来，不藏），记进最近使用。
+  // 打开一台先付后用的设备：详情与档位（暂不可用的档位也带上，页面标出来，不藏），记进最近使用。
   Future<({PangguaiDevice device, List<PangguaiSku> skus})> inspect(String phone, String goodsId) => run(phone, (token) async {
-    final device = await client.device(token, goodsId);
-    final skus = device.unusable == null ? await client.skus(token, goodsId) : const <PangguaiSku>[];
-    await _remember(phone, PangguaiDeviceEntry(water: false, id: goodsId, name: device.name, place: device.orgName, category: device.category));
-    return (device: device, skus: skus);
+    final result = await _deviceAndSkus(token, goodsId);
+    await _remember(phone, PangguaiDeviceEntry(water: false, id: goodsId, name: result.device.name, place: result.device.orgName, category: result.device.category));
+    return result;
   });
+
+  // 详情与档位一起取（请求策略见 life_http_brake.dart）：设备不能用时不要档位，它的结果与错误都不管，原因照详情写。
+  Future<({PangguaiDevice device, List<PangguaiSku> skus})> _deviceAndSkus(String token, String goodsId) async {
+    // 档位的错误一发出就接住：详情先失败、或设备不能用而用不上它时，它的错误不成为没人处理的异步错误。
+    final pending = client.skus(token, goodsId).then<Object>((skus) => skus, onError: (Object error, StackTrace stack) => AsyncError(error, stack));
+    final device = await client.device(token, goodsId);
+    if (device.unusable != null) return (device: device, skus: const <PangguaiSku>[]);
+    final skus = await pending;
+    if (skus is AsyncError) Error.throwWithStackTrace(skus.error, skus.stackTrace);
+    return (device: device, skus: skus as List<PangguaiSku>);
+  }
 
   // 选好档位后试算实付（页面上显示的价）。
   Future<int> quote(String phone, PangguaiDevice device, PangguaiSku sku, int? minutes) => run(phone, (token) => client.preview(token, pangguaiItems(device, sku, minutes)));
 
-  // 下单：先取一次位置（取不到抛 PangguaiLocationException，不下单），再按顺序重发详情、档位、试算、下单（同一个凭据连着发，不沿用打开页面时取的）；
+  // 下单：先取一次位置（取不到抛 PangguaiLocationException，一个请求都不发；可能要等系统授权框，所以不和下面的请求一起发），
+  // 再一起重取详情与档位（同一个凭据，不沿用打开页面时取的），都到了再依次试算、下单（同移交包实测成功的顺序：试算在详情与档位之后、下单紧跟试算）；
   // 试算的实付和页面上的价（expected）不一样时不下单、抛 PangguaiPriceChanged；零元的单不在这里下（可能直接启动）。回订单号。
   Future<String> place(String phone, {required String goodsId, required String skuId, int? minutes, required int expected}) async {
     final position = await locator.current(ask: true);
     return run(phone, (token) async {
-      final device = await client.device(token, goodsId);
+      final (:device, :skus) = await _deviceAndSkus(token, goodsId);
       if (device.unusable case final reason?) throw PangguaiException(PangguaiFailure.rejected, reason);
-      final sku = (await client.skus(token, goodsId)).where((each) => each.id == skuId && each.available).firstOrNull;
+      final sku = skus.where((each) => each.id == skuId && each.available).firstOrNull;
       if (sku == null) throw const PangguaiException(PangguaiFailure.rejected, '这个档位现在选不了，换一个');
       final items = pangguaiItems(device, sku, minutes);
       final price = await client.preview(token, items);
@@ -128,9 +140,10 @@ class PangguaiService implements ToolboxService {
     });
   }
 
-  // 付款前：重查订单（还没付、金额和页面上的一样），收银台有能用的支付宝渠道，再拿支付串。
-  Future<String> prepay(String phone, String orderId, {required int expected}) => run(phone, (token) async {
-    final order = await client.order(token, orderId);
+  // 付款前：核对订单（还没付、金额和页面上的一样），收银台有能用的支付宝渠道，再拿支付串。
+  // fresh 是订单页刚读到的那份（刚下好的单打开就付，页面刚查过），给了就不再重查；没给（过一会儿自己点付款）就重查。
+  Future<String> prepay(String phone, String orderId, {required int expected, PangguaiOrder? fresh}) => run(phone, (token) async {
+    final order = fresh ?? await client.order(token, orderId);
     if (!order.payable) throw PangguaiException(PangguaiFailure.rejected, order.cancelled ? '这一单已取消，重新下单吧' : '这一单已经付过了');
     if (order.price != expected) throw PangguaiPriceChanged(order.price);
     if (!await client.alipayUsable(token, order)) throw const PangguaiException(PangguaiFailure.rejected, '这一单不能用支付宝付，请在胖乖生活 App 里付');

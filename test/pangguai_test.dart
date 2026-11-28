@@ -282,7 +282,7 @@ class _Kit {
   late final service = PangguaiService(
     vault: vault,
     devices: PangguaiDeviceStore.memory(),
-    client: PangguaiClient(http: PangguaiHttp(client: fake.client, spacing: Duration.zero)),
+    client: PangguaiClient(http: PangguaiHttp(client: fake.client)),
     alipay: alipay,
     locator: locator,
     captcha: captcha,
@@ -405,32 +405,23 @@ void main() {
       expect(kit.fake.requests.length, before);
     });
 
-    test('请求排队一个接一个发，相邻至少隔 spacing', () async {
-      final fake = _FakePangguai();
-      final client = PangguaiClient(http: PangguaiHttp(client: fake.client, spacing: const Duration(milliseconds: 80)));
-      final watch = Stopwatch()..start();
-      await Future.wait([client.needsCaptcha(_phone), client.needsCaptcha(_phone), client.needsCaptcha(_phone)]);
-      expect(watch.elapsedMilliseconds, greaterThanOrEqualTo(160));
-    });
-
-    test('相邻两个请求的开始隔 spacing、从上一个开始算：上一个回来时已经过了 spacing 就不再等', () async {
-      final starts = <DateTime>[];
+    test('请求策略同住理（人工决策见 life_http_brake.dart）：不排队，一起发的请求同时在路上', () async {
+      var inFlight = 0, most = 0;
       final pangguaiHttp = PangguaiHttp(
         client: MockClient((request) async {
-          starts.add(DateTime.now());
-          await Future<void>.delayed(const Duration(milliseconds: 200));
+          most = ++inFlight > most ? inFlight : most;
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+          inFlight--;
           return http.Response(jsonEncode({'code': 0, 'data': null}), 200);
         }),
-        spacing: const Duration(milliseconds: 150),
       );
       await Future.wait([for (var index = 0; index < 3; index++) pangguaiHttp.post('/user/info', const {})]);
-      final gaps = [for (var index = 1; index < starts.length; index++) starts[index].difference(starts[index - 1]).inMilliseconds];
-      expect(gaps.every((gap) => gap >= 150 && gap < 300), isTrue, reason: '一次只发一个、不在回来后再等 150 毫秒：$gaps');
+      expect(most, 3);
     });
 
     test('饮水机合作方：success 才算成，token 是扫码会话过期', () async {
       final fake = _FakePangguai();
-      final client = PangguaiClient(http: PangguaiHttp(client: fake.client, spacing: Duration.zero));
+      final client = PangguaiClient(http: PangguaiHttp(client: fake.client));
       final water = await client.water('T1', _hash);
       expect([for (final tier in await client.rechargeTiers(water)) (tier.id, tier.amount, tier.gift)], [('64950', 1000, 0), ('64953', 10000, 1000)]);
       final stale = decodePangguaiWater(_hash, {...fake.waterScan(), 'token': 'OLD'});
@@ -463,12 +454,13 @@ void main() {
       expect((state.active, state.accounts.single.phone), (_other, _other));
     });
 
-    test('下单：先取位置，再按顺序重发详情、档位、试算、下单；价变了不下单交回新价；取不到位置一个请求都不发；下单没等到回复报不确定', () async {
+    test('下单：先取位置，再一起重取详情与档位、之后依次试算与下单；价变了不下单交回新价；取不到位置一个请求都不发；下单没等到回复报不确定', () async {
       final kit = _Kit();
       await kit.signIn();
       kit.fake.requests.clear();
       final orderId = await kit.service.place(_phone, goodsId: _dryer, skuId: '2101', minutes: 3, expected: 66);
-      expect(kit.fake.paths(), ['/goods/normal/details', '/goods/normal/skus', '/trade/preview/v4', '/trade/create']);
+      expect(kit.fake.paths().take(2).toSet(), {'/goods/normal/details', '/goods/normal/skus'});
+      expect(kit.fake.paths().skip(2), ['/trade/preview/v4', '/trade/create']);
       expect(kit.fake.requests.last.fields['items'], kit.fake.requests[2].fields['items']);
       expect(kit.fake.requests.last.fields['promotions'], '[]');
       expect(kit.fake.requests[2].fields['isAutoSelectPromotion'], '0');
@@ -612,7 +604,7 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('从最近使用打开设备、下单付款后返回：首页进行中的那单是使用中；付款那几步中间首页不刷新（订单页关掉时才刷新）', (tester) async {
+    testWidgets('从最近使用打开设备、下单付款后返回：首页进行中的那单是使用中；下单到拿支付串只发七个请求、中间首页不刷新（订单页关掉时才刷新）', (tester) async {
       await tester.runAsync(kit.signIn);
       await tester.runAsync(() => kit.service.inspect(_phone, _dryer));
       kit.fake.createdAt = _beijingNow();
@@ -631,7 +623,8 @@ void main() {
       await _settle(tester);
       expect(find.text('使用中'), findsOneWidget);
       final paths = kit.fake.requests.skip(before).map((request) => request.path).toList();
-      expect(paths.sublist(0, paths.indexOf('/pay/unify/prePay') + 1), ['/goods/normal/details', '/goods/normal/skus', '/trade/preview/v4', '/trade/create', '/order/detail', '/order/detail', '/payChannelRoute/againPay', '/pay/unify/prePay']);
+      expect(paths.take(2).toSet(), {'/goods/normal/details', '/goods/normal/skus'}, reason: '详情与档位一起取');
+      expect(paths.sublist(2, paths.indexOf('/pay/unify/prePay') + 1), ['/trade/preview/v4', '/trade/create', '/order/detail', '/payChannelRoute/againPay', '/pay/unify/prePay'], reason: '订单页刚读到的订单直接拿去付，中间不插首页刷新');
       await tester.tap(find.byTooltip('返回').last);
       await _settle(tester);
       expect(kit.fake.requests.last.path, '/order/list', reason: '订单页关掉时刷新首页');

@@ -91,7 +91,7 @@ class _PangguaiOrderPageState extends State<PangguaiOrderPage> with WidgetsBindi
       _schedule();
       if (_autoPay && order.payable) {
         _autoPay = false;
-        unawaited(_payNow());
+        unawaited(_payNow(fresh: order));
       }
     } on PangguaiException catch (error) {
       if (mounted) setState(() => _error = error.message);
@@ -114,7 +114,8 @@ class _PangguaiOrderPageState extends State<PangguaiOrderPage> with WidgetsBindi
     });
   }
 
-  Future<void> _payNow() async {
+  // fresh：打开就付时页面刚读到的订单，付款前不再重查一次。
+  Future<void> _payNow({PangguaiOrder? fresh}) async {
     final order = _order;
     if (order == null || _pay != _Pay.idle) return;
     setState(() {
@@ -124,7 +125,7 @@ class _PangguaiOrderPageState extends State<PangguaiOrderPage> with WidgetsBindi
     });
     final String param;
     try {
-      param = await widget.service.prepay(widget.phone, order.id, expected: order.price);
+      param = await widget.service.prepay(widget.phone, order.id, expected: order.price, fresh: fresh);
     } on PangguaiPriceChanged catch (changed) {
       if (!mounted) return;
       setState(() {
