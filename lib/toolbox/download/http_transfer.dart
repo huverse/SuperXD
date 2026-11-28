@@ -151,7 +151,8 @@ class HttpTransfer implements ToolboxTransfer {
       if (stop.isCompleted) return;
       campusLog('[ToolboxDownload] action=transfer errorType=${error.runtimeType}\n$stack');
       // 已下了一部分且能续传的停在已暂停（多半是切到后台被系统挂起），点继续接着下；其余按失败。
-      task.state = task.received > 0 && task.resumable ? ToolboxDownloadState.paused : ToolboxDownloadState.failed;
+      // 写盘出错（磁盘满、文件不可写，11-28 复核 F08）不当成被挂起：按失败报出来，不然停在已暂停、看不出为什么。
+      task.state = error is! FileSystemException && task.received > 0 && task.resumable ? ToolboxDownloadState.paused : ToolboxDownloadState.failed;
       _emit(id, task, error: task.state == ToolboxDownloadState.failed ? _failure : null);
     } finally {
       // 先等在写的那一块写完（不然关文件会撞上未完成的写），再关文件。
