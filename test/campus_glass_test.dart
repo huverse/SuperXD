@@ -951,6 +951,24 @@ void main() {
       expect(find.descendant(of: find.byType(CampusGlassChip), matching: find.byIcon(CampusIcons.check)), findsOneWidget);
     });
 
+    testWidgets('暂不可用的选择标签：虚线空心、不是色调胶囊，给了回调也点不了，读屏是禁用的按钮', (tester) async {
+      var tapped = 0;
+      await tester.pumpWidget(host(Scaffold(body: Row(children: [
+        CampusGlassChip(label: '开水 暂不可用', selected: false, unavailable: true, onSelected: (_) => tapped++),
+        CampusGlassChip(label: '常温水', selected: false, onSelected: (_) => tapped++),
+      ]))));
+      await tester.pumpAndSettle();
+      Finder within(String label, Type type) => find.descendant(of: find.widgetWithText(CampusGlassChip, label), matching: find.byType(type));
+      expect(within('开水 暂不可用', CampusTonalSurface), findsNothing);
+      expect(within('常温水', CampusTonalSurface), findsOneWidget);
+      expect(tester.widgetList<CustomPaint>(within('开水 暂不可用', CustomPaint)).where((paint) => paint.painter.runtimeType.toString() == '_DashedStadiumPainter'), hasLength(1));
+      await tester.tap(find.text('开水 暂不可用'));
+      await tester.pumpAndSettle();
+      expect(tapped, 0);
+      expect(tester.getSemantics(find.text('开水 暂不可用')), isSemantics(isButton: true, hasEnabledState: true, isEnabled: false, hasSelectedState: true, label: '开水 暂不可用'));
+      expect(tester.takeException(), isNull);
+    });
+
     // 开关状态主要由滑块位置表达（同 iOS、鸿蒙）；颜色上开启为鲜亮的激活色、关闭为灰，按感知色差区分，
     // 不要求亮度差（鲜亮激活色与关闭灰亮度相近）。两种状态下白色滑块对轨道都不低于 3:1。
     testWidgets('玻璃开关：开启为激活色，两态白色滑块对轨道不低于3:1，开关两态色差明显', (tester) async {

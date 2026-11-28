@@ -29,6 +29,7 @@ IconData pangguaiCategoryIcon(String category) => switch (category) {
 
 // 先付后用的设备页（给 goodsId；扫码进来的给 code，先问胖乖是哪台）：设备名、品类与门店；不能在这里下单的写原因。
 // 洗衣机、洗鞋机选程序（名字、约几分钟、价），吹风机、烘干机选位置与时长（关着的时长不列，v2.3 契约「排除 status=false」）；只有一个档位、不分时长的直接选好（用户说的「没有档位的下一步」）。
+// 被占用的程序与位置照样列出、标「暂不可用」（11-28 用户：被占用的属于暂时不可用，要一眼看得出；藏起来时只剩一个位置会直接选上、连位置那行都不显示，看不出付的是哪边）。
 // 选好就试算，按钮上写服务端算的实付；点「下单并付款」时整串重发并核对实付，变了写明新价请人再点一次；下好单换成订单页并开始付。
 class PangguaiDevicePage extends StatefulWidget {
   const PangguaiDevicePage({super.key, required this.service, required this.phone, this.goodsId, this.code, this.onClose}) : assert(goodsId != null || code != null);
@@ -83,7 +84,9 @@ class _PangguaiDevicePageState extends State<PangguaiDevicePage> {
       setState(() {
         _device = result.device;
         _skus = result.skus;
-        _skuId = result.skus.length == 1 ? result.skus.single.id : null;
+        // 能选的只有一个档位时直接选上（被占用的照样列出来、标暂不可用，不算在内）。
+        final open = result.skus.where((sku) => sku.available).toList();
+        _skuId = open.length == 1 ? open.single.id : null;
         _minutes = null;
       });
       _autoTier();
@@ -251,7 +254,7 @@ class _PangguaiDevicePageState extends State<PangguaiDevicePage> {
     );
   }
 
-  // 洗衣机、洗鞋机：程序列表，选中的着色。
+  // 洗衣机、洗鞋机：程序列表，选中的着色；暂不可用的点不了、整行次要色并写明。
   Widget _programs(BuildContext context) {
     final palette = CampusPalette.of(context);
     return CampusSurface(
@@ -263,7 +266,7 @@ class _PangguaiDevicePageState extends State<PangguaiDevicePage> {
               key: ValueKey(sku.id),
               color: sku.id == _skuId ? palette.selectedFill : Colors.transparent,
               child: InkWell(
-                onTap: _placing ? null : () => _choose(skuId: sku.id),
+                onTap: _placing || !sku.available ? null : () => _choose(skuId: sku.id),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: CampusGap.medium),
                   child: Row(
@@ -272,8 +275,8 @@ class _PangguaiDevicePageState extends State<PangguaiDevicePage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(sku.name, style: const TextStyle(fontSize: CampusFontSize.body)),
-                            DotSeparatedText([if (sku.minutes case final minutes? when minutes > 0) '约 $minutes 分钟', '¥${lifeYuan(sku.price)}', if (sku.feature.isNotEmpty) sku.feature].join(' · '), style: TextStyle(color: palette.onSurfaceVariant)),
+                            Text(sku.name, style: TextStyle(fontSize: CampusFontSize.body, color: sku.available ? null : palette.onSurfaceVariant)),
+                            DotSeparatedText([if (!sku.available) '暂不可用', if (sku.minutes case final minutes? when minutes > 0) '约 $minutes 分钟', '¥${lifeYuan(sku.price)}', if (sku.feature.isNotEmpty) sku.feature].join(' · '), style: TextStyle(color: palette.onSurfaceVariant)),
                           ],
                         ),
                       ),
@@ -288,7 +291,7 @@ class _PangguaiDevicePageState extends State<PangguaiDevicePage> {
     );
   }
 
-  // 吹风机、烘干机：先选位置（只有一个时不显示），再选时长。
+  // 吹风机、烘干机：先选位置（只有一个位置时不显示，被占用的也算一个），再选时长。
   Widget _timedChoices(BuildContext context) {
     final palette = CampusPalette.of(context);
     final secondary = TextStyle(color: palette.onSurfaceVariant);
@@ -304,7 +307,16 @@ class _PangguaiDevicePageState extends State<PangguaiDevicePage> {
             Wrap(
               spacing: CampusGap.small,
               runSpacing: CampusGap.small,
-              children: [for (final each in _skus) CampusGlassChip(key: ValueKey(each.id), label: each.name, selected: each.id == _skuId, onSelected: _placing ? null : (_) => _choose(skuId: each.id))],
+              children: [
+                for (final each in _skus)
+                  CampusGlassChip(
+                    key: ValueKey(each.id),
+                    label: each.available ? each.name : '${each.name} 暂不可用',
+                    selected: each.id == _skuId,
+                    unavailable: !each.available,
+                    onSelected: _placing ? null : (_) => _choose(skuId: each.id),
+                  ),
+              ],
             ),
             const SizedBox(height: CampusGap.large),
           ],
@@ -338,32 +350,30 @@ class _PangguaiDevicePageState extends State<PangguaiDevicePage> {
     final palette = CampusPalette.of(context);
     final price = _price, location = _location, error = _placeError;
     final label = price == null ? (_quoting ? '正在算价' : '选好再下单') : '下单并付款 ¥${lifeYuan(price)}';
-    return CampusToastAnchor(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          FilledButton(
-            style: campusProminent,
-            onPressed: price != null && !_placing && !_quoting ? () => unawaited(_place()) : null,
-            child: CampusBusyContent(busy: _placing || _quoting, label: label, busyLabel: _placing ? '下单中' : '正在算价', icon: const CampusIcon(CampusIcons.wallet)),
-          ),
-          if (error != null) ...[const SizedBox(height: CampusGap.medium), Text(error, style: TextStyle(color: palette.danger))],
-          if (location == PangguaiLocationProblem.denied || location == PangguaiLocationProblem.disabled) ...[
-            const SizedBox(height: CampusGap.small),
-            Align(child: OutlinedButton.icon(onPressed: () => unawaited(widget.service.locator.openSettings(location!)), icon: const CampusIcon(CampusIcons.settings), label: const Text('去设置'))),
-          ],
-          if (_unsure) ...[
-            const SizedBox(height: CampusGap.small),
-            Align(
-              child: OutlinedButton.icon(
-                onPressed: () => unawaited(Navigator.of(context).push<void>(CampusPageRoute(builder: (_) => PangguaiOrdersPage(service: widget.service, phone: widget.phone)))),
-                icon: const CampusIcon(CampusIcons.orders),
-                label: const Text('看订单'),
-              ),
-            ),
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        FilledButton(
+          style: campusProminent,
+          onPressed: price != null && !_placing && !_quoting ? () => unawaited(_place()) : null,
+          child: CampusBusyContent(busy: _placing || _quoting, label: label, busyLabel: _placing ? '下单中' : '正在算价', icon: const CampusIcon(CampusIcons.wallet)),
+        ),
+        if (error != null) ...[const SizedBox(height: CampusGap.medium), Text(error, style: TextStyle(color: palette.danger))],
+        if (location == PangguaiLocationProblem.denied || location == PangguaiLocationProblem.disabled) ...[
+          const SizedBox(height: CampusGap.small),
+          Align(child: OutlinedButton.icon(onPressed: () => unawaited(widget.service.locator.openSettings(location!)), icon: const CampusIcon(CampusIcons.settings), label: const Text('去设置'))),
         ],
-      ),
+        if (_unsure) ...[
+          const SizedBox(height: CampusGap.small),
+          Align(
+            child: OutlinedButton.icon(
+              onPressed: () => unawaited(Navigator.of(context).push<void>(CampusPageRoute(builder: (_) => PangguaiOrdersPage(service: widget.service, phone: widget.phone)))),
+              icon: const CampusIcon(CampusIcons.orders),
+              label: const Text('看订单'),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

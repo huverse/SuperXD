@@ -236,7 +236,9 @@ String decodePangguaiCreated(Object? data) {
 }
 
 // 订单（/order/detail 与 /order/list 的一项；列表里没有付款时刻与预计结束时刻）。
-// 状态：0、1 没付（新建是 0，拿过付款参数后是 1，两者都算待付款），2 使用中，3 已完成。
+// 状态：0 待付款，1 已取消（自己取消的与没付被胖乖关掉的），2 使用中，3 已完成。
+// 1 原先当成「拿过付款参数的待付款」，11-28 真机查明不是：对 1 的单调取消，胖乖回 3122「只有未支付订单才能取消」（诊断包 BMVART4N），
+// 移交包里一个月前没付的旧单至今都是 1，移交包取消成功后查到的也是 1。
 class PangguaiOrder {
   const PangguaiOrder({
     required this.id,
@@ -266,10 +268,11 @@ class PangguaiOrder {
   // 预计结束时刻（completeTime，运行中可能更新，完成后清空）：只是线索，到点不等于已完成，以状态为准。
   final DateTime? endsAt;
 
-  bool get payable => paidAt == null && (status == 0 || status == 1);
+  bool get payable => paidAt == null && status == 0;
+  bool get cancelled => status == 1;
   bool get running => status == 2;
   bool get done => status == 3;
-  String get statusLabel => payable ? '待付款' : running ? '使用中' : done ? '已完成' : '状态 $status';
+  String get statusLabel => payable ? '待付款' : cancelled ? '已取消' : running ? '使用中' : done ? '已完成' : '状态 $status';
 }
 
 PangguaiOrder decodePangguaiOrder(Object? data) {

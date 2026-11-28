@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 import 'package:superxd/domain/feature_flags.dart';
+import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
@@ -18,6 +19,7 @@ import 'package:superxd/toolbox/life/pangguai/pangguai_devices.dart';
 import 'package:superxd/toolbox/life/pangguai/pangguai_http.dart';
 import 'package:superxd/toolbox/life/pangguai/pangguai_location.dart';
 import 'package:superxd/toolbox/life/pangguai/pangguai_models.dart';
+import 'package:superxd/toolbox/life/pangguai/pangguai_order_page.dart';
 import 'package:superxd/toolbox/life/pangguai/pangguai_page.dart';
 import 'package:superxd/toolbox/life/pangguai/pangguai_protocol.dart';
 import 'package:superxd/toolbox/life/pangguai/pangguai_service.dart';
@@ -174,7 +176,12 @@ class _FakePangguai {
         ];
       case '/pay/unify/prePay':
         data = {'exist': false, 'prepayParam': 'app_id=1&method=alipay.trade.app.pay&biz_content=x&sign=y'};
+      // 同真实胖乖：只有待付款（0）的能取消，取消后是 1（已取消），不是 0 的回 3122；隐藏才从列表拿掉。
       case '/order/cancel':
+        final order = orders[fields['orderId']];
+        if (order == null || order['orderStatus'] != 0) return _json(fail(3122, '只有未支付订单才能取消'));
+        order['orderStatus'] = 1;
+        data = null;
       case '/order/hidden':
         orders.remove(fields['orderId']);
         data = null;
@@ -335,11 +342,12 @@ void main() {
       expect(decodePangguaiDevice({...fake.device(_washer), 'categoryCode': '05'}).unusable, contains('App'));
     });
 
-    test('订单：北京时间换成 UTC；0 与 1 都是待付款，2 使用中，3 已完成；列表没有付款时刻', () {
+    test('订单：北京时间换成 UTC；0 待付款，1 已取消（11-28 真机查明，不是待付款），2 使用中，3 已完成；列表没有付款时刻', () {
       final order = decodePangguaiOrder({'id': 'O1', 'orderNo': 'O1', 'orderStatus': 2, 'payPrice': '1.00', 'payTime': '2026-11-27 21:42:40', 'completeTime': '2026-11-27 21:44:40', 'createTime': '2026-11-27 21:40:47', 'shopAutoId': 100000001});
       expect((order.paidAt, order.endsAt, order.running, order.payable, order.price, order.orgId), (DateTime.utc(2026, 11, 27, 13, 42, 40), DateTime.utc(2026, 11, 27, 13, 44, 40), true, false, 100, '100000001'));
-      for (final (status, label) in [(0, '待付款'), (1, '待付款'), (2, '使用中'), (3, '已完成'), (9, '状态 9')]) {
-        expect(decodePangguaiOrder({'id': 'O1', 'orderNo': 'O1', 'orderStatus': status, 'payPrice': '1.00'}).statusLabel, label);
+      for (final (status, label, payable) in [(0, '待付款', true), (1, '已取消', false), (2, '使用中', false), (3, '已完成', false), (9, '状态 9', false)]) {
+        final order = decodePangguaiOrder({'id': 'O1', 'orderNo': 'O1', 'orderStatus': status, 'payPrice': '1.00'});
+        expect((order.statusLabel, order.payable, order.cancelled), (label, payable, status == 1));
       }
       expect(() => decodePangguaiOrder({'id': 'O1', 'orderNo': 'O1', 'orderStatus': '待付', 'payPrice': '1.00'}), throwsA(isA<PangguaiException>()));
     });
@@ -482,6 +490,18 @@ void main() {
       await expectLater(kit.service.cancel(_phone, second), throwsA(isA<PangguaiException>()));
     });
 
+    test('已取消的单（状态 1，自己取消的或没付被胖乖关掉的）：不进首页、不给付、不再发取消（11-28 真机对它取消回 3122）', () async {
+      final kit = _Kit();
+      await kit.signIn();
+      final orderId = await kit.service.place(_phone, goodsId: _washer, skuId: '1102', expected: 100);
+      kit.fake.orders[orderId]!['orderStatus'] = 1;
+      expect(await kit.service.ongoing(_phone, now: DateTime.utc(2026, 11, 27, 13, 45)), isEmpty);
+      await expectLater(kit.service.prepay(_phone, orderId, expected: 100), throwsA(isA<PangguaiException>().having((error) => error.message, 'message', '这一单已取消，重新下单吧')));
+      kit.fake.requests.clear();
+      await expectLater(kit.service.cancel(_phone, orderId), throwsA(isA<PangguaiException>().having((error) => error.message, 'message', '这一单已经取消了')));
+      expect(kit.fake.paths(), ['/order/detail']);
+    });
+
     test('锁机：先重扫拿新会话，核对水种、水卡与余额门槛，参数照契约展开；锁机没等到回复报不确定', () async {
       final kit = _Kit();
       await kit.signIn();
@@ -617,6 +637,42 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
+    testWidgets('订单页：付款时胖乖把单关了（变成已取消）原地写已取消，不当成付好了，不再给付也没有⋯；付款区不是提示条锚点', (tester) async {
+      await tester.runAsync(kit.signIn);
+      final orderId = (await tester.runAsync(() => kit.service.place(_phone, goodsId: _washer, skuId: '1102', expected: 100)))!;
+      kit.alipay.onPay = () => kit.fake.orders[orderId]!['orderStatus'] = 1;
+      await show(tester, PangguaiOrderPage(service: kit.service, phone: _phone, orderId: orderId, autoPay: true));
+      await _settle(tester);
+      expect(kit.alipay.paid, hasLength(1));
+      expect(find.text('已取消'), findsOneWidget);
+      for (final gone in [find.text('使用中'), find.textContaining('用支付宝付'), find.byTooltip('更多')]) {
+        expect(gone, findsNothing);
+      }
+      expect(find.byType(CampusToastAnchor), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('被占用的档位照样列出、标「暂不可用」、点不了：吹风机能选的只剩一个位置时直接选上、位置那行照样显示；洗衣机的程序同样', (tester) async {
+      await tester.runAsync(kit.signIn);
+      kit.fake.skus[_dryer]![0]['stockState'] = 0;
+      await show(tester, PangguaiDevicePage(service: kit.service, phone: _phone, goodsId: _dryer));
+      CampusGlassChip chip(String label) => tester.widget<CampusGlassChip>(find.widgetWithText(CampusGlassChip, label));
+      expect((chip('左边1号 暂不可用').unavailable, chip('左边1号 暂不可用').selected, chip('右边2号').unavailable, chip('右边2号').selected), (true, false, false, true));
+      expect(find.text('下单并付款 ¥0.66'), findsOneWidget);
+      await tester.tap(find.text('左边1号 暂不可用'));
+      await _settle(tester);
+      expect(chip('右边2号').selected, isTrue);
+      expect(find.byType(CampusToastAnchor), findsNothing);
+      kit.fake.skus[_washer]![0]['stockState'] = 0;
+      await show(tester, PangguaiDevicePage(key: const ValueKey('washer'), service: kit.service, phone: _phone, goodsId: _washer));
+      expect(_dotted('暂不可用 · 约 35 分钟 · ¥4.00 · 标准洗说明'), findsOneWidget);
+      expect(find.text('下单并付款 ¥1.00'), findsOneWidget);
+      await tester.tap(find.text('标准洗'));
+      await _settle(tester);
+      expect(find.text('下单并付款 ¥1.00'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    });
+
     testWidgets('吹风机：先选位置再选时长，关着的时长不列；只有一个时长的位置直接选好', (tester) async {
       await tester.runAsync(kit.signIn);
       await show(tester, PangguaiDevicePage(service: kit.service, phone: _phone, goodsId: _dryer));
@@ -657,6 +713,9 @@ void main() {
       await tester.runAsync(kit.signIn);
       await show(tester, PangguaiWaterPage(service: kit.service, phone: _phone, hash: _hash));
       expect(find.text('¥4.65'), findsOneWidget);
+      // 出不了的水种是虚线空心的「暂不可用」，不是压淡一点的普通标签；选择卡不是提示条锚点（提示条会压住上面的设备卡）。
+      expect(tester.widget<CampusGlassChip>(find.widgetWithText(CampusGlassChip, '冰水 暂不可用')).unavailable, isTrue);
+      expect(find.byType(CampusToastAnchor), findsNothing);
       expect(kit.fake.paths().contains('/ewash/api/scanLd/getLdRechargeGift.json'), isFalse);
       await tester.tap(find.text('开始取水'));
       await _settle(tester);

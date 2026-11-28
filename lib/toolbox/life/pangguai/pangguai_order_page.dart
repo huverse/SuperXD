@@ -23,7 +23,7 @@ import 'package:superxd/toolbox/life/pangguai/pangguai_service.dart';
 enum _Pay { idle, preparing, paying, checking }
 
 // 订单页：待付款时「用支付宝付」（⋯ 里取消）；付款：重查订单与收银台 → 拿支付宝串 → 交给支付宝 → 支付宝返回、回到前台或点「我已付款」时去胖乖查
-// （2 秒一次、最多 15 次，订单不再是待付款就是付好了；到账只认胖乖的订单，支付宝的结果码只作提示），支付宝报取消或失败时查一次没付就回到能再付的样子。
+// （2 秒一次、最多 15 次，订单变成使用中或已完成就是付好了、变成已取消就停下；到账只认胖乖的订单，支付宝的结果码只作提示），支付宝报取消或失败时查一次没付就回到能再付的样子。
 // 付好后胖乖下发开机（客户端没有启动设备的接口）：使用中写预计几点结束与还剩多久（按胖乖给的目标时刻算，不按时长自己倒数），前台时每 15 秒再查一次，到点照样以状态为准。
 class PangguaiOrderPage extends StatefulWidget {
   const PangguaiOrderPage({super.key, required this.service, required this.phone, required this.orderId, this.autoPay = false, this.onClose});
@@ -169,13 +169,14 @@ class _PangguaiOrderPageState extends State<PangguaiOrderPage> with WidgetsBindi
       try {
         final order = await widget.service.run(widget.phone, (token) => widget.service.client.order(token, widget.orderId));
         if (!order.payable) {
-          campusLog('[Pangguai] action=pay_confirmed attempt=$attempt');
+          // 已取消（等太久胖乖关掉了）不是付好了：同样原地换成「已取消」、付款区收起，不当成付款成功。
+          campusLog('[Pangguai] action=${order.cancelled ? 'pay_closed' : 'pay_confirmed'} attempt=$attempt');
           if (!mounted) return;
           setState(() {
             _order = order;
             _pay = _Pay.idle;
           });
-          // 状态原地变成使用中，就是看得见的结果，不另出提示条（付款区随之收起，提示条也没有锚点）。
+          // 状态原地变成使用中，就是看得见的结果，不另出提示条（付款区随之收起）。
           _schedule();
           return;
         }
@@ -286,30 +287,28 @@ class _PangguaiOrderPageState extends State<PangguaiOrderPage> with WidgetsBindi
   Widget _payment(BuildContext context, PangguaiOrder order) {
     final palette = CampusPalette.of(context);
     final error = _payError;
-    return CampusToastAnchor(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          ...switch (_pay) {
-            _Pay.idle || _Pay.preparing => [
-              FilledButton(
-                style: campusProminent,
-                onPressed: _pay == _Pay.idle ? () => unawaited(_payNow()) : null,
-                child: CampusBusyContent(busy: _pay == _Pay.preparing, label: '用支付宝付 ¥${lifeYuan(order.price)}', busyLabel: '准备付款', icon: const CampusIcon(CampusIcons.wallet)),
-              ),
-            ],
-            _Pay.paying => [
-              Text('在支付宝里付款，付完回到这里', style: TextStyle(color: palette.onSurfaceVariant)),
-              const SizedBox(height: CampusGap.medium),
-              FilledButton.icon(onPressed: () => unawaited(_check()), icon: const CampusIcon(CampusIcons.check), label: const Text('我已付款，查结果')),
-            ],
-            _Pay.checking => [
-              const FilledButton(onPressed: null, child: CampusBusyContent(busy: true, label: '确认中', busyLabel: '确认中', icon: CampusIcon(CampusIcons.check))),
-            ],
-          },
-          if (error != null) ...[const SizedBox(height: CampusGap.medium), Text(error, style: TextStyle(color: palette.danger))],
-        ],
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ...switch (_pay) {
+          _Pay.idle || _Pay.preparing => [
+            FilledButton(
+              style: campusProminent,
+              onPressed: _pay == _Pay.idle ? () => unawaited(_payNow()) : null,
+              child: CampusBusyContent(busy: _pay == _Pay.preparing, label: '用支付宝付 ¥${lifeYuan(order.price)}', busyLabel: '准备付款', icon: const CampusIcon(CampusIcons.wallet)),
+            ),
+          ],
+          _Pay.paying => [
+            Text('在支付宝里付款，付完回到这里', style: TextStyle(color: palette.onSurfaceVariant)),
+            const SizedBox(height: CampusGap.medium),
+            FilledButton.icon(onPressed: () => unawaited(_check()), icon: const CampusIcon(CampusIcons.check), label: const Text('我已付款，查结果')),
+          ],
+          _Pay.checking => [
+            const FilledButton(onPressed: null, child: CampusBusyContent(busy: true, label: '确认中', busyLabel: '确认中', icon: CampusIcon(CampusIcons.check))),
+          ],
+        },
+        if (error != null) ...[const SizedBox(height: CampusGap.medium), Text(error, style: TextStyle(color: palette.danger))],
+      ],
     );
   }
 }

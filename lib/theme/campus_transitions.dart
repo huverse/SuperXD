@@ -812,6 +812,7 @@ void showCampusToast(BuildContext context, String message, {String? action, Void
 
 // 提示条的锚点（同 Android Material 的 Snackbar.setAnchorView）：包住页面底部常驻的栏或按钮（底栏、回今天胶囊、页面底部的主按钮），
 // 提示条停在它上方、不挡住它。只认最上层路由里、所在分支可见、enabled 的锚点，有几个取最靠上的；弹层开着时底下页面的锚点不算。
+// 跟着内容滚动的按钮不包：提示条会停到页面中间、压住它上面的内容（11-28 胖乖订单页的付款按钮，真机截图）。
 class CampusToastAnchor extends StatefulWidget {
   const CampusToastAnchor({super.key, this.enabled = true, required this.child});
   final bool enabled;

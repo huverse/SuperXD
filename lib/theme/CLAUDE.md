@@ -21,7 +21,7 @@
     - iOS 的页面转场同系统推入（_IosPageSlide：新页面盖进来带左边缘阴影、旧页面左移三分之一并变暗，新页面转场期间垫背景副本；曲线同 CupertinoPageRoute，底栏跟着走用同一对曲线），跟手返回是页面任意位置右滑（_IosBackSwipe，松手按速度与位置决定，收尾 350ms，里层横向手势优先；内嵌网页、地图这类原生视图不进 Flutter 的手势竞争，要自己带 EagerGestureRecognizer，code_conventions_test.dart 守护网页）；[人工决策] 在 _IosPageSlide 上方。
     - CampusEntryFade 是按代次重建的账号应用入场（盖背景副本淡出）。
     - 共享弹窗 showCampusNotice、showCampusConfirm（destructive 时主按钮警示红）与玻璃弹窗 CampusGlassDialog（按钮一到两个等宽并排，任一个放不下半宽或三个及以上时竖排、主操作在最上，[人工决策] 在操作区；全应用弹窗都用它，日期选择器除外）。
-    - showCampusToast 提示条：一律插进根 Overlay 浮在最上层（不用 SnackBar），同一时刻一条、新的顶掉旧的；停在最上层页面里 CampusToastAnchor 包着的底栏、底部按钮上方（同 Android 的 Snackbar.setAnchorView）；胶囊本身可点可划（点一下收起、下滑或左右滑划走、按着时暂停计时），四周透明留白照旧点穿；进出场是上浮显形、不裁剪（裁剪会把投影切成方框）；上面又推入页面或打开弹层、弹窗、菜单时自动收起；读屏开着时带操作的不自动收起（三条 [人工决策] 在函数上）。hideCampusToast 收起过时的提示（同 Snackbar.dismiss()，走同样的退场，减少动画时直接拿掉），用户接着做了一步正常操作时由调用方调。页面底部常驻的栏或主按钮要包 CampusToastAnchor。
+    - showCampusToast 提示条：一律插进根 Overlay 浮在最上层（不用 SnackBar），同一时刻一条、新的顶掉旧的；停在最上层页面里 CampusToastAnchor 包着的底栏、底部按钮上方（同 Android 的 Snackbar.setAnchorView）；胶囊本身可点可划（点一下收起、下滑或左右滑划走、按着时暂停计时），四周透明留白照旧点穿；进出场是上浮显形、不裁剪（裁剪会把投影切成方框）；上面又推入页面或打开弹层、弹窗、菜单时自动收起；读屏开着时带操作的不自动收起（三条 [人工决策] 在函数上）。hideCampusToast 收起过时的提示（同 Snackbar.dismiss()，走同样的退场，减少动画时直接拿掉），用户接着做了一步正常操作时由调用方调。页面底部常驻的栏或主按钮要包 CampusToastAnchor；跟着内容滚动的按钮不包（提示条会停到页面中间压住上面的内容）。
     - showCampusSheet 与 CampusSheetPanel 是底部弹层（键盘弹出时整块浮到键盘上方）；弹窗与弹层都经 CampusOverlayDepthRoute 登记层数。
   - campus_side_drawer.dart：侧栏 CampusSideDrawer（今天页用，同 Claude、ChatGPT）：按钮或页面上从左往右滑拉出，手指拖多少走多少，松手按速度与位置决定开合，临界阻尼弹簧接着手指的速度收尾；页面透明共用背景，所以整个页面往右推、侧栏裁剪在页面左边让出的那段里（带一点视差），不叠画；页面压暗留一条，点它、往左滑或返回关上；expand 展开成整屏（侧栏里的搜索，返回先收回）；shift 是页面此刻的位移（iOS 系统底栏跟着走）；dismissWhenCovered 之后推入的页面完全盖住时悄悄合上；减少动画时直接到位。
   - campus_rolling_text.dart：数字滚动 CampusRollingText（同 iOS 实时活动的数字过渡）：只有变了的位滚动，倒数时方向相反，位按右对齐，减少动画时直接换；可带 strutStyle（数字和小一号的单位排一行、按单位那行定高时用，今天页此刻条）。
@@ -41,7 +41,7 @@
   - campus_glass_button.dart：全局 FilledButton 背景 CampusGlassButtonSurface：视觉约 38dp、触区至少 48dp；在导航层或玻璃面板里是玻璃胶囊，内容区画色调胶囊 CampusTonalSurface；圆形按钮 CampusGlassCircleButton 只用于顶栏操作与悬浮按钮。按钮四级：强调 campusProminent（每屏、每个弹窗一个主操作）、警示 campusDestructive、普通、中性；句中链接用 campusLink（规则见文件内人工决策）。色调胶囊底色改动后重测按钮文字对比度（不低于 4.5:1）。
   - campus_pull_button.dart：下拉触发的顶栏按钮 CampusPullButton（侧栏右上角的搜索）：平时是顶栏玻璃圆钮，往下拉时沿圆周描一圈激活色，到位铺满激活色、展开成带名字的胶囊；换图标时原地转过去；激活色画在玻璃上面一层，不给玻璃套半透明祖先；减少动画时不展开、不描圈。
   - campus_glass_press.dart：玻璃控件的按压物理 CampusGlassPress（按下鼓起、松手过冲一次回位，减少动画时不形变）。
-  - campus_glass_controls.dart：选择标签 CampusGlassChip（选中着色：浅激活色底、激活色实线细边、主色文字，定义在 CampusPalette.selectedFill，卡片与菜单选中项共用，[人工决策] 在 campus_palette.dart；不带勾，高对比度下才给勾号让位、淡入，[人工决策] 在 build；选中状态与按钮合成一个读屏节点，否则读屏听不到“已选中”；减少动画时不包 AnimatedSize，它时长为 0 会在自己的布局里报错）、开关行 CampusSwitchTile（可带前置图标 leading）、滑杆 CampusSlider（GlassSlider 在系统取消与读屏增减时不回调 onChangeEnd，调用方要兜底保存；iOS 上两者是 Flutter 的 CupertinoSwitch、CupertinoSlider，iOS 样式滑杆要撑满整行；可带 CampusSliderMarks 在下方画一段带名字的色条与带名字的刻度，按这一种滑杆的拇指行程对齐，名字挤时色条的名字换到下一行）。页面不再直接用 ChoiceChip、FilterChip、SwitchListTile、Slider（筹码类由 code_conventions_test.dart 守护）。
+  - campus_glass_controls.dart：选择标签 CampusGlassChip（选中着色：浅激活色底、激活色实线细边、主色文字，定义在 CampusPalette.selectedFill，卡片与菜单选中项共用，[人工决策] 在 campus_palette.dart；不带勾，高对比度下才给勾号让位、淡入，[人工决策] 在 build；选中状态与按钮合成一个读屏节点，否则读屏听不到“已选中”；减少动画时不包 AnimatedSize，它时长为 0 会在自己的布局里报错；unavailable 是暂时选不了的（被占用、出不了）：虚线空心、文字次要色、点不了，原因由调用方写进名字，普通禁用只压淡一点、和能选的分不清，11-28）、开关行 CampusSwitchTile（可带前置图标 leading）、滑杆 CampusSlider（GlassSlider 在系统取消与读屏增减时不回调 onChangeEnd，调用方要兜底保存；iOS 上两者是 Flutter 的 CupertinoSwitch、CupertinoSlider，iOS 样式滑杆要撑满整行；可带 CampusSliderMarks 在下方画一段带名字的色条与带名字的刻度，按这一种滑杆的拇指行程对齐，名字挤时色条的名字换到下一行）。页面不再直接用 ChoiceChip、FilterChip、SwitchListTile、Slider（筹码类由 code_conventions_test.dart 守护）。
   - campus_glass_menu.dart：玻璃菜单 showCampusMenu（是路由：返回键关闭、读屏模态、登记层数；不用库的 GlassMenu，它直接插 OverlayEntry，返回键会退出底下的页面）与下拉字段 CampusMenuField。页面不再直接用 DropdownButtonFormField、PopupMenuButton、showModalBottomSheet。
 - 通用组件：
   - campus_surface.dart：通用卡片表面 CampusSurface，可带点击与长按（读屏报按钮；长按带系统的长按反馈）；卡片底色 campusSurfaceFill（平时 91% 不透明，高对比度与读屏导航时不透明），卡片、搜索框与快递登录的胶囊框共用。按需建的长列表做成一张卡片用 CampusSliverCard（底色、描边、圆角同上，画在整段 sliver 后面，没有颗粒纹理）加每行的 CampusCardRow（透明 Material 接按下变暗、首尾行按卡片圆角裁剪）。
@@ -75,7 +75,7 @@
 
 # 测试
 
-- 玻璃与按钮：campus_glass_test.dart（含关闭档实色与显示自检）、campus_glass_button_test.dart；iOS 的系统组件分支：native_glass_test.dart（按 iOS 跑：系统弹窗、菜单的参数，开关滑杆与磨砂档、不建平台视图，系统底栏随推入与浮层交给原生的位置与显隐；原生长什么样只能在 iPhone 上看）。
+- 玻璃与按钮：campus_glass_test.dart（含关闭档实色与显示自检、暂不可用的选择标签）、campus_glass_button_test.dart；iOS 的系统组件分支：native_glass_test.dart（按 iOS 跑：系统弹窗、菜单的参数，开关滑杆与磨砂档、不建平台视图，系统底栏随推入与浮层交给原生的位置与显隐；原生长什么样只能在 iPhone 上看）。
 - 背景、配色与深色：atmosphere_test.dart（含 iOS 云雾每秒约 20 次、低电量停住、没人操作 8 秒停住与一碰接着走（漾开照旧有节拍）、半分辨率贴图同直接画对照、颗粒拼贴同逐点画对照）、dark_mode_test.dart（含提醒文字色、选中着色、标签色与激活色文字的对比度）、wallpaper_test.dart。
 - 动效与转场：campus_motion_test.dart、transition_sync_test.dart（含 iOS 推入与任意位置右滑返回）、account_lifecycle_test.dart（入场与转场中间帧）。
 - 提示条：campus_glass_test.dart（玻璃胶囊、锚点上方、点一下收起与留白点穿、下滑横划与快甩划走、按着暂停计时、投影不裁剪、被新弹层或页面盖住就收起、读屏不自动收起、弹层里浮最上层、hideCampusToast 收起）、shell_layout_test.dart（停在两端底栏上方）。
