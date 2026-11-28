@@ -77,7 +77,7 @@ export class ChallengeService implements OnModuleInit {
     if (retryAfter !== null) throw new RelayError(RelayCode.rateLimited, HttpStatus.TOO_MANY_REQUESTS, '开局过于频繁', { retryAfter });
     // 进行中的那一局到点了还没被定时任务结算，就先结算掉，不挡新的一局。
     const active = await this.runs.activeRunOf(accountId);
-    if (active !== null && (await this.runs.withRun(active, accountId, async (manager, run) => run !== null && (await this.settleIfDue(manager, run, Date.now())).active))) {
+    if (active !== null && (await this.runs.withRun(active, accountId, this.accounts.hold, async (manager, run) => run !== null && (await this.settleIfDue(manager, run, Date.now())).active))) {
       throw new RelayError(RelayCode.runActive, HttpStatus.CONFLICT, '已有进行中的一局', { runId: active });
     }
     const now = Date.now();
@@ -111,7 +111,7 @@ export class ChallengeService implements OnModuleInit {
     const charge = async (manager: EntityManager) => {
       if (challenge.ticket > 0) await this.points.spendIn(manager, accountId, challenge.ticket, run.runId, `${plan.label} · ${plan.title} 门票`, new Date(now));
     };
-    if (!(await this.runs.insertRun(run, new Date(now), charge))) {
+    if (!(await this.runs.insertRun(run, new Date(now), this.accounts.hold, charge))) {
       throw new RelayError(RelayCode.runActive, HttpStatus.CONFLICT, '已有进行中的一局', { runId: (await this.runs.activeRunOf(accountId)) ?? '' });
     }
     this.logger.log(`[Challenge] action=start challengeId=${challengeId} runId=${run.runId} ticket=${challenge.ticket} levels=${plan.levels.map((level) => level.game).join(',')}`);
@@ -216,16 +216,21 @@ export class ChallengeService implements OnModuleInit {
   async settleDue(now: number) {
     const due = await this.runs.dueRuns(new Date(now), challengeSweepBatch);
     for (const runId of due) {
-      await this.runs.withRun(runId, null, async (manager, run) => {
-        if (run !== null) await this.settleIfDue(manager, run, now);
-      });
+      try {
+        await this.runs.withRun(runId, null, this.accounts.hold, async (manager, run) => {
+          if (run !== null) await this.settleIfDue(manager, run, now);
+        });
+      } catch (error) {
+        // 这一局的账号刚注销（门禁过不了）：那一局随账号删掉了，跳过，不挡这一批别的局。
+        if (!(error instanceof RelayError && error.code === RelayCode.accountNotFound)) throw error;
+      }
     }
     return due.length;
   }
 
   // 锁住这一局做 work：work 返回 RelayError 表示要回错误，但事务照常提交（顺带做的到点结算不能因为回错误而回滚）。
   private async locked<T>(runId: string, accountId: string, work: (manager: EntityManager, run: RunRow) => Promise<T | RelayError>): Promise<T> {
-    const result = await this.runs.withRun(runId, accountId, async (manager, run) => (run === null ? new RelayError(RelayCode.runNotFound, HttpStatus.NOT_FOUND, '这一局不存在') : work(manager, run)));
+    const result = await this.runs.withRun(runId, accountId, this.accounts.hold, async (manager, run) => (run === null ? new RelayError(RelayCode.runNotFound, HttpStatus.NOT_FOUND, '这一局不存在') : work(manager, run)));
     if (result instanceof RelayError) throw result;
     return result;
   }

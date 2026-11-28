@@ -6,6 +6,7 @@ import { DataSource, QueryFailedError } from 'typeorm';
 import { createRelayApp } from 'src/relay_app';
 import { REDIS } from 'src/common/redis/redis.module';
 import { decodeBase64url, ed25519Key, friendKeysCanonical, verifyEd25519 } from 'src/common/crypto/relay_crypto';
+import { insertAccount } from './account_fixture';
 import { createInviteKeys, fakeEnvelope, helloOf, inviteProof, socialBindBody, TestDevice } from './test_device';
 
 // 私信挂到应用账号与换手机接管（人工决策见客户端 lib/social/social_service.dart 文件头）。
@@ -45,10 +46,11 @@ const registered = async () => {
 };
 
 // 一把登录了应用账号的设备密钥（账号登录本身在 account.e2e.test.ts 测）；给 accountId 就登录到已有的账号（同一个人的另一台手机）。
-const signedIn = async (accountId = randomBytes(16).toString('base64url')) => {
+// 账号行用 insertAccount 建全（带用户名）：11-28 起挂私信先过账号写入门禁，账号行要真的在。
+const signedIn = async (existing?: string) => {
   const device = await registered();
-  const now = new Date();
-  await dataSource.query('INSERT IGNORE INTO app_account (account_id, last_seen_time, create_time, update_time) VALUES (?, ?, ?, ?)', [accountId, now, now, now]);
+  const now = new Date(), accountId = existing ?? randomBytes(16).toString('base64url');
+  if (existing === undefined) await insertAccount(dataSource, accountId, now);
   await dataSource.query('INSERT INTO account_device (account_id, device_id, create_time, update_time) VALUES (?, ?, ?, ?)', [accountId, device.deviceId, now, now]);
   return { device, accountId };
 };

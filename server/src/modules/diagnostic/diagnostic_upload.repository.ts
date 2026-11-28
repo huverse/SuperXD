@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 
+import { AccountHold } from 'src/modules/account/account.repository';
 import { DiagnosticUploadEntity } from 'src/modules/diagnostic/diagnostic_upload.entity';
 
 export type DiagnosticUploadRow = { diagnosticId: string; bytes: number; createTime: Date };
@@ -9,7 +10,8 @@ export type DiagnosticUploadRow = { diagnosticId: string; bytes: number; createT
 // 诊断包认领记录的存储端口：服务只依赖这个抽象。
 export abstract class DiagnosticUploadRepository {
   // 把这个包记到账号下；已记在这个账号下算成功，已属于别的账号返回 false。
-  abstract claim(diagnosticId: string, accountId: string, bytes: number, now: Date): Promise<boolean>;
+  // hold 是账号写入门禁（AccountRepository.hold），同一事务的第一步。
+  abstract claim(diagnosticId: string, accountId: string, bytes: number, now: Date, hold: AccountHold): Promise<boolean>;
   // 这个账号认领过的包，从新到旧，最多 limit 个。
   abstract list(accountId: string, limit: number): Promise<DiagnosticUploadRow[]>;
   // 删掉这个账号下的这条记录，返回是否删了（不是这个账号的不动）。
@@ -28,10 +30,13 @@ export class TypeormDiagnosticUploadRepository extends DiagnosticUploadRepositor
     super();
   }
 
-  async claim(diagnosticId: string, accountId: string, bytes: number, now: Date) {
-    await this.uploads.query('INSERT IGNORE INTO diagnostic_upload (diagnostic_id, account_id, bytes, create_time, update_time) VALUES (?, ?, ?, ?, ?)', [diagnosticId, accountId, bytes, now, now]);
-    const rows = (await this.uploads.query('SELECT account_id AS accountId FROM diagnostic_upload WHERE diagnostic_id = ?', [diagnosticId])) as { accountId: string }[];
-    return rows[0]?.accountId === accountId;
+  claim(diagnosticId: string, accountId: string, bytes: number, now: Date, hold: AccountHold) {
+    return this.uploads.manager.transaction(async (manager) => {
+      await hold(manager, accountId);
+      await manager.query('INSERT IGNORE INTO diagnostic_upload (diagnostic_id, account_id, bytes, create_time, update_time) VALUES (?, ?, ?, ?, ?)', [diagnosticId, accountId, bytes, now, now]);
+      const rows = (await manager.query('SELECT account_id AS accountId FROM diagnostic_upload WHERE diagnostic_id = ?', [diagnosticId])) as { accountId: string }[];
+      return rows[0]?.accountId === accountId;
+    });
   }
 
   async list(accountId: string, limit: number) {

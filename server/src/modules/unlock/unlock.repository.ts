@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 
+import { AccountHold } from 'src/modules/account/account.repository';
 import { AccountUnlockEntity } from 'src/modules/unlock/unlock.entity';
 
 export type UnlockRow = { id: string; accountId: string; unlockId: string; source: string; price: number };
@@ -11,9 +12,10 @@ export abstract class UnlockRepository {
   // 这个账号记过的解锁里属于 unlockIds 的（走 (account_id, unlock_id) 唯一键，行数不超过配置里的项数）。
   abstract ownedOf(accountId: string, unlockIds: string[]): Promise<Set<string>>;
   // 记下抽中的（已有就不动）。
-  abstract insertDrawn(accountId: string, unlockIds: string[], now: Date): Promise<void>;
+  // hold 是账号写入门禁（AccountRepository.hold），事务的第一步（下同）。
+  abstract insertDrawn(accountId: string, unlockIds: string[], now: Date, hold: AccountHold): Promise<void>;
   // 在事务里记一笔买的：已经记过（买过或抽中过）返回 null，否则返回这一行的编号，再在同一事务里调 charge（付积分），charge 抛错则不留。
-  abstract buy(accountId: string, unlockId: string, price: number, now: Date, charge: (manager: EntityManager, rowId: string) => Promise<void>): Promise<string | null>;
+  abstract buy(accountId: string, unlockId: string, price: number, now: Date, hold: AccountHold, charge: (manager: EntityManager, rowId: string) => Promise<void>): Promise<string | null>;
   // 在事务里取最多 limit 行属于这些解锁的记录交给 work（下架退回用），work 之后这些行删掉；返回处理的行数。
   abstract settle(unlockIds: string[], limit: number, work: (manager: EntityManager, rows: UnlockRow[]) => Promise<void>): Promise<number>;
   // 删最多 limit 行属于这些解锁的记录（公开满 30 天的），返回删的行数。
@@ -33,16 +35,20 @@ export class TypeormUnlockRepository extends UnlockRepository {
     return new Set(rows.map((row) => row.unlockId));
   }
 
-  async insertDrawn(accountId: string, unlockIds: string[], now: Date) {
+  async insertDrawn(accountId: string, unlockIds: string[], now: Date, hold: AccountHold) {
     if (unlockIds.length === 0) return;
-    await this.unlocks.query(
-      `INSERT IGNORE INTO account_unlock (account_id, unlock_id, source, price, create_time, update_time) VALUES ${unlockIds.map(() => '(?, ?, ?, 0, ?, ?)').join(', ')}`,
-      unlockIds.flatMap((unlockId) => [accountId, unlockId, 'drawn', now, now]),
-    );
+    await this.unlocks.manager.transaction(async (manager) => {
+      await hold(manager, accountId);
+      await manager.query(
+        `INSERT IGNORE INTO account_unlock (account_id, unlock_id, source, price, create_time, update_time) VALUES ${unlockIds.map(() => '(?, ?, ?, 0, ?, ?)').join(', ')}`,
+        unlockIds.flatMap((unlockId) => [accountId, unlockId, 'drawn', now, now]),
+      );
+    });
   }
 
-  buy(accountId: string, unlockId: string, price: number, now: Date, charge: (manager: EntityManager, rowId: string) => Promise<void>) {
+  buy(accountId: string, unlockId: string, price: number, now: Date, hold: AccountHold, charge: (manager: EntityManager, rowId: string) => Promise<void>) {
     return this.unlocks.manager.transaction(async (manager) => {
+      await hold(manager, accountId);
       const inserted = (await manager.query('INSERT IGNORE INTO account_unlock (account_id, unlock_id, source, price, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?)', [
         accountId,
         unlockId,

@@ -132,7 +132,8 @@ export class AccountService implements OnModuleInit {
     if (credentials === null || !(await this.keys.verify(secrets.password, credentials.passwordHash))) this.invalid();
     await this.devices.enroll(deviceId, body.signPublicKey, body.boxPublicKey);
     const now = new Date();
-    if (!(await this.accounts.link(credentials.accountId, deviceId, now))) this.invalid();
+    // 只在密码哈希还是刚才核对的那份时登记（期间改了密码或凭恢复码重设过就当密码不对，11-28 审查 F02）。
+    if (!(await this.accounts.link(credentials.accountId, deviceId, now, { passwordHash: credentials.passwordHash }))) this.invalid();
     this.logger.log(`[Account] action=login deviceId=${deviceId}`);
     return this.signedIn(credentials.accountId, username, now);
   }
@@ -144,11 +145,11 @@ export class AccountService implements OnModuleInit {
     const secrets = this.secretsOf(body.sealed, deviceId, ['recoveryCode', 'password', 'newRecoveryCode'] as const);
     const credentials = await this.accounts.credentialsOf(username);
     if (credentials === null || !(await this.keys.verify(secrets.recoveryCode, credentials.recoveryHash))) this.invalid();
+    // 慢的哈希在事务外算；换秘密、登记与踢掉别的设备在一个事务里，并且只认刚才核对过的那份恢复码（一次性，11-28 审查 F02）。
     const [passwordHash, recoveryHash] = [await this.keys.hash(secrets.password), await this.keys.hash(secrets.newRecoveryCode)];
-    const now = new Date();
-    if (!(await this.accounts.updateSecrets(credentials.accountId, { passwordHash, recoveryHash }, now))) this.invalid();
     await this.devices.enroll(deviceId, body.signPublicKey, body.boxPublicKey);
-    if (!(await this.accounts.link(credentials.accountId, deviceId, now, true))) this.invalid();
+    const now = new Date();
+    if (!(await this.accounts.recover(credentials.accountId, credentials.recoveryHash, { passwordHash, recoveryHash }, deviceId, now))) this.invalid();
     this.logger.log(`[Account] action=recover deviceId=${deviceId}`);
     return this.signedIn(credentials.accountId, username, now);
   }
@@ -191,7 +192,8 @@ export class AccountService implements OnModuleInit {
     const accountId = await this.accountOrMissing(deviceId);
     const claimed = ticket.accountId === null && (await this.redis.eval(claimJoinScript, 1, key, raw, JSON.stringify({ ...ticket, accountId }))) !== null;
     if (!claimed && (await this.ticketOf(ticketId))?.accountId !== accountId) throw notFound();
-    if (claimed && !(await this.accounts.link(accountId, ticket.deviceId, new Date()))) throw new RelayError(RelayCode.accountNotFound, HttpStatus.NOT_FOUND, '没有登录应用账号');
+    // 批准方在登记时还要在账号下（批准途中被凭恢复码重设踢下线的，批不进新设备）。
+    if (claimed && !(await this.accounts.link(accountId, ticket.deviceId, new Date(), { approver: deviceId }))) throw new RelayError(RelayCode.accountNotFound, HttpStatus.NOT_FOUND, '没有登录应用账号');
     this.logger.log(`[Account] action=approve_join deviceId=${deviceId} joined=${ticket.deviceId} claimed=${claimed}`);
   }
 

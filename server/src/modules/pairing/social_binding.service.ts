@@ -74,6 +74,8 @@ export class SocialBindingService implements OnModuleInit {
     // 只对死锁（errno 1213）重来一次，重来时已能看到对方挂上的那一行，照常回 SOCIAL_TAKEN，不回 500。11-16 CI 偶发复现过。
     const deadlocked = (error: unknown) => error instanceof QueryFailedError && (error.driverError as { errno?: number }).errno === 1213;
     const attempt = () => this.dataSource.transaction(async (manager) => {
+      // 账号写入门禁（11-28 审查 F05）：先锁账号行，注销与挂私信按它串行。
+      await this.accounts.hold(manager, accountId);
       const current = await this.socials.lockOf(accountId, manager);
       const owner = await this.socials.ownerOf(deviceId, manager);
       if (owner !== null && owner !== accountId) throw taken();
